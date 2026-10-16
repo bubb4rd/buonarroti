@@ -324,8 +324,8 @@ export default function ImageInputNode({ id, data, selected }: NodeProps<ImageIn
           {natW > 0 && natH > 0 && (
             <div
               aria-hidden
-              className="absolute top-1.5 right-2 pointer-events-none select-none z-30 tabular-nums px-1.5 py-0.5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-150 node-slide-reveal"
-              style={{ fontSize: 9, lineHeight: 1, color: "#fff", background: "#1a1a1a" }}
+              className="on-media absolute top-1.5 right-2 pointer-events-none select-none z-30 tabular-nums px-1.5 py-0.5 rounded-full bg-black/45 text-white backdrop-blur-md opacity-0 group-hover:opacity-100 transition-opacity duration-150 node-slide-reveal"
+              style={{ fontSize: 9, lineHeight: 1 }}
             >
               {natW} × {natH}
             </div>
@@ -339,9 +339,9 @@ export default function ImageInputNode({ id, data, selected }: NodeProps<ImageIn
             <button
               onMouseDown={(e) => e.stopPropagation()}
               onClick={() => { fileRef.current?.click(); }}
-              className="h-6 px-3 rounded-full bg-black/50 backdrop-blur-sm border border-white/10 text-[10px] text-[#CCCCCC] hover:text-white hover:bg-black/70 transition-colors relative z-10"
+              className="on-media h-6 px-3 rounded-full bg-black/45 backdrop-blur-md border border-white/10 text-[11px] text-white/80 hover:text-white hover:bg-black/70 transition-colors relative z-10"
             >
-              replace
+              Replace
             </button>
           </div>
         </div>
@@ -393,15 +393,14 @@ export default function ImageInputNode({ id, data, selected }: NodeProps<ImageIn
         {/* Lightbox — full-quality view on double-click */}
         {lightboxOpen && typeof document !== "undefined" && createPortal(
           <div
-            className="fixed inset-0 z-[9999] flex items-center justify-center transition-opacity duration-200 ease-in-out"
-            style={{ backgroundColor: `rgba(0,0,0,${lightboxVisible ? 0.9 : 0})`, opacity: lightboxVisible ? 1 : 0 }}
+            className="fixed inset-0 z-[9999] flex items-center justify-center bg-[var(--scrim)] transition-opacity duration-200 ease-in-out"
+            style={{ opacity: lightboxVisible ? 1 : 0 }}
             onClick={closeLightbox}
           >
             <div
-              className="relative transition-all duration-200 ease-in-out rounded-2xl overflow-hidden"
+              className="relative transition-all duration-200 ease-in-out rounded-[var(--radius-xl)] overflow-hidden shadow-[var(--shadow-lg)]"
               style={{
                 transform: lightboxVisible ? "scale(1)" : "scale(0.95)",
-                boxShadow: "0 0 0 8px #3a3a3a",
               }}
               onClick={(e) => e.stopPropagation()}
             >
@@ -487,17 +486,17 @@ export default function ImageInputNode({ id, data, selected }: NodeProps<ImageIn
           onDrop={onDrop}
           onDragOver={(e) => e.preventDefault()}
           onClick={() => { fileRef.current?.click(); }}
-          className="border border-dashed border-[#1E2840] hover:border-[#243050] rounded-md cursor-pointer transition-colors py-8 text-center"
+          className="bg-mat border border-dashed border-rule-strong hover:border-lapis rounded-[var(--radius)] cursor-pointer transition-colors py-8 text-center"
         >
-          <p className="text-[11px] text-[#A0A0A0]">
-            Drop image or{" "}
-            <span className="underline underline-offset-2 text-white">browse</span>
+          <p className="text-[12px] text-ink-2">
+            Drop an image or{" "}
+            <span className="underline underline-offset-2 text-ink">browse</span>
           </p>
         </div>
         <input
           type="text"
           className="node-input mt-2"
-          placeholder="or paste image URL…"
+          placeholder="Or paste an image URL…"
           onBlur={(e) => {
             const v = e.target.value.trim();
             if (v) setImage(v);
@@ -521,9 +520,9 @@ export default function ImageInputNode({ id, data, selected }: NodeProps<ImageIn
 
 function ImageOutIcon() {
   return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
       <rect width="18" height="18" x="3" y="3" rx="2" ry="2" />
-      <circle cx="9" cy="9" r="2" fill="white" stroke="none" />
+      <circle cx="9" cy="9" r="2" fill="currentColor" stroke="none" />
       <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" />
     </svg>
   );
@@ -531,7 +530,7 @@ function ImageOutIcon() {
 
 function PromptIcon() {
   return (
-    <svg width="12" height="12" viewBox="0 0 14 14" fill="white">
+    <svg width="12" height="12" viewBox="0 0 14 14" fill="currentColor">
       <path d="M1.5 2h11v2H8.5v8H5.5V4H1.5V2z" />
     </svg>
   );

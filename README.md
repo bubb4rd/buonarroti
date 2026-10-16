@@ -1,183 +1,111 @@
 <p align="center">
-  <img
-    src="https://raw.githubusercontent.com/SegFault42/HeliosGen/main/public/HG.svg"
-    alt="HeliosGen"
-    width="64"
-  />
+  <img src="src-tauri/icons/128x128.png" alt="" width="96" />
 </p>
 
+<h1 align="center">Buonarroti</h1>
+
 <p align="center">
-  <strong>Build AI image & video pipelines visually.</strong><br/>
-  Chain prompts, models, reference images, and automations on an infinite canvas.
+  A calm desktop studio for making images and film from your words.
 </p>
 
 ---
 
-# ⬇️ Download
+Buonarroti is a desktop app for image and video generation. You describe what
+you want, pick a model, and the result lands in your gallery. When one prompt
+is not enough, you can lay the work out as a workflow on an open canvas and let
+each step feed the next.
 
-**HeliosGen is a desktop app.** Grab the latest build for your OS from the
-releases page — no account, no server, no cloud setup:
+- **Workflows** — an infinite canvas of nodes: prompts, reference images,
+  models and outputs, wired together and run in sequence or in parallel.
+- **Assistant** — a chat partner that helps you shape and refine prompts
+  before you spend credits on them.
+- **Gallery** — everything you make and upload, organised in folders and kept
+  on your own disk.
+- **Local by design** — no account and no cloud storage. Your work stays on
+  your machine; generation runs through your own kie.ai key.
 
-### 👉 **[Download from the Releases page](https://github.com/SegFault42/HeliosGen/releases)**
+The name honours Michelangelo Buonarroti. The mark is his *tre cerchi*, three
+interlaced rings.
+
+## Download
+
+Builds are published on the
+[releases page](https://github.com/bubb4rd/buonarroti/releases).
 
 | OS | File |
 | --- | --- |
-| **macOS** (Apple Silicon) | `HeliosGen_<version>_aarch64.dmg` |
-| **Windows** | 🙋 **looking for a contributor to build & submit** — see below |
-| **Linux** | 🙋 **looking for a contributor to build & submit** — see below |
+| macOS (Apple Silicon) | `Buonarroti_<version>_aarch64.dmg` |
+| Windows | Not published yet — build from source |
+| Linux | Not published yet — build from source |
 
-> Only the builds actually attached to the latest release are available. macOS
-> is published today. **Tauri can't cross-compile, so Windows and Linux builds
-> need someone on those platforms** — if you can run `npm run desktop:build` on
-> Windows or Linux (see the **Build from source** section below), please open a
-> PR or attach the artifacts to an issue and we'll add them to the release.
+Tauri does not cross-compile, so each platform has to be built on that
+platform. If you can build for Windows or Linux, artifacts attached to an issue
+or pull request are welcome.
 
-The app is **not code-signed** yet:
+The app is not code-signed yet:
 
-- **macOS** — right-click the app → **Open** (once), or run
-  `xattr -cr /Applications/HeliosGen.app`.
-- **Windows** — SmartScreen: **More info → Run anyway**.
+- **macOS** — right-click the app and choose **Open** once, or run
+  `xattr -cr /Applications/Buonarroti.app`.
+- **Windows** — at the SmartScreen prompt, choose **More info → Run anyway**.
 
----
+## First run
 
-## 🚀 First run
+1. Open Buonarroti.
+2. Go to **Settings → API Keys** and paste your
+   [kie.ai](https://kie.ai?ref=25abb3f2236cbff9780ab9c2f84479ec) API key.
+3. Write a prompt and generate.
 
-1. Launch HeliosGen.
-2. Open **Settings → API Keys** and paste your **[kie.ai](https://kie.ai?ref=25abb3f2236cbff9780ab9c2f84479ec) API key**.
-3. Start generating.
+Credits are bought on your own kie.ai account and do not expire. You pay only
+for what you generate; there is no subscription.
 
-Everything stays on your machine. Generations, uploads, folders, workflows and
-settings live in a local database; media is saved to a local folder:
+### Where your data lives
+
+Generations, uploads, folders, workflows and settings are kept in a local
+SQLite database (`guest.db`); media is saved alongside it in `generated/`.
 
 | OS | Data location |
 | --- | --- |
-| macOS | `~/Library/Application Support/cash.sdd.helios.desktop/` |
-| Windows | `%APPDATA%\cash.sdd.helios.desktop\` |
-| Linux | `~/.local/share/cash.sdd.helios.desktop/` |
+| macOS | `~/Library/Application Support/app.buonarroti.desktop/` |
+| Windows | `%APPDATA%\app.buonarroti.desktop\` |
+| Linux | `~/.local/share/app.buonarroti.desktop/` |
 
 Delete that folder to reset the app.
 
----
+If you used HeliosGen before, its data (`cash.sdd.helios.desktop` in the same
+parent folder) is copied into the Buonarroti folder automatically the first
+time you open the app. The original folder is left as it was; remove it
+yourself once you are happy everything came across.
 
-# 📸 Screenshots
-## ✨ Simple Image & Video Generation
+## Models
 
-<p align="center">
-  <img width="2912" height="2292" alt="Image generation example" src="https://github.com/user-attachments/assets/8263b83d-addb-4af8-99d1-d8406c52be2c" />
-</p>
+### Images
 
----
-
-## 🔄 Workflow Generation
-
-<p align="center">
-  <img width="1459" height="1146" alt="Workflow generation example" src="https://github.com/user-attachments/assets/fc7f1109-76d1-4af0-b91d-0e915bcf5461" />
-</p>
-
----
-
-## 🧠 Native JSON Prompt Preview
-
-<p align="center">
-  <img width="886" alt="JSON prompt preview" src="https://github.com/user-attachments/assets/dedbdf4f-9d52-4e29-ad6e-a2e67e341a73" />
-</p>
-
----
-
-## 💬 AI Prompt Improvement Assistant
-
-<p align="center">
-  <img width="872" height="502" alt="Prompt assistant interface" src="https://github.com/user-attachments/assets/17ba972c-bd8a-49a7-b367-4ef906fe3e17" />
-</p>
-
-# ✨ HeliosGen
-
-HeliosGen is a free & open source visual AI workflow builder for image and video generation.
-
-Build reusable AI pipelines with:
-- infinite node-based workflows,
-- multi-model generation,
-- reference images,
-- automation chains,
-- all running 100% locally on your machine.
-
-No subscriptions.  
-No disappearing credits.  
-No vendor lock-in.  
-No cloud, no accounts — just a local app and your own kie.ai key.
-
----
-
-# 💳 Credits
-
-HeliosGen now works with <a href="https://kie.ai?ref=25abb3f2236cbff9780ab9c2f84479ec" target="_blank">kie.ai</a>.
-
-All credits are purchased directly on your own account and never expire.
-
-That means:
-- no monthly reset,
-- no lost credits,
-- no subscription lock-in,
-- and full ownership of your usage.
-
-You only pay for what you generate.
-
----
-
-# 🚀 Features
-
-- Infinite node-based canvas
-- AI image & video generation
-- Drag-and-connect workflow system
-- Multi-model pipelines
-- Reference image support
-- Parallel & sequential pipeline execution
-- Real-time generation history
-- 100% local — your data never leaves your machine
-- Bring your own kie.ai key
-- Modern responsive UI
-
----
-
-# ⚡ Supported Models
-
-## Images
 - GPT Image 2 (OpenAI)
 - Nano Banana / Nano Banana 2 / Nano Banana 2 Lite / Nano Banana Pro (Google)
 - Seedream 5.0 Lite / Pro (Seedream)
 - Z-Image (Z-AI)
 - Grok Imagine (X)
 
-## Videos
+### Video
+
 - Veo 3.1 Lite / Fast / Quality, Gemini Omni Video (Google)
 - Kling 3.0, Kling 3.0 Turbo, Motion Control 2.6 / 3.0 (Kling)
 - Seedance 2.0 / Fast / Mini (Bytedance)
 - Grok Imagine, Grok Imagine 1.5 preview (X)
 - HappyHorse (Alibaba)
 
-More models are coming.
+## Codex CLI (optional)
 
----
+Instead of spending kie.ai credits on GPT Image 2, Buonarroti can generate
+through your own ChatGPT Codex subscription via
+[`codex-imagegen-cli`](https://github.com/jdmnk/codex-imagegen-cli). The desktop
+app finds `codex` on your `PATH` automatically. If it is missing, the option
+shows **NOT CONFIGURED** and everything else keeps working.
 
-# 🏗️ Tech Stack
+You need:
 
-| Layer | Technology |
-|---|---|
-| Desktop shell | Tauri 2 (Rust) |
-| App | Next.js + React + TypeScript (bundled Node sidecar) |
-| Database | SQLite (local) |
-| Storage | Local disk |
-| AI Backend | kie.ai |
-
----
-
-# 🤖 Codex CLI (optional — alternate GPT Image 2 backend)
-
-Instead of routing GPT Image 2 through kie.ai credits, HeliosGen can generate through your own ChatGPT Codex subscription via [`codex-imagegen-cli`](https://github.com/jdmnk/codex-imagegen-cli). The desktop app picks up `codex` from your `PATH` automatically; if it's missing, the feature just shows **NOT CONFIGURED** and everything else keeps working.
-
-Requirements:
-- A ChatGPT Plus/Pro/Team/Enterprise account with Codex access
-- [`codex`](https://github.com/openai/codex) CLI installed on your machine
+- a ChatGPT Plus, Pro, Team or Enterprise account with Codex access
+- the [`codex`](https://github.com/openai/codex) CLI
 - [`uv`](https://docs.astral.sh/uv/) (Python package manager)
 
 ### 1. Install the Codex CLI
@@ -199,107 +127,104 @@ uv sync --dev
 uv tool install -e .
 ```
 
-This installs the `codex-imagegen` binary — make sure it's on your `PATH`.
+This installs the `codex-imagegen` binary. Make sure it is on your `PATH`.
 
-### 3. Log in
+### 3. Sign in
 
-Either:
-- run `codex login` in a terminal (opens a browser to sign in), **or**
-- open the app → **Settings → API Keys → Codex CLI → Connect Codex**, which walks you through a device-code login — visit the printed URL and enter the code, no terminal needed.
+Either run `codex login` in a terminal (it opens a browser), or open
+**Settings → API Keys → Codex CLI → Connect Codex** in the app and follow the
+device-code steps: visit the URL shown and enter the code.
 
-> ⚠️ Starting a new login (either way) immediately invalidates any existing session on that machine — the CLI clears old credentials the moment a login attempt begins, whether or not it's ever completed. Only start one when the status badge below shows **NOT CONFIGURED**.
+Starting a new login, either way, immediately ends any existing Codex session
+on that machine — the CLI clears old credentials as soon as a login begins,
+whether or not it finishes. Only start one when the status shows
+**NOT CONFIGURED**.
 
-### 4. Enable it for GPT Image 2
+### 4. Use it for GPT Image 2
 
-In **Settings → Image Models**, set GPT Image 2's provider toggle to **Codex CLI**. The status badge in **Settings → API Keys** shows **READY** once both the CLI and login are in place.
+In **Settings → Image Models**, set GPT Image 2's provider to **Codex CLI**.
+**Settings → API Keys** shows **READY** once the CLI and login are both in
+place.
 
----
+## Tech stack
 
-# 🛠️ Build from source
+| Layer | Technology |
+| --- | --- |
+| Desktop shell | Tauri 2 (Rust) |
+| App | Next.js, React, TypeScript (bundled Node sidecar) |
+| Database | SQLite via `node:sqlite` (local) |
+| Storage | Local disk |
+| Generation | kie.ai (optionally Codex CLI for GPT Image 2) |
 
-Prefer to build it yourself, or need a platform that isn't on the releases page
-yet? The whole app builds from this repo.
+## Build from source
 
-Tauri does **not** cross-compile — build on the OS you want to target. Run
-`npm run desktop:build` on a Mac for the macOS build, on Windows for Windows,
-on Linux for Linux.
+Build on the operating system you want to target.
 
-> **Want to help ship Windows / Linux builds?** Build on that OS and send the
-> artifacts (PR or issue attachment) — they'll be added to the next release,
-> with credit.
-
-## Prerequisites (one-time, all platforms)
+### Prerequisites
 
 | Tool | Notes |
 | --- | --- |
-| **Node 22+** | The bundled server uses `node:sqlite`. `nvm use 22`. |
-| **Rust** | `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \| sh` |
-| **Tauri system deps** | See <https://v2.tauri.app/start/prerequisites/> |
+| Node 22+ | The bundled server uses `node:sqlite`. `nvm use 22 && corepack enable`. |
+| pnpm | Pinned in `package.json` (`packageManager`); Corepack provides it. |
+| Rust | `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \| sh` |
+| Tauri system deps | See <https://v2.tauri.app/start/prerequisites/> |
 
-Platform-specific system deps:
+Platform notes:
 
-- **macOS** — Xcode Command Line Tools: `xcode-select --install`
+- **macOS** — Xcode Command Line Tools: `xcode-select --install`.
 - **Windows** — [Microsoft C++ Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/)
-  (Desktop development with C++) and [WebView2](https://developer.microsoft.com/microsoft-edge/webview2/)
-  (preinstalled on Windows 11)
+  (Desktop development with C++) and
+  [WebView2](https://developer.microsoft.com/microsoft-edge/webview2/)
+  (preinstalled on Windows 11).
 - **Linux** — `webkit2gtk-4.1`, `librsvg2`, `build-essential`, `curl`, `wget`,
-  `file`, `libssl-dev`, `libayatana-appindicator3-dev` (Debian/Ubuntu package
-  names; see the Tauri prerequisites page for other distros)
+  `file`, `libssl-dev`, `libayatana-appindicator3-dev` (Debian/Ubuntu names;
+  see the Tauri prerequisites page for other distributions).
 
-## Build
+### Build
 
 ```bash
-git clone https://github.com/SegFault42/HeliosGen
-cd HeliosGen
-npm install
-npm run desktop:build
+git clone https://github.com/bubb4rd/buonarroti
+cd buonarroti
+pnpm install
+pnpm desktop:build
 ```
 
-Artifacts land in `src-tauri/target/release/bundle/`:
+Artifacts are written to `src-tauri/target/release/bundle/`:
 
 | OS | Output |
 | --- | --- |
-| macOS | `macos/HeliosGen.app`, `dmg/HeliosGen_<ver>_<arch>.dmg` |
-| Windows | `msi/HeliosGen_<ver>_x64_en-US.msi`, `nsis/HeliosGen_<ver>_x64-setup.exe` |
-| Linux | `deb/`, `rpm/`, `appimage/HeliosGen_<ver>_amd64.AppImage` |
+| macOS | `macos/Buonarroti.app`, `dmg/Buonarroti_<ver>_<arch>.dmg` |
+| Windows | `msi/Buonarroti_<ver>_x64_en-US.msi`, `nsis/Buonarroti_<ver>_x64-setup.exe` |
+| Linux | `deb/`, `rpm/`, `appimage/Buonarroti_<ver>_amd64.AppImage` |
 
-The macOS build is **unsigned** — on first launch Gatekeeper blocks it.
-Right-click → Open, or `xattr -cr "src-tauri/target/release/bundle/macos/HeliosGen.app"`.
+Unsigned macOS builds are blocked by Gatekeeper on first launch: right-click and
+choose **Open**, or run
+`xattr -cr "src-tauri/target/release/bundle/macos/Buonarroti.app"`.
 
-## Develop (hot reload)
+## Develop
 
 ```bash
-npm run desktop:dev
+pnpm desktop:dev
 ```
 
-Runs `next dev` and `tauri dev` together. The first run compiles the Rust shell
-(~1–2 min).
+This runs `next dev` and `tauri dev` together, with hot reload. The first run
+compiles the Rust shell, which takes a minute or two. To work on the web UI
+alone, `pnpm dev` serves it at <http://localhost:3000>.
 
-See [`DESKTOP.md`](DESKTOP.md) for architecture, data locations, and signing &
-notarization.
+[`DESKTOP.md`](DESKTOP.md) covers the architecture, data locations, the
+HeliosGen data migration, and signing and notarization.
 
----
+## Contributing
 
-# 🤝 Contributions
+Issues and pull requests are welcome at
+[bubb4rd/buonarroti](https://github.com/bubb4rd/buonarroti).
 
-Contributions are welcome.
+## Credits and license
 
-If you find a bug, have an idea, or want to improve HeliosGen:
-- Open an issue
-- Submit a pull request
-- Share feedback or feature requests
+Buonarroti is a fork of [HeliosGen](https://github.com/SegFault42/HeliosGen) by
+SegFault42, and builds on its generation pipeline, workflow canvas and desktop
+shell. Thank you to its author and contributors.
 
-All contributions are appreciated.
-
----
-
-# 📄 License
-
-MIT License
-
----
-
-<p align="center">
-  Built for creators building the future of AI workflows.
-</p>
-
+HeliosGen's README declares the MIT License, but neither the upstream repository
+nor this one currently ships a `LICENSE` file. This fork is offered under the
+same MIT terms, with attribution to the HeliosGen authors retained.

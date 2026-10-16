@@ -4,17 +4,15 @@ import { MessageSquare, Image, Film, Sparkles, Bot, Clapperboard, StickyNote } f
 
 export type NodeCategory = "generators" | "resources";
 
-export const NODE_META: Record<
-  string,
-  { accent: string; bg: string; bigIcon: React.ReactNode }
-> = {
-  promptNode:         { accent: "#4ade80", bg: "#052e16",  bigIcon: <MessageSquare size={18} strokeWidth={1.7} /> },
-  imageInputNode:     { accent: "#fb923c", bg: "#431407",  bigIcon: <Image         size={18} strokeWidth={1.7} /> },
-  videoInputNode:     { accent: "#60a5fa", bg: "#0c1a3b",  bigIcon: <Film          size={18} strokeWidth={1.7} /> },
-  generateNode:       { accent: "#2DD4BF", bg: "#001f1f",  bigIcon: <Sparkles      size={18} strokeWidth={1.7} /> },
-  assistantNode:      { accent: "#FBBF24", bg: "#1c1000",  bigIcon: <Bot           size={18} strokeWidth={1.7} /> },
-  videoGeneratorNode: { accent: "#5EEAD4", bg: "#042f2e",  bigIcon: <Clapperboard  size={18} strokeWidth={1.7} /> },
-  commentNode:        { accent: "#FACC15", bg: "#2a2005",  bigIcon: <StickyNote    size={18} strokeWidth={1.7} /> },
+/** Per-type accent (a categorical handle pigment from globals.css) + picker icon. */
+export const NODE_META: Record<string, { accent: string; bigIcon: React.ReactNode }> = {
+  promptNode:         { accent: "var(--handle-prompt)",    bigIcon: <MessageSquare size={18} strokeWidth={1.7} /> },
+  imageInputNode:     { accent: "var(--handle-image)",     bigIcon: <Image         size={18} strokeWidth={1.7} /> },
+  videoInputNode:     { accent: "var(--handle-video)",     bigIcon: <Film          size={18} strokeWidth={1.7} /> },
+  generateNode:       { accent: "var(--handle-image)",     bigIcon: <Sparkles      size={18} strokeWidth={1.7} /> },
+  assistantNode:      { accent: "var(--handle-assistant)", bigIcon: <Bot           size={18} strokeWidth={1.7} /> },
+  videoGeneratorNode: { accent: "var(--handle-video)",     bigIcon: <Clapperboard  size={18} strokeWidth={1.7} /> },
+  commentNode:        { accent: "var(--handle-audio)",     bigIcon: <StickyNote    size={18} strokeWidth={1.7} /> },
 };
 
 export const NODES: Array<{
@@ -37,7 +35,7 @@ export const NODES: Array<{
         </svg>
       ),
       label: "Assistant",
-      description: "Text-to-text LLM node",
+      description: "Rewrites and refines your text",
     },
     {
       type: "videoGeneratorNode",
@@ -50,7 +48,7 @@ export const NODES: Array<{
         </svg>
       ),
       label: "Video",
-      description: "Google Veo / Kling 3.0 · video generation",
+      description: "Make video from words and frames",
     },
     {
       type: "generateNode",
@@ -64,7 +62,7 @@ export const NODES: Array<{
         </svg>
       ),
       label: "Image",
-      description: "Nano Banana 2 · image generation",
+      description: "Make images from words and references",
     },
 
     /* ── Resources ──────────────────────────────────────────────────────────── */
@@ -78,7 +76,7 @@ export const NODES: Array<{
         </svg>
       ),
       label: "Text",
-      description: "Standalone text source",
+      description: "A prompt you can wire into generators",
     },
     {
       type: "imageInputNode",
@@ -91,8 +89,8 @@ export const NODES: Array<{
           <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" />
         </svg>
       ),
-      label: "Reference Image",
-      description: "Upload or URL source",
+      label: "Reference image",
+      description: "Upload or paste a link",
     },
     {
       type: "videoInputNode",
@@ -105,7 +103,7 @@ export const NODES: Array<{
           <path d="M12 2v3M12 19v3M4 12H2M22 12h-2" strokeWidth="1.2" />
         </svg>
       ),
-      label: "Reference Video",
+      label: "Reference video",
       description: "Upload a video · max 100 MB",
     },
     {
@@ -118,9 +116,48 @@ export const NODES: Array<{
         </svg>
       ),
       label: "Comment",
-      description: "Free-floating sticky note — drag & resize anywhere",
+      description: "A sticky note you can place anywhere",
     },
   ];
+
+/** Sentence-case display name per node type; new nodes are labelled "Image generator #2". */
+export const NODE_LABELS: Record<string, string> = {
+  promptNode: "Text",
+  imageInputNode: "Image",
+  videoInputNode: "Video",
+  generateNode: "Image generator",
+  videoGeneratorNode: "Video generator",
+  assistantNode: "Assistant",
+  commentNode: "Comment",
+};
+
+/** Label for a new node of `type`: its display name plus the next per-type count. */
+export function nextNodeLabel(type: string, nodes: Array<{ type?: string | null }>): string {
+  const count = nodes.filter((n) => n.type === type).length + 1;
+  return `${NODE_LABELS[type] ?? type} #${count}`;
+}
+
+/** Icon tile tinted with a pigment (a node type's `NODE_META.accent`) — node menus and the empty canvas. */
+export function TypeBadge({
+  accent = "var(--ink-3)",
+  icon,
+  size = 32,
+}: { accent?: string; icon: React.ReactNode; size?: number }) {
+  return (
+    <span
+      className="flex shrink-0 items-center justify-center rounded-[var(--radius)]"
+      style={{
+        width: size,
+        height: size,
+        color: accent,
+        background: `color-mix(in srgb, ${accent} 10%, transparent)`,
+        boxShadow: `inset 0 0 0 1px color-mix(in srgb, ${accent} 22%, transparent)`,
+      }}
+    >
+      {icon}
+    </span>
+  );
+}
 
 const GEN_NODE_SETTINGS: Record<string, string[]> = {
   generateNode: ["model", "aspectRatio", "quality", "azureQuality", "azureResolution"],

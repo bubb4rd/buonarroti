@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useWorkflowStore, Space } from "./store";
 import { SYNC_NOW_EVENT, requestWorkflowSync } from "./workflowSyncBus";
 
@@ -19,8 +19,10 @@ export function useSpaceSync() {
   // Block all writes until localStorage has fully rehydrated. In Zustand v5,
   // persist rehydration is async — if we save before it completes, we'd write
   // the default empty state and delete all real spaces.
-  const [hydrated, setHydrated] = useState(
-    () => typeof window !== "undefined" && (useWorkflowStore.persist?.hasHydrated() ?? false)
+  const hydrated = useSyncExternalStore(
+    (onChange) => useWorkflowStore.persist?.onFinishHydration(onChange) ?? (() => {}),
+    () => useWorkflowStore.persist?.hasHydrated() ?? false,
+    () => false,
   );
 
   const timerRef       = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -32,18 +34,6 @@ export function useSpaceSync() {
   const dirtyRef       = useRef(false);
   // Set by requestWorkflowSync(); makes the next debounce-arm use IMMEDIATE_MS.
   const immediateRef   = useRef(false);
-
-  useEffect(() => {
-    if (hydrated) return;
-    // If hydration already finished before this effect ran (common in Next.js
-    // where SSR renders hasHydrated()=false but client is already hydrated)
-    if (useWorkflowStore.persist?.hasHydrated()) {
-      setHydrated(true);
-      return;
-    }
-    const unsub = useWorkflowStore.persist?.onFinishHydration(() => setHydrated(true));
-    return unsub;
-  }, [hydrated]);
 
   // ── Load from DB on mount (after hydration) ──────────────────────────────────
   useEffect(() => {

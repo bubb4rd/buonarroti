@@ -1,6 +1,6 @@
 //! Sidecar shim for the bundled Next.js server.
 //!
-//! Tauri puts `externalBin` sidecars in `HeliosGen.app/Contents/MacOS/`. macOS
+//! Tauri puts `externalBin` sidecars in `Buonarroti.app/Contents/MacOS/`. macOS
 //! treats anything it launches from a bundle's `MacOS/` dir as a GUI app and
 //! gives it its own Dock tile (tauri-apps/tauri#14014) — so a bare `node`
 //! sidecar shows a second, generic "node" icon beside the app.
@@ -11,7 +11,7 @@
 //! keeps the same PID, so both the Dock-hidden state and Tauri's
 //! `CommandChild::kill()` still apply to the Node process.
 //!
-//! The Tauri shell passes the Node binary's absolute path in `HELIOS_NODE_BIN`.
+//! The Tauri shell passes the Node binary's absolute path in `BUONARROTI_NODE_BIN`.
 
 #[cfg(target_os = "macos")]
 fn hide_from_dock() {
@@ -43,10 +43,10 @@ fn main() {
     #[cfg(target_os = "macos")]
     hide_from_dock();
 
-    let node = match std::env::var_os("HELIOS_NODE_BIN") {
+    let node = match std::env::var_os("BUONARROTI_NODE_BIN") {
         Some(p) => p,
         None => {
-            eprintln!("[helios-node] HELIOS_NODE_BIN not set by the Tauri shell");
+            eprintln!("[buonarroti-node] BUONARROTI_NODE_BIN not set by the Tauri shell");
             std::process::exit(64);
         }
     };
@@ -57,7 +57,7 @@ fn main() {
         use std::os::unix::process::CommandExt;
         let err = std::process::Command::new(&node).args(&args).exec();
         eprintln!(
-            "[helios-node] failed to exec {}: {err}",
+            "[buonarroti-node] failed to exec {}: {err}",
             std::path::Path::new(&node).display()
         );
         std::process::exit(126);
@@ -68,7 +68,7 @@ fn main() {
         match std::process::Command::new(&node).args(&args).status() {
             Ok(status) => std::process::exit(status.code().unwrap_or(1)),
             Err(err) => {
-                eprintln!("[helios-node] failed to spawn node: {err}");
+                eprintln!("[buonarroti-node] failed to spawn node: {err}");
                 std::process::exit(126);
             }
         }

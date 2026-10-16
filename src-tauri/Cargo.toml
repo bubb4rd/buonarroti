@@ -1,13 +1,13 @@
 [package]
-name = "heliosgen-desktop"
+name = "buonarroti-desktop"
 version = "1.2.1"
-description = "HeliosGen desktop app"
-authors = ["HeliosGen"]
+description = "Buonarroti desktop app"
+authors = ["Buonarroti"]
 edition = "2021"
 rust-version = "1.77.2"
 
 [lib]
-name = "heliosgen_desktop_lib"
+name = "buonarroti_desktop_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

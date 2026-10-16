@@ -9,6 +9,8 @@ interface Message {
   content: string;
 }
 
+type ErrorCode = "credits" | "auth" | "invalid" | "upstream" | "rate_limited";
+
 // Models that use OpenAI-compatible chat/completions endpoint
 const OPENAI_COMPAT_ENDPOINTS: Record<string, string> = {
   "gemini-3-flash":  "https://api.kie.ai/gemini-3-flash/v1/chat/completions",
@@ -18,8 +20,74 @@ const OPENAI_COMPAT_ENDPOINTS: Record<string, string> = {
 
 const AZURE_API_VERSION = "2024-04-01-preview";
 
+const SSE_HEADERS = {
+  "Content-Type":      "text/event-stream",
+  "Cache-Control":     "no-cache, no-transform",
+  "Connection":        "keep-alive",
+  "X-Accel-Buffering": "no",
+};
+
+function jsonError(status: number, error: string, code?: ErrorCode) {
+  return new Response(JSON.stringify(code ? { error, code } : { error }), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+/** Map an upstream failure to a calm, actionable message. Raw bodies are logged, never returned. */
+function upstreamError(provider: "kie.ai" | "Azure", status: number) {
+  if (status === 401 || status === 403) {
+    return jsonError(401, `${provider} did not accept your API key. Check it in Settings, then retry.`, "auth");
+  }
+  if (status === 402) {
+    return jsonError(402, `${provider} is out of credits. Top up, then retry. Your message is saved.`, "credits");
+  }
+  if (status === 429) {
+    return jsonError(429, `${provider} is busy right now. Wait a moment, then retry.`, "rate_limited");
+  }
+  if (status === 400 || status === 404 || status === 422) {
+    return jsonError(400, `${provider} could not handle this request. Try another model, then retry.`, "invalid");
+  }
+  return jsonError(502, `${provider} had a problem answering. Try again in a moment.`, "upstream");
+}
+
+async function failFromUpstream(provider: "kie.ai" | "Azure", res: Response) {
+  const body = await res.text().catch(() => "");
+  console.error(`[assistant] ${provider} upstream error`, res.status, body.slice(0, 500));
+  let status = res.status;
+  // kie.ai sometimes answers HTTP 200 with a JSON envelope carrying the real status.
+  if (res.ok) {
+    status = 502;
+    try {
+      const parsed: unknown = JSON.parse(body);
+      if (parsed && typeof parsed === "object" && "code" in parsed) {
+        const code = Number(parsed.code);
+        if (Number.isFinite(code) && code >= 400) status = code;
+      }
+    } catch {
+      // not JSON: generic upstream failure
+    }
+  }
+  return upstreamError(provider, status);
+}
+
+async function forward(provider: "kie.ai" | "Azure", req: NextRequest, url: string, init: RequestInit) {
+  let upstream: Response;
+  try {
+    upstream = await fetch(url, { ...init, method: "POST", cache: "no-store", signal: req.signal });
+  } catch (err) {
+    if (err instanceof Error && err.name === "AbortError") return new Response(null, { status: 499 });
+    console.error(`[assistant] ${provider} unreachable`, err instanceof Error ? err.message : err);
+    return jsonError(502, `Could not reach ${provider}. Check your connection, then retry.`, "upstream");
+  }
+  // A JSON body on a "successful" response is an error envelope, not a stream.
+  const isJson = upstream.headers.get("content-type")?.includes("application/json");
+  if (!upstream.ok || !upstream.body || isJson) return failFromUpstream(provider, upstream);
+  return new Response(upstream.body, { headers: SSE_HEADERS });
+}
+
 export async function POST(req: NextRequest) {
-  const body = (await req.json()) as {
+  let body: {
     messages?: Message[];
     prompt?: string;
     systemPrompt?: string;
@@ -28,12 +96,17 @@ export async function POST(req: NextRequest) {
     azureDeployment?: string;
     azureModelName?: string;
   };
+  try {
+    body = await req.json();
+  } catch {
+    return jsonError(400, "The request was not valid JSON.", "invalid");
+  }
 
   const model = body.model ?? "claude-sonnet-4-6";
 
   let messages: Message[];
 
-  if (body.messages && body.messages.length > 0) {
+  if (Array.isArray(body.messages) && body.messages.length > 0) {
     messages = body.messages;
   } else if (body.prompt?.trim()) {
     messages = [];
@@ -43,20 +116,14 @@ export async function POST(req: NextRequest) {
     }
     messages.push({ role: "user", content: body.prompt.trim() });
   } else {
-    return new Response(JSON.stringify({ error: "messages or prompt is required" }), {
-      status: 400,
-      headers: { "Content-Type": "application/json" },
-    });
+    return jsonError(400, "Write a message first.", "invalid");
   }
 
   // ── Azure Auto (model-router) ──────────────────────────────────────────────
   if (model === "azure-auto") {
     const azureKey = await getAzureToken(req);
     if (!azureKey) {
-      return new Response(
-        JSON.stringify({ error: "No Azure API key configured. Add one in Settings." }),
-        { status: 401, headers: { "Content-Type": "application/json" } }
-      );
+      return jsonError(401, "No Azure API key yet. Add one in Settings, then retry.", "auth");
     }
     // Normalise: strip trailing slashes and any /openai suffix users may have pasted
     const endpoint = (body.azureEndpoint ?? "")
@@ -66,16 +133,10 @@ export async function POST(req: NextRequest) {
     const deployment  = (body.azureDeployment || "auto-model").trim();
     const modelName   = (body.azureModelName  || "model-router").trim();
     if (!endpoint) {
-      return new Response(
-        JSON.stringify({ error: "Azure base URL not configured. Add it in Settings → API Keys." }),
-        { status: 400, headers: { "Content-Type": "application/json" } }
-      );
+      return jsonError(400, "Azure base URL is not set. Add it in Settings → API keys, then retry.", "invalid");
     }
     const url = `${endpoint}/openai/deployments/${deployment}/chat/completions?api-version=${AZURE_API_VERSION}`;
-    console.log("[azure-auto] POST", url.replace(/api-version=.*/, "api-version=…"));
-    const upstream = await fetch(url, {
-      method: "POST",
-      cache: "no-store",
+    return forward("Azure", req, url, {
       headers: { "api-key": azureKey, "Content-Type": "application/json" },
       body: JSON.stringify({
         model: modelName,
@@ -88,87 +149,38 @@ export async function POST(req: NextRequest) {
         presence_penalty: 0,
       }),
     });
-    if (!upstream.ok) {
-      const errText = await upstream.text();
-      // Extract human-readable message from Azure error envelope
-      let errorMsg = errText;
-      try {
-        const parsed = JSON.parse(errText);
-        errorMsg = parsed?.error?.message ?? parsed?.message ?? errText;
-      } catch { /* use raw text */ }
-      console.error("[azure-auto] upstream error", upstream.status, errorMsg);
-      return new Response(
-        JSON.stringify({ error: `Azure ${upstream.status}: ${errorMsg}` }),
-        { status: upstream.status, headers: { "Content-Type": "application/json" } }
-      );
-    }
-    return new Response(upstream.body, {
-      headers: {
-        "Content-Type":      "text/event-stream",
-        "Cache-Control":     "no-cache, no-transform",
-        "Connection":        "keep-alive",
-        "X-Accel-Buffering": "no",
-      },
-    });
   }
 
   // ── Kie.ai models ─────────────────────────────────────────────────────────
   const apiKey = await getKieToken(req);
   if (!apiKey) {
-    return new Response(
-      JSON.stringify({ error: "No Kie.ai API key configured. Add one in Settings." }),
-      { status: 401, headers: { "Content-Type": "application/json" } }
-    );
+    return jsonError(401, "No kie.ai API key yet. Add one in Settings, then retry.", "auth");
   }
 
+  const headers = { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" };
   const openaiEndpoint = OPENAI_COMPAT_ENDPOINTS[model];
 
-  const upstream = openaiEndpoint
-    ? await fetch(openaiEndpoint, {
-        method: "POST",
-        cache: "no-store",
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          messages: messages.map(m => ({
-            role: m.role,
-            content: [{ type: "text", text: m.content }],
-          })),
-          stream: true,
-        }),
-      })
-    : await fetch("https://api.kie.ai/claude/v1/messages", {
-        method: "POST",
-        cache: "no-store",
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model,
-          messages,
-          stream: true,
-          thinkingFlag: true,
-          max_tokens: 4096,
-        }),
-      });
-
-  if (!upstream.ok) {
-    const errText = await upstream.text();
-    return new Response(JSON.stringify({ error: errText }), {
-      status: upstream.status,
-      headers: { "Content-Type": "application/json" },
+  if (openaiEndpoint) {
+    return forward("kie.ai", req, openaiEndpoint, {
+      headers,
+      body: JSON.stringify({
+        messages: messages.map(m => ({
+          role: m.role,
+          content: [{ type: "text", text: m.content }],
+        })),
+        stream: true,
+      }),
     });
   }
 
-  return new Response(upstream.body, {
-    headers: {
-      "Content-Type":       "text/event-stream",
-      "Cache-Control":      "no-cache, no-transform",
-      "Connection":         "keep-alive",
-      "X-Accel-Buffering":  "no",
-    },
+  return forward("kie.ai", req, "https://api.kie.ai/claude/v1/messages", {
+    headers,
+    body: JSON.stringify({
+      model,
+      messages,
+      stream: true,
+      thinkingFlag: true,
+      max_tokens: 4096,
+    }),
   });
 }

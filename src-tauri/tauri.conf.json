@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "HeliosGen",
+  "productName": "Buonarroti",
   "version": "1.2.1",
-  "identifier": "cash.sdd.helios.desktop",
+  "identifier": "app.buonarroti.desktop",
   "build": {
     "beforeDevCommand": "node scripts/desktop/build-server.mjs --dev",
     "beforeBuildCommand": "node scripts/desktop/build-server.mjs",
@@ -12,7 +12,8 @@
     "withGlobalTauri": false,
     "windows": [
       {
-        "title": "HeliosGen",
+        "label": "main",
+        "title": "Buonarroti",
         "width": 1400,
         "height": 900,
         "minWidth": 900,
@@ -20,7 +21,14 @@
         "resizable": true,
         "fullscreen": false,
         "url": "index.html",
-        "dragDropEnabled": false
+        "dragDropEnabled": false,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
+        "trafficLightPosition": {
+          "x": 18,
+          "y": 22
+        },
+        "backgroundColor": "#f5f2eb"
       }
     ],
     "security": {
@@ -38,14 +46,14 @@
       "icons/icon.ico"
     ],
     "externalBin": [
-      "binaries/helios-node"
+      "binaries/buonarroti-node"
     ],
     "resources": [
       "server/**/*"
     ],
     "category": "GraphicsAndDesign",
-    "shortDescription": "Build AI image & video pipelines visually.",
-    "longDescription": "HeliosGen is a local-first visual workflow builder for AI image and video generation. All data stays on your machine.",
+    "shortDescription": "Make images and film from your words.",
+    "longDescription": "Buonarroti is a quiet desktop studio for making images and film from your words. Build workflows on an open canvas, talk ideas through with the assistant, and keep everything you make in one gallery. Your work stays on your machine.",
     "macOS": {
       "minimumSystemVersion": "10.15",
       "entitlements": "entitlements.plist",

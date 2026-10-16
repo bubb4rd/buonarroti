@@ -1,4 +1,5 @@
 use std::net::{TcpListener, TcpStream};
+use std::path::Path;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
@@ -113,6 +114,62 @@ fn wait_for_server(port: u16, timeout: Duration) -> bool {
     false
 }
 
+/// Identifier the app shipped under while it was HeliosGen. Its app-data dir is
+/// a sibling of ours (same platform base dir), so we can find it from ours.
+const LEGACY_IDENTIFIER: &str = "cash.sdd.helios.desktop";
+
+/// Copy `src` into `dst` recursively, leaving any file that already exists in
+/// `dst` untouched. Returns the number of files copied.
+fn copy_dir_recursive(src: &Path, dst: &Path) -> std::io::Result<u64> {
+    std::fs::create_dir_all(dst)?;
+    let mut copied = 0;
+    for entry in std::fs::read_dir(src)? {
+        let entry = entry?;
+        let from = entry.path();
+        let to = dst.join(entry.file_name());
+        if entry.file_type()?.is_dir() {
+            copied += copy_dir_recursive(&from, &to)?;
+        } else if !to.exists() {
+            std::fs::copy(&from, &to)?;
+            copied += 1;
+        }
+    }
+    Ok(copied)
+}
+
+/// One-time carry-over of a HeliosGen install's data (guest.db, generated
+/// media) into Buonarroti's app-data dir. Runs only while our dir has no
+/// `guest.db`; the legacy dir is never modified or deleted. Failures are
+/// logged and the app starts with whatever it has.
+fn migrate_legacy_data(data_dir: &Path) {
+    if data_dir.join("guest.db").exists() {
+        return;
+    }
+    let Some(legacy_dir) = data_dir.parent().map(|p| p.join(LEGACY_IDENTIFIER)) else {
+        return;
+    };
+    if !legacy_dir.is_dir() {
+        return;
+    }
+    eprintln!(
+        "[tauri] copying data from {} to {}",
+        legacy_dir.display(),
+        data_dir.display()
+    );
+    match copy_dir_recursive(&legacy_dir, data_dir) {
+        Ok(n) => eprintln!("[tauri] data migration done: {n} file(s) copied"),
+        Err(err) => eprintln!("[tauri] data migration failed: {err}"),
+    }
+}
+
+/// The web UI treats `?desktop=1` on its first URL as the desktop signal (in
+/// addition to `window.__TAURI_INTERNALS__`).
+fn with_desktop_flag(url: &str) -> Option<tauri::Url> {
+    let mut parsed: tauri::Url = url.parse().ok()?;
+    parsed.query_pairs_mut().append_pair("desktop", "1");
+    Some(parsed)
+}
+
 fn start_server(app: &AppHandle, port: u16) -> Result<(), Box<dyn std::error::Error>> {
     // Bundled: <resources>/server/server.js  (staged by scripts/desktop/build-server.mjs)
     let server_entry = app
@@ -120,6 +177,7 @@ fn start_server(app: &AppHandle, port: u16) -> Result<(), Box<dyn std::error::Er
         .resolve("server/server.js", tauri::path::BaseDirectory::Resource)?;
 
     let data_dir = app.path().app_data_dir()?;
+    migrate_legacy_data(&data_dir);
     let media_dir = data_dir.join("generated");
     std::fs::create_dir_all(&media_dir)?;
 
@@ -130,7 +188,7 @@ fn start_server(app: &AppHandle, port: u16) -> Result<(), Box<dyn std::error::Er
 
     // The Node runtime ships as a resource, not the sidecar — a binary launched
     // from Contents/MacOS/ gets its own macOS Dock tile (tauri-apps/tauri#14014).
-    // The `helios-node` sidecar is a shim that hides itself from the Dock and
+    // The `buonarroti-node` sidecar is a shim that hides itself from the Dock and
     // then exec's this.
     let node_rel = if cfg!(windows) {
         "server/node-bin/node.exe"
@@ -143,7 +201,7 @@ fn start_server(app: &AppHandle, port: u16) -> Result<(), Box<dyn std::error::Er
 
     let mut cmd = app
         .shell()
-        .sidecar("helios-node")?
+        .sidecar("buonarroti-node")?
         .current_dir(server_dir)
         .args([
             "--disable-warning=ExperimentalWarning".to_string(), // node:sqlite
@@ -151,13 +209,13 @@ fn start_server(app: &AppHandle, port: u16) -> Result<(), Box<dyn std::error::Er
             "./sidecar-guard.js".to_string(),
             server_entry.to_string_lossy().to_string(),
         ])
-        .env("HELIOS_NODE_BIN", node_bin.to_string_lossy().to_string())
+        .env("BUONARROTI_NODE_BIN", node_bin.to_string_lossy().to_string())
         .env("PATH", resolve_user_path())
         .env("PORT", port.to_string())
         .env("HOSTNAME", "127.0.0.1")
         .env("NODE_ENV", "production")
-        .env("HELIOS_DATA_DIR", data_dir.to_string_lossy().to_string())
-        .env("HELIOS_MEDIA_DIR", media_dir.to_string_lossy().to_string());
+        .env("BUONARROTI_DATA_DIR", data_dir.to_string_lossy().to_string())
+        .env("BUONARROTI_MEDIA_DIR", media_dir.to_string_lossy().to_string());
 
     // codex-imagegen is spawned from inside the Next.js server with the
     // sidecar's env, so a .zshrc override like CODEX_IMAGEGEN_MODEL has to be
@@ -207,9 +265,9 @@ pub fn run() {
 
             // In `tauri dev` we point at an externally-run `next dev` instead of
             // spawning the bundled sidecar (which only exists after a build).
-            if let Ok(dev_url) = std::env::var("HELIOS_DEV_URL") {
+            if let Ok(dev_url) = std::env::var("BUONARROTI_DEV_URL") {
                 if let Some(window) = handle.get_webview_window("main") {
-                    if let Ok(parsed) = dev_url.parse() {
+                    if let Some(parsed) = with_desktop_flag(&dev_url) {
                         let _ = window.navigate(parsed);
                     }
                 }
@@ -225,7 +283,7 @@ pub fn run() {
                     return;
                 }
                 if let Some(window) = handle.get_webview_window("main") {
-                    if let Ok(parsed) = format!("http://127.0.0.1:{port}/").parse() {
+                    if let Some(parsed) = with_desktop_flag(&format!("http://127.0.0.1:{port}/")) {
                         let _ = window.navigate(parsed);
                     }
                 }
@@ -234,7 +292,7 @@ pub fn run() {
             Ok(())
         })
         .build(tauri::generate_context!())
-        .expect("error while running HeliosGen")
+        .expect("error while running Buonarroti")
         .run(|app, event| {
             if let RunEvent::Exit = event {
                 kill_sidecar(app);

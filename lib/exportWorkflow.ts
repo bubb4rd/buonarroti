@@ -11,7 +11,9 @@
 import { makeZip, type ZipEntry } from "./makeZip";
 import type { Space } from "./store";
 
-export const WORKFLOW_FORMAT = "heliosgen-workflow";
+export const WORKFLOW_FORMAT = "buonarroti-workflow";
+/** Older export formats the importer still accepts (pre-Buonarroti HeliosGen exports). */
+export const LEGACY_WORKFLOW_FORMATS: readonly string[] = ["heliosgen-workflow"];
 export const WORKFLOW_FORMAT_VERSION = 1;
 
 const ASSET_PREFIX = "assets/";

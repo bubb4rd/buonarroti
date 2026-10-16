@@ -1,5 +1,5 @@
 // Runs `next dev` and `tauri dev` together for desktop development.
-// The Tauri shell reads HELIOS_DEV_URL and just points its window there.
+// The Tauri shell reads BUONARROTI_DEV_URL and just points its window there.
 
 import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
@@ -7,7 +7,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
-const DEV_URL = process.env.HELIOS_DEV_URL || "http://localhost:3000";
+const DEV_URL = process.env.BUONARROTI_DEV_URL || "http://localhost:3000";
 const APP_VERSION = JSON.parse(
   readFileSync(join(ROOT, "src-tauri", "tauri.conf.json"), "utf8"),
 ).version;
@@ -47,4 +47,4 @@ const tauriBin = join(
   ".bin",
   process.platform === "win32" ? "tauri.cmd" : "tauri",
 );
-launch("tauri", tauriBin, ["dev"], { HELIOS_DEV_URL: DEV_URL });
+launch("tauri", tauriBin, ["dev"], { BUONARROTI_DEV_URL: DEV_URL });

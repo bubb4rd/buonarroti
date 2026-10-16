@@ -2,29 +2,26 @@
 
 import * as React from "react";
 import Link from "next/link";
-import Image from "next/image";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useWorkflowStore } from "@/lib/store";
-import { useChatSessionStore } from "@/lib/chatSessionStore";
-import { useFolderStore } from "@/lib/folderStore";
+import { useChatSessionStore, type ChatSession } from "@/lib/chatSessionStore";
+import { useFolderStore, type Folder as FolderT } from "@/lib/folderStore";
 import {
   Workflow,
   Image as ImageIcon,
-  Video as VideoIcon,
-  Package,
+  Clapperboard,
   MessageSquare,
   Settings,
   MoreHorizontal,
-  Bot,
-  Pencil,
   Trash2,
-  Star,
   Folder,
   FolderOpen,
   FolderPlus,
   LayoutGrid,
   ChevronRight,
-  ChevronDown,
+  SquarePen,
+  SwatchBook,
+  type LucideIcon,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -34,139 +31,49 @@ import {
   SidebarFooter,
   SidebarHeader,
   SidebarTrigger,
+  useSidebar,
 } from "@/components/ui/sidebar";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import {
-  Avatar,
-  AvatarFallback,
-} from "@/components/ui/avatar";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Kbd } from "@/components/ui/kbd";
+import { Mark, Wordmark } from "@/components/brand/Mark";
 
-// ── Deterministic pixel-art avatar ───────────────────────────────────────────
-function fnv1a(str: string): number {
-  let h = 2166136261;
-  for (let i = 0; i < str.length; i++) {
-    h ^= str.charCodeAt(i);
-    h = Math.imul(h, 16777619) >>> 0;
-  }
-  return h;
-}
-
-function lcg(seed: number) {
-  let s = seed >>> 0;
-  return () => {
-    s = (Math.imul(s, 1664525) + 1013904223) >>> 0;
-    return s / 0xffffffff;
-  };
-}
-
-function PixelAvatar({ seed, size = 36 }: { seed: string; size?: number }) {
-  const rand = lcg(fnv1a(seed || "guest"));
-  const hue1 = Math.floor(rand() * 360);
-  const hue2 = (hue1 + 100 + Math.floor(rand() * 120)) % 360;
-
-  const palette = [
-    `hsl(${hue1}, 22%, 10%)`,  // 0 = bg
-    `hsl(${hue1}, 68%, 58%)`,  // 1 = primary
-    `hsl(${hue2}, 62%, 48%)`,  // 2 = secondary
-    `hsl(${hue1}, 18%, 5%)`,   // 3 = dark
-  ];
-
-  const ROWS = 8, COLS = 8, HALF = 4;
-  const cells: number[][] = Array.from({ length: ROWS }, () => {
-    const row = new Array(COLS).fill(0);
-    for (let c = 0; c < HALF; c++) {
-      const v = Math.floor(rand() * 4);
-      row[c] = v;
-      row[COLS - 1 - c] = v;
-    }
-    return row;
-  });
-
-  const px = size / COLS;
-
-  return (
-    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}
-      style={{ display: "block", imageRendering: "pixelated" }}>
-      <rect width={size} height={size} fill={palette[0]} />
-      {cells.flatMap((row, r) =>
-        row.map((v, c) =>
-          v === 0 ? null : (
-            <rect key={`${r}-${c}`} x={c * px} y={r * px} width={px} height={px} fill={palette[v]} />
-          )
-        )
-      )}
-    </svg>
-  );
-}
-
-// ── GitHub buttons ────────────────────────────────────────────────────────────
-function GitHubIcon() {
-  return (
-    <svg viewBox="0 0 438.549 438.549" className="size-4 shrink-0">
-      <path fill="currentColor" d="M409.132 114.573c-19.608-33.596-46.205-60.194-79.798-79.8-33.598-19.607-70.277-29.408-110.063-29.408-39.781 0-76.472 9.804-110.063 29.408-33.596 19.605-60.192 46.204-79.8 79.8C9.803 148.168 0 184.854 0 224.63c0 47.78 13.94 90.745 41.827 128.906 27.884 38.164 63.906 64.572 108.063 79.227 5.14.954 8.945.283 11.419-1.996 2.475-2.282 3.711-5.14 3.711-8.562 0-.571-.049-5.708-.144-15.417a2549.81 2549.81 0 01-.144-25.406l-6.567 1.136c-4.187.767-9.469 1.092-15.846 1-6.374-.089-12.991-.757-19.842-1.999-6.854-1.231-13.229-4.086-19.13-8.559-5.898-4.473-10.085-10.328-12.56-17.556l-2.855-6.57c-1.903-4.374-4.899-9.233-8.992-14.559-4.093-5.331-8.232-8.945-12.419-10.848l-1.999-1.431c-1.332-.951-2.568-2.098-3.711-3.429-1.142-1.331-1.997-2.663-2.568-3.997-.572-1.335-.098-2.43 1.427-3.289 1.525-.859 4.281-1.276 8.28-1.276l5.708.853c3.807.763 8.516 3.042 14.133 6.851 5.614 3.806 10.229 8.754 13.846 14.842 4.38 7.806 9.657 13.754 15.846 17.847 6.184 4.093 12.419 6.136 18.699 6.136 6.28 0 11.704-.476 16.274-1.423 4.565-.952 8.848-2.383 12.847-4.285 1.713-12.758 6.377-22.559 13.988-29.41-10.848-1.14-20.601-2.857-29.264-5.14-8.658-2.286-17.605-5.996-26.835-11.14-9.235-5.137-16.896-11.516-22.985-19.126-6.09-7.614-11.088-17.61-14.987-29.979-3.901-12.374-5.852-26.648-5.852-42.826 0-23.035 7.52-42.637 22.557-58.817-7.044-17.318-6.379-36.732 1.997-58.24 5.52-1.715 13.706-.428 24.554 3.853 10.85 4.283 18.794 7.952 23.84 10.994 5.046 3.041 9.089 5.618 12.135 7.708 17.705-4.947 35.976-7.421 54.818-7.421s37.117 2.474 54.823 7.421l10.849-6.849c7.419-4.57 16.18-8.758 26.262-12.565 10.088-3.805 17.802-4.853 23.134-3.138 8.562 21.509 9.325 40.922 2.279 58.24 15.036 16.18 22.559 35.787 22.559 58.817 0 16.178-1.958 30.497-5.853 42.966-3.9 12.471-8.941 22.457-15.125 29.979-6.191 7.521-13.901 13.85-23.131 18.986-9.232 5.14-18.182 8.85-26.84 11.136-8.662 2.286-18.415 4.004-29.263 5.146 9.894 8.562 14.842 22.077 14.842 40.539v60.237c0 3.422 1.19 6.279 3.572 8.562 2.379 2.279 6.136 2.95 11.276 1.995 44.163-14.653 80.185-41.062 108.068-79.226 27.88-38.161 41.825-81.126 41.825-128.906-.01-39.771-9.818-76.454-29.414-110.049z" />
-    </svg>
-  );
-}
-
-function ForkIcon() {
-  return (
-    <svg viewBox="0 0 24 24" className="size-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="12" cy="18" r="3" /><circle cx="6" cy="6" r="3" /><circle cx="18" cy="6" r="3" />
-      <path d="M18 9v1a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V9" /><line x1="12" y1="12" x2="12" y2="15" />
-    </svg>
-  );
-}
-
-function fmtCount(n: number): string {
-  return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
-}
-
-function GitHubButtons() {
-  const [stats, setStats] = React.useState<{ stars: number; forks: number } | null>(null);
-
-  React.useEffect(() => {
-    fetch("https://api.github.com/repos/segfault42/HeliosGen")
-      .then(r => r.json())
-      .then(d => setStats({ stars: d.stargazers_count, forks: d.forks_count }))
-      .catch(() => {});
-  }, []);
-
-  const btnCls = "inline-flex shrink-0 items-center gap-1.5 rounded-md px-2.5 h-8 text-sm font-medium whitespace-nowrap transition-colors hover:bg-accent hover:text-accent-foreground text-white/60";
-
-  return (
-    <div className="group-data-[collapsible=icon]:hidden flex gap-1 justify-center px-2 pb-3">
-      <a href="https://github.com/segfault42/HeliosGen" target="_blank" rel="noreferrer" className={btnCls}>
-        <Star size={14} strokeWidth={1.8} />
-        {stats && <span className="text-xs text-muted-foreground tabular-nums">{fmtCount(stats.stars)}</span>}
-      </a>
-      <a href="https://github.com/segfault42/HeliosGen/fork" target="_blank" rel="noreferrer" className={btnCls}>
-        <ForkIcon />
-        {stats && <span className="text-xs text-muted-foreground tabular-nums">{fmtCount(stats.forks)}</span>}
-      </a>
-    </div>
-  );
-}
+const KIE_TOP_UP_URL = "https://kie.ai?ref=25abb3f2236cbff9780ab9c2f84479ec";
 
 // ── Module-level drag tracker (avoids stale closures across re-renders) ──────
 let _dragFolderId: string | null = null;
 
+/**
+ * Folder colours are user data, not chrome: a muted pigment set that reads on
+ * both Paper and Ink (DESIGN.md § Categorical colours).
+ */
 const FOLDER_COLORS: { color: string | null; label: string }[] = [
-  { color: null, label: "Default" },
-  { color: "#3B82F6", label: "Blue" },
-  { color: "#2DD4BF", label: "Cyan" },
-  { color: "#A855F7", label: "Purple" },
-  { color: "#EC4899", label: "Pink" },
-  { color: "#EF4444", label: "Red" },
-  { color: "#F97316", label: "Orange" },
-  { color: "#EAB308", label: "Yellow" },
-  { color: "#22C55E", label: "Green" },
+  { color: null, label: "None" },
+  { color: "#2d4db0", label: "Lapis" },
+  { color: "#b0442a", label: "Sanguine" },
+  { color: "#3b7a5a", label: "Verdigris" },
+  { color: "#a8741f", label: "Ochre" },
+  { color: "#7a5a3a", label: "Umber" },
+  { color: "#5b6b7a", label: "Slate" },
+  { color: "#a4506a", label: "Rose madder" },
+  { color: "#6a5a9a", label: "Violet" },
 ];
+
+/** Colours saved by the old palette, shown as their nearest pigment. */
+const LEGACY_FOLDER_COLORS: Record<string, string> = {
+  "#3b82f6": "#2d4db0", // blue → lapis
+  "#2dd4bf": "#5b6b7a", // cyan → slate
+  "#a855f7": "#6a5a9a", // purple → violet
+  "#ec4899": "#a4506a", // pink → rose madder
+  "#ef4444": "#b0442a", // red → sanguine
+  "#f97316": "#7a5a3a", // orange → umber
+  "#eab308": "#a8741f", // yellow → ochre
+  "#22c55e": "#3b7a5a", // green → verdigris
+};
+
+function folderColor(c: string | null | undefined): string | null {
+  if (!c) return null;
+  return LEGACY_FOLDER_COLORS[c.toLowerCase()] ?? c;
+}
 
 // ── Clean failed pending generations from localStorage + notify gallery page ──
 function cleanFailedJobs(folderId: string | null) {
@@ -185,10 +92,119 @@ function cleanFailedJobs(folderId: string | null) {
   window.dispatchEvent(new CustomEvent("clean-failed-jobs", { detail: { folderId } }));
 }
 
-// ── FolderRow — defined at module level so React never remounts it on parent re-renders ──
+function relTime(ts: number): string {
+  const s = Math.max(0, (Date.now() - ts) / 1000);
+  if (s < 60) return "now";
+  if (s < 3600) return `${Math.floor(s / 60)}m`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h`;
+  if (s < 86400 * 7) return `${Math.floor(s / 86400)}d`;
+  return new Date(ts).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+// ── Shared row styles ─────────────────────────────────────────────────────────
+const rowBase =
+  "group/row flex w-full items-center gap-2.5 rounded-[var(--radius-sm)] text-left select-none transition-colors duration-150";
+const rowState = (active: boolean) =>
+  active ? "bg-wash-strong text-ink" : "text-ink-2 hover:bg-wash hover:text-ink";
+
+/** A small icon action that appears on row hover (⋯, delete). */
+const rowAction =
+  "inline-flex size-5 shrink-0 items-center justify-center rounded-[var(--radius-xs)] text-ink-3 opacity-0 transition-opacity duration-150 group-hover/row:opacity-100 hover:bg-wash-strong hover:text-ink focus-visible:opacity-100";
+
+/** Running: an ink dot breathing. Unseen: a still lapis dot. */
+function ActivityDot({ generating, unseen }: { generating?: boolean; unseen?: boolean }) {
+  if (generating) {
+    return <span aria-label="Generating" className="size-1.5 shrink-0 animate-pulse rounded-full bg-ink-2" />;
+  }
+  if (unseen) {
+    return <span aria-label="New" className="size-1.5 shrink-0 rounded-full bg-lapis" />;
+  }
+  return null;
+}
+
+// ── Floating row menu (fixed-position to escape overflow clipping) ───────────
+function useRowMenu() {
+  const [pos, setPos] = React.useState<{ x: number; y: number } | null>(null);
+  const menuRef = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    if (!pos) return;
+    function onDown(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setPos(null);
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setPos(null);
+    }
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [pos]);
+
+  const openAtButton = (e: React.MouseEvent<HTMLElement>) => {
+    e.stopPropagation();
+    const r = e.currentTarget.getBoundingClientRect();
+    setPos({ x: r.left, y: r.bottom + 4 });
+  };
+  const openAtPointer = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setPos({ x: e.clientX, y: e.clientY });
+  };
+  return { pos, menuRef, openAtButton, openAtPointer, close: () => setPos(null) };
+}
+
+function RowMenu({
+  pos,
+  menuRef,
+  children,
+}: {
+  pos: { x: number; y: number };
+  menuRef: React.RefObject<HTMLDivElement | null>;
+  children: React.ReactNode;
+}) {
+  return (
+    <div
+      ref={menuRef}
+      role="menu"
+      onMouseDown={e => e.preventDefault()}
+      style={{ left: Math.min(pos.x, window.innerWidth - 200), top: Math.min(pos.y, window.innerHeight - 180) }}
+      className="fixed z-[9999] min-w-[184px] rounded-[var(--radius)] bg-surface-raised p-1 text-ink shadow-[var(--shadow-lg)] animate-in fade-in-0 zoom-in-[0.98] duration-150"
+    >
+      {children}
+    </div>
+  );
+}
+
+function MenuItem({
+  onClick,
+  danger,
+  children,
+}: {
+  onClick: (e: React.MouseEvent) => void;
+  danger?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      role="menuitem"
+      onClick={onClick}
+      className={cn(
+        "flex h-7 w-full items-center rounded-[var(--radius-sm)] px-2 text-left text-[13px] transition-colors duration-100",
+        danger ? "text-sanguine hover:bg-sanguine/10" : "text-ink hover:bg-wash-strong",
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
+// ── FolderRow — module level so React never remounts it on parent re-renders ──
 interface FolderRowProps {
-  folder: import("@/lib/folderStore").Folder;
-  allFolders: import("@/lib/folderStore").Folder[];
+  folder: FolderT;
+  allFolders: FolderT[];
   depth: number;
   expandedIds: Set<string>;
   selectedFolderId: string | null;
@@ -209,6 +225,9 @@ interface FolderRowProps {
   unseenFolderIds: string[];
 }
 
+const nameInputCls =
+  "min-w-0 flex-1 rounded-[var(--radius-xs)] bg-surface-raised px-1.5 py-0.5 text-[13px] text-ink shadow-[inset_0_0_0_1px_var(--rule-strong)] outline-none placeholder:text-ink-4 focus:shadow-[inset_0_0_0_1px_var(--lapis),var(--focus-ring)]";
+
 const FolderRow = React.memo(function FolderRow({
   folder, allFolders, depth, expandedIds, selectedFolderId,
   onToggleExpand, onSelect, onDelete, onRename, onColorChange, onMove,
@@ -216,40 +235,21 @@ const FolderRow = React.memo(function FolderRow({
   getCount, generatingFolderIds, unseenFolderIds,
 }: FolderRowProps) {
   const [drop, setDrop] = React.useState<"before" | "after" | "inside" | null>(null);
-  const [menuOpen, setMenuOpen] = React.useState(false);
-  const [menuPos, setMenuPos] = React.useState<{ x: number; y: number } | null>(null);
   const [isRenaming, setIsRenaming] = React.useState(false);
   const [renameValue, setRenameValue] = React.useState("");
-  const menuRef = React.useRef<HTMLDivElement>(null);
-  const btnRef = React.useRef<HTMLButtonElement>(null);
+  const menu = useRowMenu();
   const renameInputRef = React.useRef<HTMLInputElement>(null);
 
   // Focus rename input once it mounts
   React.useEffect(() => {
-    if (isRenaming) renameInputRef.current?.focus();
+    if (isRenaming) {
+      renameInputRef.current?.focus();
+      renameInputRef.current?.select();
+    }
   }, [isRenaming]);
 
-  // Close menu on click outside
-  React.useEffect(() => {
-    if (!menuOpen) return;
-    function handle(e: MouseEvent) {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setMenuOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", handle);
-    return () => document.removeEventListener("mousedown", handle);
-  }, [menuOpen]);
-
-  function openMenu(e: React.MouseEvent) {
-    e.stopPropagation();
-    const rect = btnRef.current!.getBoundingClientRect();
-    setMenuPos({ x: rect.right, y: rect.bottom + 4 });
-    setMenuOpen(true);
-  }
-
   function startRename() {
-    setMenuOpen(false);
+    menu.close();
     setRenameValue(folder.name);
     setIsRenaming(true);
   }
@@ -267,6 +267,8 @@ const FolderRow = React.memo(function FolderRow({
   const isCreatingHere = creatingInFolderId === folder.id;
   const isExpanded = expandedIds.has(folder.id);
   const isActive = selectedFolderId === folder.id;
+  const color = folderColor(folder.color);
+  const count = getCount(folder.id);
 
   function getPos(e: React.DragEvent<HTMLDivElement>): "before" | "after" | "inside" {
     const { top, height } = e.currentTarget.getBoundingClientRect();
@@ -284,13 +286,14 @@ const FolderRow = React.memo(function FolderRow({
     getCount, generatingFolderIds, unseenFolderIds,
   };
 
+  const indent = { paddingLeft: `${6 + depth * 14}px` };
+  const FolderGlyph = isActive ? FolderOpen : Folder;
+
   return (
     <React.Fragment>
-      {drop === "before" && (
-        <div style={{ height: 1, background: "#2DD4BF", margin: "1px 8px", borderRadius: 1, pointerEvents: "none" }} />
-      )}
+      {drop === "before" && <div className="pointer-events-none mx-2 h-px rounded-full bg-lapis" />}
       <div
-        draggable
+        draggable={!isRenaming}
         onDragStart={e => {
           _dragFolderId = folder.id;
           e.dataTransfer.effectAllowed = "move";
@@ -324,33 +327,35 @@ const FolderRow = React.memo(function FolderRow({
         }}
         onDragEnd={() => { _dragFolderId = null; setDrop(null); }}
         onClick={() => !isRenaming && onSelect(folder.id)}
+        onContextMenu={menu.openAtPointer}
+        style={indent}
         className={cn(
-          "group flex items-center gap-2 py-2 rounded-lg cursor-pointer transition-colors select-none",
-          isActive ? "bg-white/[0.07]" : "hover:bg-white/[0.04]",
+          rowBase, rowState(isActive),
+          "h-7 cursor-pointer pr-1.5 text-[13px]",
+          drop === "inside" && "shadow-[inset_0_0_0_1px_var(--lapis)] bg-lapis-soft",
         )}
-        style={{
-          paddingLeft: `${8 + depth * 14}px`,
-          paddingRight: "8px",
-          outline: drop === "inside" ? "1px solid rgba(45,212,191,0.7)" : "none",
-          outlineOffset: -1,
-        }}
       >
         {/* Expand toggle */}
         <button
           onClick={e => { e.stopPropagation(); onToggleExpand(folder.id); }}
-          style={{
-            width: 10, height: 10, display: "flex", alignItems: "center", justifyContent: "center",
-            flexShrink: 0, opacity: (hasChildren || isCreatingHere) ? 0.45 : 0,
-            pointerEvents: (hasChildren || isCreatingHere) ? "auto" : "none",
-            background: "none", border: "none", padding: 0, cursor: "pointer",
-          }}
+          aria-label={isExpanded ? "Collapse" : "Expand"}
+          tabIndex={hasChildren || isCreatingHere ? 0 : -1}
+          className={cn(
+            "-mr-1 inline-flex size-3.5 shrink-0 items-center justify-center text-ink-3 hover:text-ink",
+            hasChildren || isCreatingHere ? "" : "pointer-events-none opacity-0",
+          )}
         >
-          {isExpanded ? <ChevronDown size={10} color="white" /> : <ChevronRight size={10} color="white" />}
+          <ChevronRight
+            className={cn("size-3 transition-transform duration-150", isExpanded && "rotate-90")}
+            strokeWidth={2}
+          />
         </button>
 
-        {isActive
-          ? <FolderOpen size={13} className="shrink-0" style={{ color: folder.color ?? "rgba(255,255,255,0.70)" }} />
-          : <Folder size={13} className="shrink-0" style={{ color: folder.color ?? "rgba(255,255,255,0.35)" }} />}
+        <FolderGlyph
+          className={cn("size-[15px] shrink-0", !color && (isActive ? "text-ink-2" : "text-ink-3"))}
+          style={color ? { color } : undefined}
+          strokeWidth={1.75}
+        />
 
         {isRenaming ? (
           <input
@@ -363,163 +368,79 @@ const FolderRow = React.memo(function FolderRow({
             }}
             onBlur={confirmRename}
             onClick={e => e.stopPropagation()}
-            className="flex-1 bg-transparent text-[12px] text-white/90 outline-none border-b border-white/30 pb-0.5 min-w-0"
+            aria-label="Folder name"
+            className={nameInputCls}
           />
         ) : (
-          <span className={cn(
-            "flex-1 text-[12px] truncate leading-tight",
-            isActive ? "text-white/90" : "text-white/55",
-          )}>
-            {folder.name}
-          </span>
+          <span className="min-w-0 flex-1 truncate leading-tight">{folder.name}</span>
         )}
 
-        {!isRenaming && (() => { const c = getCount(folder.id); return c > 0 ? (
-          <span style={{ fontSize: 10, color: "rgba(255,255,255,0.25)", flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>
-            {c}
-          </span>
-        ) : null; })()}
-        {!isRenaming && isGenerating && (
-          <svg width="10" height="10" viewBox="0 0 10 10" style={{ flexShrink: 0, animation: "spin 0.9s linear infinite" }}>
-            <circle cx="5" cy="5" r="3.5" fill="none" stroke="rgba(45,212,191,0.2)" strokeWidth="1.5" />
-            <path d="M5 1.5A3.5 3.5 0 0 1 8.5 5" fill="none" stroke="url(#fg-spin)" strokeWidth="1.5" strokeLinecap="round" />
-            <defs>
-              <linearGradient id="fg-spin" x1="0" y1="0" x2="1" y2="0">
-                <stop offset="0%" stopColor="#3B82F6" />
-                <stop offset="100%" stopColor="#2DD4BF" />
-              </linearGradient>
-            </defs>
-          </svg>
+        {!isRenaming && <ActivityDot generating={isGenerating} unseen={hasUnseen} />}
+        {!isRenaming && count > 0 && (
+          <span className="shrink-0 text-[11.5px] tabular-nums text-ink-3 group-hover/row:hidden">{count}</span>
         )}
-        {!isRenaming && !isGenerating && hasUnseen && (
-          <span style={{
-            width: 6, height: 6, borderRadius: "50%", flexShrink: 0,
-            background: "linear-gradient(135deg, #3B82F6 0%, #2DD4BF 100%)",
-            boxShadow: "0 0 5px rgba(45,212,191,0.6)",
-          }} />
+        {!isRenaming && (
+          <button onClick={menu.openAtButton} aria-label={`${folder.name} options`} className={rowAction}>
+            <MoreHorizontal className="size-3.5" strokeWidth={1.75} />
+          </button>
         )}
-
-        {/* ⋯ context menu button */}
-        <button
-          ref={btnRef}
-          onClick={openMenu}
-          className="w-5 h-5 rounded flex items-center justify-center opacity-0 group-hover:opacity-100 text-white/35 hover:text-white/70 hover:bg-white/[0.08] transition-all shrink-0"
-        >
-          <MoreHorizontal size={12} />
-        </button>
       </div>
 
-      {/* Context menu — fixed-position to escape overflow:auto clipping */}
-      {menuOpen && menuPos && (
-        <div
-          ref={menuRef}
-          onMouseDown={e => e.preventDefault()}
-          style={{
-            position: "fixed",
-            left: menuPos.x,
-            top: menuPos.y,
-            transform: "translateX(-100%)",
-            zIndex: 9999,
-            background: "#16181f",
-            border: "1px solid rgba(255,255,255,0.09)",
-            borderRadius: 8,
-            padding: 4,
-            minWidth: 130,
-            boxShadow: "0 6px 24px rgba(0,0,0,0.6)",
-          }}
-        >
-          {/* Color swatches */}
-          <div style={{ padding: "6px 10px 6px", display: "flex", gap: 5, alignItems: "center", flexWrap: "wrap" }}>
-            {FOLDER_COLORS.map(({ color, label }) => {
-              const isSelected = color === null ? !folder.color : folder.color === color;
+      {menu.pos && (
+        <RowMenu pos={menu.pos} menuRef={menu.menuRef}>
+          <div className="type-label px-2 pt-1.5 pb-1">Colour</div>
+          <div className="flex flex-wrap items-center gap-1.5 px-2 pb-2">
+            {FOLDER_COLORS.map(({ color: c, label }) => {
+              const selected = c === null ? !color : color === c;
               return (
                 <button
                   key={label}
                   title={label}
-                  onClick={e => { e.stopPropagation(); setMenuOpen(false); onColorChange(folder.id, color); }}
-                  style={{
-                    width: 14, height: 14, borderRadius: "50%",
-                    background: color ?? "rgba(255,255,255,0.18)",
-                    border: isSelected ? "2px solid rgba(255,255,255,0.85)" : "2px solid transparent",
-                    outline: isSelected ? "1px solid rgba(0,0,0,0.4)" : "none",
-                    outlineOffset: -1,
-                    cursor: "pointer",
-                    padding: 0,
-                    flexShrink: 0,
-                    position: "relative",
-                  }}
+                  aria-label={label}
+                  aria-pressed={selected}
+                  onClick={e => { e.stopPropagation(); menu.close(); onColorChange(folder.id, c); }}
+                  style={c ? { background: c } : undefined}
+                  className={cn(
+                    "relative size-4 shrink-0 rounded-full transition-transform duration-100 hover:scale-110",
+                    c === null && "bg-wash-strong shadow-[inset_0_0_0_1px_var(--rule-strong)]",
+                    selected && "shadow-[0_0_0_2px_var(--surface-raised),0_0_0_3.5px_var(--ink-2)]",
+                  )}
                 >
-                  {color === null && (
-                    <svg width="10" height="10" viewBox="0 0 10 10" style={{ position: "absolute", inset: 0, margin: "auto", display: "block" }}>
-                      <line x1="2" y1="8" x2="8" y2="2" stroke="rgba(255,255,255,0.45)" strokeWidth="1.5" strokeLinecap="round" />
+                  {c === null && (
+                    <svg viewBox="0 0 16 16" className="absolute inset-0 size-4 text-ink-3" aria-hidden>
+                      <line x1="4.5" y1="11.5" x2="11.5" y2="4.5" stroke="currentColor" strokeWidth="1.25" strokeLinecap="round" />
                     </svg>
                   )}
                 </button>
               );
             })}
           </div>
-          <div style={{ height: 1, background: "rgba(255,255,255,0.07)", margin: "2px 0 4px" }} />
-          <button
-            onClick={e => { e.stopPropagation(); startRename(); }}
-            style={{
-              display: "block", width: "100%", textAlign: "left",
-              padding: "6px 10px", borderRadius: 5, fontSize: 12,
-              color: "rgba(255,255,255,0.72)", background: "none", border: "none", cursor: "pointer",
-            }}
-            onMouseEnter={e => (e.currentTarget.style.background = "rgba(255,255,255,0.06)")}
-            onMouseLeave={e => (e.currentTarget.style.background = "none")}
-          >
-            Rename
-          </button>
-          <button
-            onClick={e => { e.stopPropagation(); setMenuOpen(false); cleanFailedJobs(folder.id); }}
-            style={{
-              display: "block", width: "100%", textAlign: "left",
-              padding: "6px 10px", borderRadius: 5, fontSize: 12,
-              color: "rgba(255,255,255,0.72)", background: "none", border: "none", cursor: "pointer",
-            }}
-            onMouseEnter={e => (e.currentTarget.style.background = "rgba(255,255,255,0.06)")}
-            onMouseLeave={e => (e.currentTarget.style.background = "none")}
-          >
-            Clean failed jobs
-          </button>
-          <button
-            onClick={e => { e.stopPropagation(); setMenuOpen(false); onDelete(folder.id); }}
-            style={{
-              display: "block", width: "100%", textAlign: "left",
-              padding: "6px 10px", borderRadius: 5, fontSize: 12,
-              color: "rgba(248,113,113,0.85)", background: "none", border: "none", cursor: "pointer",
-            }}
-            onMouseEnter={e => (e.currentTarget.style.background = "rgba(248,113,113,0.08)")}
-            onMouseLeave={e => (e.currentTarget.style.background = "none")}
-          >
-            Delete
-          </button>
-        </div>
+          <div className="-mx-1 my-1 h-px bg-rule" />
+          <MenuItem onClick={e => { e.stopPropagation(); startRename(); }}>Rename</MenuItem>
+          <MenuItem onClick={e => { e.stopPropagation(); menu.close(); cleanFailedJobs(folder.id); }}>Clear failed jobs</MenuItem>
+          <div className="-mx-1 my-1 h-px bg-rule" />
+          <MenuItem danger onClick={e => { e.stopPropagation(); menu.close(); onDelete(folder.id); }}>Delete folder</MenuItem>
+        </RowMenu>
       )}
 
-      {drop === "after" && (
-        <div style={{ height: 1, background: "#2DD4BF", margin: "1px 8px", borderRadius: 1, pointerEvents: "none" }} />
-      )}
+      {drop === "after" && <div className="pointer-events-none mx-2 h-px rounded-full bg-lapis" />}
       {isExpanded && (hasChildren || isCreatingHere) && (
         <>
           {children.map(child => (
             <FolderRow key={child.id} folder={child} depth={depth + 1} {...sharedChildProps} />
           ))}
           {isCreatingHere && (
-            <div
-              className="flex items-center gap-2 py-1"
-              style={{ paddingLeft: `${8 + (depth + 1) * 14}px`, paddingRight: "8px" }}
-            >
-              <Folder size={13} className="shrink-0 text-white/40" />
+            <div className="flex h-7 items-center gap-2.5 pr-1.5" style={{ paddingLeft: `${6 + (depth + 1) * 14 + 14}px` }}>
+              <Folder className="size-[15px] shrink-0 text-ink-3" strokeWidth={1.75} />
               <input
                 ref={inputRef}
                 value={newFolderName}
                 onChange={e => onNameChange(e.target.value)}
                 onKeyDown={onNameKeyDown}
                 onBlur={onNameBlur}
-                placeholder="Folder name…"
-                className="flex-1 bg-transparent text-[12px] text-white/80 placeholder:text-white/25 outline-none border-b border-white/20 pb-0.5 min-w-0"
+                placeholder="Folder name"
+                aria-label="New folder name"
+                className={nameInputCls}
               />
             </div>
           )}
@@ -529,136 +450,157 @@ const FolderRow = React.memo(function FolderRow({
   );
 });
 
-// ── AllAssetsRow — "All assets" item with its own "..." menu ─────────────────
-interface AllAssetsRowProps {
+// ── AllAssetsRow — "All assets" with its own menu ────────────────────────────
+const AllAssetsRow = React.memo(function AllAssetsRow({
+  isActive, count, onSelect, isGenerating, hasUnseen,
+}: {
   isActive: boolean;
   count: number;
   onSelect: () => void;
   isGenerating?: boolean;
   hasUnseen?: boolean;
-}
-
-const AllAssetsRow = React.memo(function AllAssetsRow({ isActive, count, onSelect, isGenerating, hasUnseen }: AllAssetsRowProps) {
-  const [menuOpen, setMenuOpen] = React.useState(false);
-  const [menuPos, setMenuPos] = React.useState<{ x: number; y: number } | null>(null);
-  const menuRef = React.useRef<HTMLDivElement>(null);
-  const btnRef = React.useRef<HTMLButtonElement>(null);
-
-  React.useEffect(() => {
-    if (!menuOpen) return;
-    function handle(e: MouseEvent) {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setMenuOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", handle);
-    return () => document.removeEventListener("mousedown", handle);
-  }, [menuOpen]);
-
-  function openMenu(e: React.MouseEvent) {
-    e.stopPropagation();
-    const rect = btnRef.current!.getBoundingClientRect();
-    setMenuPos({ x: rect.right, y: rect.bottom + 4 });
-    setMenuOpen(true);
-  }
-
+}) {
+  const menu = useRowMenu();
   return (
     <React.Fragment>
       <div
         onClick={onSelect}
-        className={cn(
-          "group flex items-center gap-2 px-2 py-2 rounded-lg cursor-pointer transition-colors",
-          isActive ? "bg-white/[0.07]" : "hover:bg-white/[0.04]"
-        )}
+        onContextMenu={menu.openAtPointer}
+        className={cn(rowBase, rowState(isActive), "h-7 cursor-pointer pr-1.5 pl-[22px] text-[13px]")}
       >
-        <LayoutGrid size={13} className={cn("shrink-0", isActive ? "text-white/70" : "text-white/35")} />
-        <span className={cn(
-          "flex-1 text-[12px] truncate leading-tight",
-          isActive ? "text-white/90" : "text-white/55"
-        )}>
-          All assets
-        </span>
+        <LayoutGrid className={cn("size-[15px] shrink-0", isActive ? "text-ink-2" : "text-ink-3")} strokeWidth={1.75} />
+        <span className="min-w-0 flex-1 truncate leading-tight">All assets</span>
+        <ActivityDot generating={isGenerating} unseen={hasUnseen} />
         {count > 0 && (
-          <span style={{ fontSize: 10, color: "rgba(255,255,255,0.25)", flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>
-            {count}
-          </span>
+          <span className="shrink-0 text-[11.5px] tabular-nums text-ink-3 group-hover/row:hidden">{count}</span>
         )}
-        {isGenerating && (
-          <svg width="10" height="10" viewBox="0 0 10 10" style={{ flexShrink: 0, animation: "spin 0.9s linear infinite" }}>
-            <circle cx="5" cy="5" r="3.5" fill="none" stroke="rgba(45,212,191,0.2)" strokeWidth="1.5" />
-            <path d="M5 1.5A3.5 3.5 0 0 1 8.5 5" fill="none" stroke="url(#fg-spin-all)" strokeWidth="1.5" strokeLinecap="round" />
-            <defs>
-              <linearGradient id="fg-spin-all" x1="0" y1="0" x2="1" y2="0">
-                <stop offset="0%" stopColor="#3B82F6" />
-                <stop offset="100%" stopColor="#2DD4BF" />
-              </linearGradient>
-            </defs>
-          </svg>
-        )}
-        {!isGenerating && hasUnseen && (
-          <span style={{
-            width: 6, height: 6, borderRadius: "50%", flexShrink: 0,
-            background: "linear-gradient(135deg, #3B82F6 0%, #2DD4BF 100%)",
-            boxShadow: "0 0 5px rgba(45,212,191,0.6)",
-          }} />
-        )}
-        <button
-          ref={btnRef}
-          onClick={openMenu}
-          className="w-5 h-5 rounded flex items-center justify-center opacity-0 group-hover:opacity-100 text-white/35 hover:text-white/70 hover:bg-white/[0.08] transition-all shrink-0"
-        >
-          <MoreHorizontal size={12} />
+        <button onClick={menu.openAtButton} aria-label="All assets options" className={rowAction}>
+          <MoreHorizontal className="size-3.5" strokeWidth={1.75} />
         </button>
       </div>
-
-      {menuOpen && menuPos && (
-        <div
-          ref={menuRef}
-          onMouseDown={e => e.preventDefault()}
-          style={{
-            position: "fixed",
-            left: menuPos.x,
-            top: menuPos.y,
-            transform: "translateX(-100%)",
-            zIndex: 9999,
-            background: "#16181f",
-            border: "1px solid rgba(255,255,255,0.09)",
-            borderRadius: 8,
-            padding: 4,
-            minWidth: 130,
-            boxShadow: "0 6px 24px rgba(0,0,0,0.6)",
-          }}
-        >
-          <button
-            onClick={e => { e.stopPropagation(); setMenuOpen(false); cleanFailedJobs(null); }}
-            style={{
-              display: "block", width: "100%", textAlign: "left",
-              padding: "6px 10px", borderRadius: 5, fontSize: 12,
-              color: "rgba(255,255,255,0.72)", background: "none", border: "none", cursor: "pointer",
-            }}
-            onMouseEnter={e => (e.currentTarget.style.background = "rgba(255,255,255,0.06)")}
-            onMouseLeave={e => (e.currentTarget.style.background = "none")}
-          >
-            Clean failed jobs
-          </button>
-        </div>
+      {menu.pos && (
+        <RowMenu pos={menu.pos} menuRef={menu.menuRef}>
+          <MenuItem onClick={e => { e.stopPropagation(); menu.close(); cleanFailedJobs(null); }}>Clear failed jobs</MenuItem>
+        </RowMenu>
       )}
     </React.Fragment>
   );
 });
 
-// ── Static icons ──────────────────────────────────────────────────────────────
-function LogoIcon() {
-  return <Image src="/HG.svg" alt="Logo" width={26} height={26} />;
+// ── Primary nav row: full row when expanded, a tooltip'd square when collapsed ──
+function NavRow({
+  label,
+  icon: Icon,
+  href,
+  active,
+  onClick,
+  hint,
+}: {
+  label: string;
+  icon: LucideIcon;
+  href?: string;
+  active?: boolean;
+  onClick?: () => void;
+  hint?: React.ReactNode;
+}) {
+  const { state, isMobile } = useSidebar();
+  const collapsed = state === "collapsed" && !isMobile;
+  const cls = cn(
+    rowBase, rowState(!!active),
+    "h-[30px] px-2 text-[13.5px]",
+    "group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:size-9 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0",
+  );
+  const body = (
+    <>
+      <Icon className="size-4 shrink-0" strokeWidth={1.75} />
+      <span className="flex-1 truncate group-data-[collapsible=icon]:hidden">{label}</span>
+      {hint && <span className="group-data-[collapsible=icon]:hidden">{hint}</span>}
+    </>
+  );
+  const el = href
+    ? <Link href={href} aria-current={active ? "page" : undefined} aria-label={collapsed ? label : undefined} className={cls}>{body}</Link>
+    : <button type="button" onClick={onClick} aria-label={collapsed ? label : undefined} className={cls}>{body}</button>;
+
+  if (!collapsed) return el;
+  return (
+    <Tooltip>
+      <TooltipTrigger render={el} />
+      <TooltipContent side="right">{label}</TooltipContent>
+    </Tooltip>
+  );
 }
 
-function CreditIcon({ size = 12 }: { size?: number }) {
+function SectionHeader({ label, action }: { label: string; action?: React.ReactNode }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
-      stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
-      <circle cx="12" cy="12" r="9" />
-      <circle cx="12" cy="12" r="3.5" />
-    </svg>
+    <div className="flex h-7 shrink-0 items-center justify-between pr-1 pl-2">
+      <span className="text-[11.5px] text-ink-3">{label}</span>
+      {action}
+    </div>
+  );
+}
+
+const sectionAction =
+  "inline-flex size-6 items-center justify-center rounded-[var(--radius-sm)] text-ink-3 transition-colors duration-150 hover:bg-wash-strong hover:text-ink";
+
+// ── kie.ai status line ────────────────────────────────────────────────────────
+function KieStatus({ balance, onOpenSettings }: { balance: number | null; onOpenSettings: () => void }) {
+  const kieKeySet = useWorkflowStore((s) => s.kieKeySet);
+  const { state, isMobile } = useSidebar();
+  const collapsed = state === "collapsed" && !isMobile;
+
+  const connected = kieKeySet === true;
+  const text =
+    kieKeySet === false ? "kie.ai · add your key"
+    : kieKeySet === null ? "kie.ai · checking"
+    : balance !== null ? `kie.ai · connected · ${balance.toLocaleString()} credits`
+    : "kie.ai · connected";
+  const dot = (
+    <span
+      aria-hidden
+      className={cn(
+        "size-1.5 shrink-0 rounded-full",
+        kieKeySet === false ? "bg-ochre" : connected ? "bg-verdigris" : "bg-ink-4",
+      )}
+    />
+  );
+
+  const line = (
+    <button
+      type="button"
+      onClick={onOpenSettings}
+      aria-label={collapsed ? text : undefined}
+      className={cn(
+        "flex h-7 min-w-0 flex-1 items-center gap-2 rounded-[var(--radius-sm)] px-2 text-left text-[12px] text-ink-3 transition-colors duration-150 hover:bg-wash hover:text-ink-2",
+        "group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:size-9 group-data-[collapsible=icon]:flex-none group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0",
+      )}
+    >
+      {dot}
+      <span className="truncate tabular-nums group-data-[collapsible=icon]:hidden">{text}</span>
+    </button>
+  );
+
+  if (collapsed) {
+    return (
+      <Tooltip>
+        <TooltipTrigger render={line} />
+        <TooltipContent side="right">{text}</TooltipContent>
+      </Tooltip>
+    );
+  }
+  return (
+    <div className="group/status flex items-center gap-1">
+      {line}
+      {connected && (
+        <a
+          href={KIE_TOP_UP_URL}
+          target="_blank"
+          rel="noreferrer"
+          className="shrink-0 rounded-[var(--radius-xs)] px-1.5 py-0.5 text-[11.5px] text-ink-3 opacity-0 transition-opacity duration-150 group-hover/status:opacity-100 hover:text-lapis focus-visible:opacity-100"
+        >
+          Top up
+        </a>
+      )}
+    </div>
   );
 }
 
@@ -697,7 +639,7 @@ export function AppSidebar() {
           ? data.data
           : (data?.data?.balance ?? data?.balance ?? null);
         setBalance(val);
-      } catch { /* ignore */ }
+      } catch { /* the status line falls back to "connected" */ }
     };
     fetchBalance();
     const id = setInterval(fetchBalance, 60_000);
@@ -705,10 +647,33 @@ export function AppSidebar() {
     return () => { clearInterval(id); window.removeEventListener("credits-refresh", fetchBalance); };
   }, []);
 
-  const { sessions, deleteSession } = useChatSessionStore();
+  // ⌘, opens Settings (the macOS convention).
+  React.useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "," && (e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey) {
+        e.preventDefault();
+        // With no kie.ai key yet, ⌘, (the banner's hint) goes straight to API keys.
+        setSettingsOpen(true, useWorkflowStore.getState().kieKeySet === false ? "api-keys" : undefined);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [setSettingsOpen]);
+
+  const sessions = useChatSessionStore((s) => s.sessions);
+  const deleteSession = useChatSessionStore((s) => s.deleteSession);
+
+  // Recent: sessions with messages or an unsent draft, newest first.
+  const recent = React.useMemo(
+    () =>
+      sessions
+        .filter((s: ChatSession) => s.messages.length > 0 || !!s.draft?.trim())
+        .sort((a, b) => b.updatedAt - a.updatedAt),
+    [sessions],
+  );
 
   const {
-    folders, selectedFolderId, itemFolderMap,
+    folders, selectedFolderId,
     createFolder, deleteFolder, selectFolder,
     updateFolder, moveFolder, folderItemCount,
     galleryImageCount, galleryVideoCount,
@@ -724,14 +689,10 @@ export function AppSidebar() {
     loadFromServer();
   }, [loadFromServer]);
 
-  function startNewChat() {
-    router.push("/chat");
-  }
-
   function handleDeleteChat(id: string, isActive: boolean) {
     deleteSession(id);
     if (isActive) {
-      const next = sessions.find(s => s.id !== id);
+      const next = recent.find(s => s.id !== id);
       router.push(next ? `/chat?id=${next.id}` : "/chat");
     }
   }
@@ -750,8 +711,7 @@ export function AppSidebar() {
     const name = newFolderName.trim();
     if (name) {
       // If a folder is currently selected, create subfolder under it
-      const parentId = selectedFolderId ?? null;
-      createFolder(name, parentId);
+      createFolder(name, selectedFolderId ?? null);
     }
     setCreatingFolder(false);
     setNewFolderName("");
@@ -762,110 +722,78 @@ export function AppSidebar() {
     if (e.key === "Escape") { setCreatingFolder(false); setNewFolderName(""); }
   }
 
-  // ── Folder tree helpers ──────────────────────────────────────────────────────
-  function buildTree(parentId: string | null): typeof folders {
-    return folders
-      .filter((f) => f.parentId === parentId)
-      .sort((a, b) => a.orderIndex - b.orderIndex);
-  }
+  const rootFolders = folders
+    .filter((f) => f.parentId === null)
+    .sort((a, b) => a.orderIndex - b.orderIndex);
 
-  function handleToggleExpand(id: string) {
+  const handleToggleExpand = React.useCallback((id: string) => {
     setExpandedIds((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
       return next;
     });
-  }
-
-  const displayName = "";
-  const avatarSeed = "guest";
+  }, []);
+  const handleRename = React.useCallback((id: string, name: string) => updateFolder(id, { name }), [updateFolder]);
+  const handleColor = React.useCallback((id: string, color: string | null) => updateFolder(id, { color }), [updateFolder]);
 
   const folderParam = selectedFolderId ? `&folder=${selectedFolderId}` : "";
-  const navItems = [
-    { label: "Image", href: `/gallery?tab=images${folderParam}`, icon: ImageIcon, active: pathname === "/gallery" && tab === "images" },
-    { label: "Video", href: `/gallery?tab=videos${folderParam}`, icon: VideoIcon, active: pathname === "/gallery" && tab === "videos" },
-    { label: "Workflow", href: "/workflow", icon: Workflow, active: pathname === "/workflow" || (pathname.startsWith("/workflow/") && pathname !== "/workflow") },
-    { label: "Assets", href: "#", icon: Package, active: false, disabled: true },
+  const navItems: { label: string; href: string; icon: LucideIcon; active: boolean }[] = [
+    { label: "Images", href: `/gallery?tab=images${folderParam}`, icon: ImageIcon, active: pathname === "/gallery" && tab === "images" },
+    { label: "Video", href: `/gallery?tab=videos${folderParam}`, icon: Clapperboard, active: pathname === "/gallery" && tab === "videos" },
+    { label: "Workflows", href: "/workflow", icon: Workflow, active: pathname === "/workflow" || pathname.startsWith("/workflow/") },
     { label: "Chat", href: "/chat", icon: MessageSquare, active: pathname === "/chat" },
-    { label: "Settings", href: "#", icon: Settings, active: false, onClick: (e: React.MouseEvent) => { e.preventDefault(); setSettingsOpen(true); } },
   ];
 
-  const itemCls = (active: boolean, disabled?: boolean) => cn(
-    "flex items-center gap-3.5 px-3 h-11 w-full rounded-xl transition-colors duration-150 text-left",
-    "group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:w-10 group-data-[collapsible=icon]:h-10 group-data-[collapsible=icon]:px-0 group-data-[collapsible=icon]:mx-auto",
-    active ? "bg-white/[0.08] text-white" : "text-white/50 hover:text-white/80 hover:bg-white/[0.05]",
-    disabled && "opacity-35 cursor-not-allowed pointer-events-none",
-  );
-
   return (
-    <Sidebar collapsible="icon" className="border-r-0 bg-[#0B0E14]" style={{ borderRight: "none" }}>
+    <Sidebar collapsible="icon" className="border-0">
 
-      {/* ── Header ── */}
-      <SidebarHeader className="flex-row items-center justify-between px-4 pt-5 pb-2 gap-0">
-        <div className="flex items-center gap-2.5 group-data-[collapsible=icon]:hidden">
-          <LogoIcon />
-          <span className="text-white text-[22px] leading-none select-none"
-            style={{ fontFamily: "'Georgia','Times New Roman',serif", fontStyle: "italic" }}>
-            HeliosGen
-          </span>
-        </div>
-        {/* Collapsed: logo fades to trigger on hover */}
-        <div className="hidden group-data-[collapsible=icon]:flex group-data-[collapsible=icon]:w-full group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:py-1">
-          <div className="relative group/logo-area w-10 h-10 flex items-center justify-center">
-            <div className="pointer-events-none transition-opacity duration-200 group-hover/logo-area:opacity-0">
-              <LogoIcon />
-            </div>
-            <SidebarTrigger className="absolute inset-0 opacity-0 group-hover/logo-area:opacity-100 transition-opacity duration-200 text-white/50 hover:text-white hover:bg-white/[0.05] w-full h-full rounded-xl p-0 [&_svg]:size-4" />
+      {/* ── Header: traffic-light inset (desktop) + mark ── */}
+      <SidebarHeader data-tauri-drag-region className="titlebar-drag gap-0 p-0">
+        <div aria-hidden data-tauri-drag-region className="h-[var(--titlebar-h)] shrink-0" />
+        <div
+          data-tauri-drag-region
+          className="flex h-12 items-center justify-between pr-2 pl-4 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0"
+        >
+          <div className="pointer-events-none flex items-center gap-2 text-ink group-data-[collapsible=icon]:hidden">
+            <Mark className="size-[22px]" />
+            <Wordmark className="text-[18px]" />
           </div>
+          {/* Collapsed: the mark yields to the toggle on hover */}
+          <div className="group/logo relative hidden size-9 items-center justify-center group-data-[collapsible=icon]:flex">
+            <Mark className="pointer-events-none size-[22px] text-ink transition-opacity duration-150 group-hover/logo:opacity-0" />
+            <SidebarTrigger className="absolute inset-0 size-9 text-ink-2 opacity-0 transition-opacity duration-150 group-hover/logo:opacity-100 focus-visible:opacity-100" />
+          </div>
+          <Tooltip>
+            <TooltipTrigger
+              render={<SidebarTrigger className="text-ink-3 hover:text-ink group-data-[collapsible=icon]:hidden" />}
+            />
+            <TooltipContent side="bottom">
+              Hide sidebar <Kbd>⌘B</Kbd>
+            </TooltipContent>
+          </Tooltip>
         </div>
-        <SidebarTrigger className="group-data-[collapsible=icon]:hidden text-white/30 hover:text-white/70 hover:bg-white/[0.05] transition-colors p-1.5 rounded-lg -mr-1 [&_svg]:size-4" />
       </SidebarHeader>
 
-      {/* ── Nav + Chat history ── */}
-      <SidebarContent className="overflow-y-auto flex flex-col">
-        {/* Nav items */}
-        <div className="px-2 py-3 flex flex-col gap-0.5 shrink-0">
-          {navItems.map((item) => {
-            const content = (
-              <>
-                {React.createElement(item.icon, { size: 20, strokeWidth: 1.5, className: "shrink-0" })}
-                <span className="text-[14px] font-medium group-data-[collapsible=icon]:hidden leading-none">
-                  {item.label}
-                </span>
-              </>
-            );
-            if (item.disabled) return (
-              <div key={item.label} className={itemCls(item.active, true)} title={item.label}>{content}</div>
-            );
-            if (!item.href || item.href === "#") return (
-              <button key={item.label} className={itemCls(item.active)} onClick={item.onClick} title={item.label}>{content}</button>
-            );
-            return (
-              <Link key={item.label} href={item.href} onClick={item.onClick} className={itemCls(item.active)} title={item.label}>{content}</Link>
-            );
-          })}
-        </div>
+      {/* ── Nav + folders + recent ── */}
+      <SidebarContent className="gap-0">
+        <nav className="flex shrink-0 flex-col gap-px px-2 pt-1 pb-3">
+          {navItems.map((item) => (
+            <NavRow key={item.label} {...item} />
+          ))}
+        </nav>
 
-        {/* Folders section — hidden in icon mode */}
-        <div className="group-data-[collapsible=icon]:hidden flex flex-col shrink-0 px-2">
-          <div className="border-t border-white/[0.06] mb-1" />
-
-          {/* Section header */}
-          <div className="flex items-center justify-between px-1 py-2 shrink-0">
-            <span className="text-[10px] font-bold tracking-[0.08em] uppercase text-white/25">Folders</span>
-            <button
-              onClick={handleCreateFolder}
-              title="New folder"
-              className="w-6 h-6 rounded-lg flex items-center justify-center text-white/40 hover:text-white/80 hover:bg-white/[0.06] transition-colors"
-            >
-              <FolderPlus size={12} />
-            </button>
-          </div>
-
-          {/* Folder list — max 7 rows, scrollable */}
-          <div className="flex flex-col gap-0.5" style={{ maxHeight: "calc(7 * 36px)", overflowY: "auto" }}>
-            {/* All assets row */}
+        {/* Folders */}
+        <section className="flex shrink-0 flex-col px-2 pb-3 group-data-[collapsible=icon]:hidden">
+          <SectionHeader
+            label="Folders"
+            action={
+              <button onClick={handleCreateFolder} title="New folder" aria-label="New folder" className={sectionAction}>
+                <FolderPlus className="size-3.5" strokeWidth={1.75} />
+              </button>
+            }
+          />
+          <div className="flex max-h-[calc(8*28px)] flex-col gap-px overflow-y-auto">
             <AllAssetsRow
               isActive={selectedFolderId === null}
               count={pathname === "/gallery" ? (tab === "videos" ? galleryVideoCount : galleryImageCount) : 0}
@@ -874,8 +802,8 @@ export function AppSidebar() {
               hasUnseen={unseenAllAssets}
             />
 
-            {/* Recursive folder tree — root folders only, children rendered inside FolderRow */}
-            {buildTree(null).map((folder) => (
+            {/* Recursive tree — root folders here, children rendered inside FolderRow */}
+            {rootFolders.map((folder) => (
               <FolderRow
                 key={folder.id}
                 folder={folder}
@@ -886,8 +814,8 @@ export function AppSidebar() {
                 onToggleExpand={handleToggleExpand}
                 onSelect={selectFolder}
                 onDelete={deleteFolder}
-                onRename={(id, name) => updateFolder(id, { name })}
-                onColorChange={(id, color) => updateFolder(id, { color })}
+                onRename={handleRename}
+                onColorChange={handleColor}
                 onMove={moveFolder}
                 creatingInFolderId={creatingFolder ? selectedFolderId : null}
                 newFolderName={newFolderName}
@@ -901,158 +829,95 @@ export function AppSidebar() {
               />
             ))}
 
-            {/* Root-level new folder input — shown at bottom when no folder is selected */}
+            {/* Root-level new folder input — when no folder is selected */}
             {creatingFolder && selectedFolderId === null && (
-              <div className="flex items-center gap-2 px-2 py-1">
-                <Folder size={13} className="shrink-0 text-white/40" />
+              <div className="flex h-7 items-center gap-2.5 pr-1.5 pl-[22px]">
+                <Folder className="size-[15px] shrink-0 text-ink-3" strokeWidth={1.75} />
                 <input
                   ref={newFolderInputRef}
                   value={newFolderName}
                   onChange={e => setNewFolderName(e.target.value)}
                   onKeyDown={handleFolderKeyDown}
                   onBlur={confirmCreateFolder}
-                  placeholder="Folder name…"
-                  className="flex-1 bg-transparent text-[12px] text-white/80 placeholder:text-white/25 outline-none border-b border-white/20 pb-0.5 min-w-0"
+                  placeholder="Folder name"
+                  aria-label="New folder name"
+                  className={nameInputCls}
                 />
               </div>
             )}
           </div>
-        </div>
+        </section>
 
-        {/* Chat history — hidden in icon mode */}
-        <div className="group-data-[collapsible=icon]:hidden flex flex-col flex-1 min-h-0 px-2 pb-2">
-          <div className="border-t border-white/[0.06] mb-1" />
-
-          {/* Section header */}
-          <div className="flex items-center justify-between px-1 py-2 shrink-0">
-            <span className="text-[10px] font-bold tracking-[0.08em] uppercase text-white/25">Chats</span>
-            <button
-              onClick={startNewChat}
-              title="New chat"
-              className="w-6 h-6 rounded-lg flex items-center justify-center text-white/40 hover:text-white/80 hover:bg-white/[0.06] transition-colors"
-            >
-              <Pencil size={12} />
-            </button>
-          </div>
-
-          {/* Session list */}
-          <div className="flex-1 overflow-y-auto flex flex-col gap-0.5 min-h-0">
-            {sessions.length === 0 ? (
-              <p className="text-center text-[11px] text-white/20 px-2 py-4">No chats yet</p>
-            ) : sessions.map(sess => {
-              const isActive = pathname === "/chat" && sess.id === activeChatId;
-              return (
-                <div
-                  key={sess.id}
-                  onClick={() => router.push(`/chat?id=${sess.id}`)}
-                  className={cn(
-                    "group flex items-center gap-2 px-2 py-2 rounded-lg cursor-pointer transition-colors",
-                    isActive ? "bg-white/[0.07]" : "hover:bg-white/[0.04]"
-                  )}
-                >
-                  <div className="w-6 h-6 rounded-md flex items-center justify-center shrink-0"
-                    style={{ background: "rgba(45,212,191,0.08)", border: "1px solid rgba(45,212,191,0.12)" }}>
-                    <Bot size={11} style={{ color: "rgba(45,212,191,0.7)" }} />
-                  </div>
-                  <span className={cn(
-                    "flex-1 text-[12px] truncate leading-tight",
-                    isActive ? "text-white/90" : "text-white/55"
-                  )}>
-                    {sess.title}
-                  </span>
-                  <button
-                    onClick={e => { e.stopPropagation(); handleDeleteChat(sess.id, isActive); }}
-                    className="w-5 h-5 rounded flex items-center justify-center opacity-0 group-hover:opacity-100 text-white/30 hover:text-red-400/70 hover:bg-red-400/10 transition-all shrink-0"
-                  >
-                    <Trash2 size={10} />
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      </SidebarContent>
-
-      {/* ── Footer ── */}
-      <SidebarFooter className="px-2 pb-4">
-        <GitHubButtons />
-        <DropdownMenu>
-
-          {/* Trigger: pixel avatar + name + credits */}
-          <DropdownMenuTrigger
-            render={
-              <button
-                title={displayName}
-                className={cn(
-                  "flex items-center gap-3 w-full px-2.5 py-2 rounded-xl hover:bg-white/[0.05] transition-colors cursor-pointer",
-                  "group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:w-10 group-data-[collapsible=icon]:h-10 group-data-[collapsible=icon]:p-0 group-data-[collapsible=icon]:mx-auto",
-                )}
-              >
-                <Avatar className="size-9 rounded-xl shrink-0 after:rounded-xl after:border-white/15">
-                  <AvatarFallback className="rounded-xl bg-transparent p-0 overflow-hidden">
-                    <PixelAvatar seed={avatarSeed} size={36} />
-                  </AvatarFallback>
-                </Avatar>
-                <div className="flex-1 text-left group-data-[collapsible=icon]:hidden min-w-0">
-                  {displayName && <div className="text-[13px] font-semibold text-white/90 truncate leading-tight">{displayName}</div>}
-                  <div className="flex items-center gap-1 mt-0.5 text-[11px] text-white/40">
-                    <CreditIcon />
-                    <span>{balance !== null ? `${balance.toLocaleString()} Credits` : "0 Credits"}</span>
-                  </div>
-                </div>
-                <MoreHorizontal size={15} className="text-white/30 shrink-0 group-data-[collapsible=icon]:hidden" />
-              </button>
+        {/* Recent chats */}
+        <section className="flex min-h-0 flex-1 flex-col px-2 pb-2 group-data-[collapsible=icon]:hidden">
+          <SectionHeader
+            label="Recent"
+            action={
+              <Link href="/chat" title="New chat" aria-label="New chat" className={sectionAction}>
+                <SquarePen className="size-3.5" strokeWidth={1.75} />
+              </Link>
             }
           />
+          <div className="flex min-h-0 flex-1 flex-col gap-px overflow-y-auto">
+            {recent.length === 0 ? (
+              <p className="px-2 py-1.5 text-[12.5px] text-ink-4">Your conversations will gather here.</p>
+            ) : recent.map(sess => (
+              <RecentRow
+                key={sess.id}
+                session={sess}
+                active={pathname === "/chat" && sess.id === activeChatId}
+                onDelete={handleDeleteChat}
+              />
+            ))}
+          </div>
+        </section>
+      </SidebarContent>
 
-          {/* Menu popup */}
-          <DropdownMenuContent
-            side="top"
-            align="start"
-            sideOffset={8}
-            className="!p-0 !rounded-2xl !bg-[#0f0f0f] !border-white/[0.12] !ring-0 !shadow-[0_8px_48px_rgba(0,0,0,0.85)] overflow-hidden !w-auto !min-w-[280px]"
-          >
-            {/* User header — non-interactive */}
-            <div className="flex items-center gap-3.5 px-4 pt-4 pb-3.5">
-              <Avatar className="size-14 rounded-xl shrink-0 after:rounded-xl after:border-white/15">
-                <AvatarFallback className="rounded-xl bg-transparent p-0 overflow-hidden">
-                  <PixelAvatar seed={avatarSeed} size={56} />
-                </AvatarFallback>
-              </Avatar>
-              <div className="min-w-0">
-                {displayName && <div className="text-[15px] font-semibold text-white truncate">{displayName}</div>}
-                <div className="flex items-center gap-1.5 mt-0.5 text-[12px] text-white/40">
-                  <CreditIcon size={13} />
-                  <span>{balance !== null ? `${balance.toLocaleString()} Credits` : "0 Credits"}</span>
-                </div>
-              </div>
-            </div>
-
-            <DropdownMenuSeparator className="!bg-white/[0.07] !my-0 !mx-0" />
-
-            {/* Purchase Kie Credits */}
-            <DropdownMenuItem
-              className="flex items-center justify-between rounded-none px-4 py-3 text-[14px] text-white/60 hover:text-white focus:text-white focus:bg-white/[0.06] cursor-pointer"
-              onClick={() => window.open("https://kie.ai?ref=25abb3f2236cbff9780ab9c2f84479ec", "_blank")}
-            >
-              <span>Purchase Kie Credits</span>
-              <CreditIcon size={15} />
-            </DropdownMenuItem>
-
-            <DropdownMenuSeparator className="!bg-white/[0.07] !my-0 !mx-0" />
-
-            {/* Settings */}
-            <DropdownMenuItem
-              className="rounded-none px-4 pb-4 pt-3 text-[14px] text-white/60 hover:text-white focus:text-white focus:bg-white/[0.06] cursor-pointer"
-              onClick={() => setSettingsOpen(true)}
-            >
-              Settings
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-
-        </DropdownMenu>
+      {/* ── Footer: settings, specimen, status ── */}
+      <SidebarFooter className="gap-px px-2 pt-2 pb-3">
+        <NavRow label="Settings" icon={Settings} onClick={() => setSettingsOpen(true)} hint={<Kbd>⌘,</Kbd>} />
+        <NavRow label="Specimen" icon={SwatchBook} href="/specimen" active={pathname === "/specimen"} />
+        <div className="mx-2 my-1.5 h-px bg-rule group-data-[collapsible=icon]:mx-3" />
+        <KieStatus balance={balance} onOpenSettings={() => setSettingsOpen(true, "api-keys")} />
       </SidebarFooter>
 
     </Sidebar>
   );
 }
+
+const RecentRow = React.memo(function RecentRow({
+  session,
+  active,
+  onDelete,
+}: {
+  session: ChatSession;
+  active: boolean;
+  onDelete: (id: string, isActive: boolean) => void;
+}) {
+  const isDraft = session.messages.length === 0;
+  return (
+    <Link
+      href={`/chat?id=${session.id}`}
+      aria-current={active ? "page" : undefined}
+      className={cn(rowBase, rowState(active), "h-7 pr-1 pl-2 text-[13px]")}
+    >
+      <span className={cn("min-w-0 flex-1 truncate leading-tight", isDraft && !active && "text-ink-3")}>{session.title}</span>
+      {isDraft && (
+        <span className="inline-flex h-[18px] shrink-0 items-center rounded-full px-1.5 text-[11px] text-ink-3 shadow-[inset_0_0_0_1px_var(--rule-strong)]">
+          Draft
+        </span>
+      )}
+      <span className="shrink-0 text-[11.5px] tabular-nums text-ink-4 group-hover/row:hidden">
+        {relTime(session.updatedAt)}
+      </span>
+      <button
+        onClick={e => { e.preventDefault(); e.stopPropagation(); onDelete(session.id, active); }}
+        aria-label="Delete chat"
+        title="Delete chat"
+        className={cn(rowAction, "hidden group-hover/row:inline-flex hover:bg-sanguine/10 hover:text-sanguine")}
+      >
+        <Trash2 className="size-3.5" strokeWidth={1.75} />
+      </button>
+    </Link>
+  );
+});

@@ -21,14 +21,15 @@ import { useWorkflowStore, NodeData } from "@/lib/store";
 import { requestWorkflowSync } from "@/lib/workflowSyncBus";
 import { VIDEO_MODELS } from "@/lib/modelConfig";
 import CuttableEdge from "@/components/edges/CuttableEdge";
-import { topoSort, resolveInputs } from "@/lib/executor";
-import { NODE_SIZE, FALLBACK_SIZE, getLastNodeSettings, getDefaultNodeSize } from "@/lib/nodeTypes";
+import { NODE_SIZE, FALLBACK_SIZE, NODE_META, TypeBadge, getLastNodeSettings, getDefaultNodeSize, nextNodeLabel } from "@/lib/nodeTypes";
 import { edgeStyle } from "@/lib/edgeStyles";
 import { sha256Hex } from "@/lib/assetHash";
 import { detectTextMode } from "@/lib/textFormat";
 
 import { motion } from "motion/react";
-import TypewriterHeading from "@/components/ui/TypewriterHeading";
+import { Mark } from "@/components/brand/Mark";
+import { Kbd } from "@/components/ui/kbd";
+import { useTheme } from "@/lib/theme";
 import PromptNode from "./nodes/PromptNode";
 import ImageInputNode from "./nodes/ImageInputNode";
 import VideoInputNode from "./nodes/VideoInputNode";
@@ -41,16 +42,13 @@ import NodePickerMenu, { DropState } from "./NodePickerMenu";
 import SelectionToolbar from "./SelectionToolbar";
 import CanvasToolbar from "./CanvasToolbar";
 import AddNodeMenu from "./AddNodeMenu";
-import { MessageSquare, Sparkles, Clapperboard } from "lucide-react";
 
-// Local-only app: no auth token, kept so call sites don't churn.
-async function getAccessToken(): Promise<string | undefined> {
-  return "guest";
-}
-
-function authHeaders(_token?: string | undefined): HeadersInit {
-  return { "Content-Type": "application/json" };
-}
+/** Starter cards on the empty canvas. */
+const EMPTY_STATE_NODES = [
+  { type: "promptNode", label: "Text", desc: "Write and refine a prompt" },
+  { type: "generateNode", label: "Image generator", desc: "Make images from words" },
+  { type: "videoGeneratorNode", label: "Video generator", desc: "Make video from words and frames" },
+];
 
 const nodeTypes = {
   promptNode: PromptNode,
@@ -124,35 +122,16 @@ function GroupPreviewOverlay({ groupIds }: { groupIds: Set<string> | null }) {
 
   return (
     <div
+      className="pointer-events-none absolute z-0 border-[1.5px] border-dashed border-ink/25"
       style={{
-        position: "absolute",
         left: sx,
         top: sy,
         width: sw,
         height: sh,
-        border: "2px dashed rgba(150, 150, 150, 0.45)",
         borderRadius: Math.max(10, 14 * zoom),
-        background: "transparent",
-        pointerEvents: "none",
-        zIndex: 0,
       }}
     />
   );
-}
-
-/** Human-readable label with auto-incrementing counter per type */
-function nodeLabel(type: string, existingNodes: Node<NodeData>[]): string {
-  const count = existingNodes.filter((n) => n.type === type).length + 1;
-  const names: Record<string, string> = {
-    videoInputNode: "VIDEO",
-    imageInputNode: "IMAGE",
-    promptNode: "TEXT",
-    generateNode: "IMAGE GEN",
-    videoGeneratorNode: "VIDEO GEN",
-    assistantNode: "ASSISTANT",
-  };
-  if (type === "assistantNode") return "ASSISTANT";
-  return `${names[type] ?? type} #${count}`;
 }
 
 /** True if `node` has a free "prompt" input handle that a pasted text node can connect into. */
@@ -176,12 +155,13 @@ export default function WorkflowCanvas() {
     nodes, edges,
     onNodesChange: _onNodesChange, onEdgesChange, onConnect,
     addNode, insertEdge,
-    updateNodeData, isRunning, setIsRunning, debugMode, toggleDebug,
+    updateNodeData,
     setConnectingHandleType,
     saveViewport: _saveViewport,
     pushUndoSnapshot, undo, redo,
     undoStack, redoStack,
   } = useWorkflowStore();
+  const { theme } = useTheme();
 
   // Debounce viewport saves so zoom/pan doesn't trigger a Zustand update every frame
   const saveViewportTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -523,7 +503,7 @@ export default function WorkflowCanvas() {
             id: nodeId, type,
             position: { x: posX, y: posY },
             style: { width: size.w },
-            data: { label: nodeLabel(type, current), status: "idle", inputImage: blobUrl },
+            data: { label: nextNodeLabel(type, current), status: "idle", inputImage: blobUrl },
           });
 
           // Measure natural dimensions
@@ -562,7 +542,7 @@ export default function WorkflowCanvas() {
             id: nodeId, type,
             position: { x: posX, y: posY },
             style: { width: size.w },
-            data: { label: nodeLabel(type, current), status: "idle", videoUrl: blobUrl },
+            data: { label: nextNodeLabel(type, current), status: "idle", videoUrl: blobUrl },
           });
 
           (async () => {
@@ -603,7 +583,7 @@ export default function WorkflowCanvas() {
     const size = getDefaultNodeSize(type, useWorkflowStore.getState().lastNodeSize);
     // Read nodes fresh from the store (not from stale closure)
     const currentNodes = useWorkflowStore.getState().nodes;
-    const label = nodeLabel(type, currentNodes);
+    const label = nextNodeLabel(type, currentNodes);
     addNode({
       id: `${type}-${uid()}`,
       type,
@@ -700,13 +680,17 @@ export default function WorkflowCanvas() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      // Ignore when typing in an input / textarea
-      const tag = (e.target as HTMLElement).tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA") return;
+      // Ignore when typing in an input / textarea / rich text
+      const target = e.target as HTMLElement;
+      if (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable) return;
 
       if (!e.ctrlKey && !e.metaKey && !e.altKey) {
         if (e.key === "v" || e.key === "V") setActiveTool("select");
         if (e.key === "h" || e.key === "H") setActiveTool("hand");
+        if (e.key === "a" || e.key === "A") {
+          const addButton = document.getElementById("toolbar-add");
+          if (addButton) { e.preventDefault(); setAddMenuAnchor(addButton.getBoundingClientRect()); }
+        }
       }
 
       const mod = e.ctrlKey || e.metaKey;
@@ -777,7 +761,7 @@ export default function WorkflowCanvas() {
 
         blocks.forEach((block, i) => {
           const newId = `promptNode-${uid()}`;
-          const label = nodeLabel("promptNode", useWorkflowStore.getState().nodes);
+          const label = nextNodeLabel("promptNode", useWorkflowStore.getState().nodes);
 
           // Detect JSON/YAML so the node opens straight into that mode; JSON also
           // gets pretty-printed, matching the manual JSON/YAML toggle's behavior.
@@ -862,22 +846,22 @@ export default function WorkflowCanvas() {
           const srcId = srcNode.id;
           const tgtId = tgtNode?.id;
           updateNodeDataRef.current(srcId, { extractingFrame: true });
-          getAccessToken().then((token) => {
-            if (!token) { updateNodeDataRef.current(srcId, { extractingFrame: false }); return; }
-            fetch("/api/extract-frame", {
-              method: "POST",
-              headers: authHeaders(token),
-              body: JSON.stringify(extractBody),
-            }).then((r) => r.json()).then((j) => {
-              if (j.cdnUrl) {
-                updateNodeDataRef.current(srcId, { capturedFrameUrl: j.cdnUrl });
-                if (tgtNode?.type === "imageInputNode" && tgtId) {
-                  updateNodeDataRef.current(tgtId, { r2Url: j.cdnUrl, inputImage: j.cdnUrl });
-                }
-              }
-            }).catch(() => { }).finally(() => {
-              updateNodeDataRef.current(srcId, { extractingFrame: false });
-            });
+          const frameFailed = () => useWorkflowStore.getState().addToast(
+            "Couldn't capture a frame from that video. Reconnect the wire to try again.",
+            "error",
+          );
+          fetch("/api/extract-frame", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(extractBody),
+          }).then((r) => r.json()).then((j: { cdnUrl?: string }) => {
+            if (!j.cdnUrl) { frameFailed(); return; }
+            updateNodeDataRef.current(srcId, { capturedFrameUrl: j.cdnUrl });
+            if (tgtNode?.type === "imageInputNode" && tgtId) {
+              updateNodeDataRef.current(tgtId, { r2Url: j.cdnUrl, inputImage: j.cdnUrl });
+            }
+          }).catch(frameFailed).finally(() => {
+            updateNodeDataRef.current(srcId, { extractingFrame: false });
           });
         } else if (videoUrl && (th === "startFrame" || th === "endFrame" || alreadyExtracted)) {
           // If already extracted or using existing frame, and target is ImageInputNode, update it immediately
@@ -946,18 +930,16 @@ export default function WorkflowCanvas() {
   const [isConnecting, setIsConnecting] = useState(false);
   const [isRubberBandSelecting, setIsRubberBandSelecting] = useState(false);
   const [dropState, setDropState] = useState<DropState | null>(null);
-  const [log, setLog] = useState<{ text: string; ok: boolean }[]>([]);
 
   // ── Add-node menu (+ button) ─────────────────────────────────────────
   const [addMenuAnchor, setAddMenuAnchor] = useState<DOMRect | null>(null);
 
-  const setSettingsOpen = useWorkflowStore((s) => s.setSettingsOpen);
   const [exporting, setExporting] = useState(false);
 
   const handleExport = useCallback(async () => {
     const space = useWorkflowStore.getState().spaces.find((sp) => sp.id === useWorkflowStore.getState().activeSpaceId);
     if (!space || space.nodes.length === 0) {
-      useWorkflowStore.getState().addToast("Nothing to export yet", "error");
+      useWorkflowStore.getState().addToast("There's nothing to export yet. Add a node first.", "info");
       return;
     }
     setExporting(true);
@@ -966,12 +948,12 @@ export default function WorkflowCanvas() {
       const r = await exportWorkflow(space);
       useWorkflowStore.getState().addToast(
         r.skipped > 0
-          ? `Exported — ${r.assetCount} asset(s), ${r.skipped} couldn't be bundled`
-          : `Exported ${r.assetCount} asset(s)`,
+          ? `Exported with ${r.assetCount} asset${r.assetCount === 1 ? "" : "s"}. ${r.skipped} couldn't be bundled.`
+          : `Exported with ${r.assetCount} asset${r.assetCount === 1 ? "" : "s"}.`,
         r.skipped > 0 ? "info" : "success",
       );
     } catch (e) {
-      useWorkflowStore.getState().addToast(`Export failed: ${(e as Error).message}`, "error");
+      useWorkflowStore.getState().addToast(`Couldn't export this workflow: ${(e as Error).message}. Try again.`, "error");
     } finally {
       setExporting(false);
     }
@@ -980,10 +962,6 @@ export default function WorkflowCanvas() {
   // ── Alignment snap guides ─────────────────────────────────────────────────────
   const [snapGuides, setSnapGuides] = useState<SnapGuide[]>([]);
   const snapTargetRef = useRef<{ id: string; x: number; y: number } | null>(null);
-
-  const push = useCallback((text: string, ok = true) => {
-    setLog((l) => [...l.slice(-60), { text, ok }]);
-  }, []);
 
   // prompt handle: only promptNode; 1 connection max. image handle: up to 14 (nano-banana-2 limit).
   const isValidConnection = useCallback(
@@ -1104,9 +1082,6 @@ export default function WorkflowCanvas() {
     else if (handle.classList.contains("node-handle-icon-out-image")) type = "image";
     else if (handle.classList.contains("node-handle-icon-out-video")) type = "video";
     else if (handle.classList.contains("node-handle-icon-out-audio")) type = "audio";
-    else if (handle.classList.contains("node-handle-prompt")) type = "prompt";
-    else if (handle.classList.contains("node-handle-source")) type = "image";
-    else if (handle.classList.contains("node-handle-video")) type = "video";
     rf.setAttribute("data-connecting-type", type);
     setConnectingHandleType(type);
     setIsConnecting(true);
@@ -1151,242 +1126,6 @@ export default function WorkflowCanvas() {
     [],
   );
 
-  const addToast   = useWorkflowStore((s) => s.addToast);
-  const kieKeySet  = useWorkflowStore((s) => s.kieKeySet);
-
-  const runAll = useCallback(async () => {
-    const token = await getAccessToken();
-
-    setIsRunning(true);
-    setLog([]);
-    push("Running workflow…");
-    const order = topoSort(nodes, edges);
-
-    for (const nodeId of order) {
-      const node = nodes.find((n) => n.id === nodeId) as Node<NodeData> | undefined;
-      if (!node) continue;
-
-      // ── Image generator ─────────────────────────────────────────────────────
-      if (node.type === "generateNode") {
-        // Extract frames from VideoInputNodes on the image handle that lack a capturedFrameUrl.
-        // Uses trimEnd if set (end frame), otherwise trimStart ?? 0 (start / first frame).
-        const videoImageEdges = edges.filter(
-          (e) => e.target === nodeId && e.targetHandle === "image" &&
-            useWorkflowStore.getState().nodes.find((n) => n.id === e.source)?.type === "videoInputNode"
-        );
-        for (const edge of videoImageEdges) {
-          const src = useWorkflowStore.getState().nodes.find((n) => n.id === edge.source);
-          if (!src || (src.data.capturedFrameUrl as string | undefined)) continue;
-          const videoUrl = (src.data.videoUrl ?? src.data.r2Url) as string | undefined;
-          if (!videoUrl || videoUrl.startsWith("blob:")) continue;
-          const trimStart = src.data.trimStart as number | undefined;
-          const trimEnd = src.data.trimEnd as number | undefined;
-          const extractBody = trimEnd !== undefined
-            ? { videoUrl, timeSeconds: trimEnd }
-            : { videoUrl, timeSeconds: trimStart ?? 0 };
-          try {
-            const r = await fetch("/api/extract-frame", {
-              method: "POST",
-              headers: authHeaders(token),
-              body: JSON.stringify(extractBody),
-            });
-            const j = await r.json();
-            if (j.cdnUrl) updateNodeData(src.id, { capturedFrameUrl: j.cdnUrl });
-          } catch { /* proceed without */ }
-        }
-
-        const upstream = resolveInputs(nodeId, useWorkflowStore.getState().nodes as Node<NodeData>[], edges);
-        const prompt = upstream.prompt;
-        const imageUrls = upstream.imageUrls;
-        const aspectRatio = node.data.aspectRatio ?? "1:1";
-        const quality = node.data.quality ?? "1k";
-        const payload = { prompt, imageUrls, model: node.data.model, aspectRatio, quality };
-
-        if (!prompt?.trim()) {
-          const promptNodeId = edges.find(
-            (e) => e.target === nodeId && e.targetHandle === "prompt"
-          )?.source;
-          if (promptNodeId) updateNodeData(promptNodeId, { hasError: true });
-          push(`[${node.id}] skipped — prompt is empty`, false);
-          continue;
-        }
-
-        if (debugMode) {
-          console.log(`[DEBUG] node=${node.id}`, payload);
-          push(`[DEBUG] ${node.id} — logged to console`);
-          continue;
-        }
-
-        push(`[${node.id}] ${aspectRatio} · ${imageUrls.length} image(s)…`);
-        updateNodeData(nodeId, { status: "running", imageUrl: undefined });
-
-        try {
-          // Submit job
-          const res = await fetch("/api/generate", {
-            method: "POST",
-            headers: authHeaders(token),
-            body: JSON.stringify(payload),
-          });
-          const data = await res.json();
-          if (!res.ok) throw new Error(data.error);
-
-          const { taskId, referenceImageUrls } = data as {
-            taskId: string;
-            referenceImageUrls?: string[];
-          };
-
-          // If reference images were uploaded to R2, update those nodes immediately
-          if (referenceImageUrls?.length) {
-            const imageEdges = edges.filter(
-              (e) => e.target === nodeId && e.targetHandle === "image"
-            );
-            referenceImageUrls.forEach((cdnUrl, i) => {
-              const srcId = imageEdges[i]?.source;
-              if (srcId) updateNodeData(srcId, { r2Url: cdnUrl });
-            });
-          }
-
-          // Poll /api/job-status until done (image generate is async/callback-based)
-          push(`[${node.id}] waiting for result…`);
-          let imageUrl: string | undefined;
-          for (let attempt = 0; attempt < 120; attempt++) {
-            await new Promise((r) => setTimeout(r, 3000));
-            const poll = await fetch(`/api/job-status?taskId=${taskId}`);
-            const result = await poll.json();
-            if (result.status === "done") { imageUrl = result.imageUrl; break; }
-            if (result.status === "error") throw new Error(result.error ?? "Generation failed");
-            if (attempt > 0 && attempt % 5 === 0) push(`[${node.id}] still waiting…`);
-          }
-
-          if (!imageUrl) throw new Error("Timed out waiting for generation result");
-          updateNodeData(nodeId, { status: "done", imageUrl });
-          push(`[${node.id}] done`);
-        } catch (e: unknown) {
-          const msg = e instanceof Error ? e.message : String(e);
-          updateNodeData(nodeId, { status: "error", errorMsg: msg });
-          push(`[${node.id}] error: ${msg}`, false);
-        }
-      }
-
-      // ── Assistant (text-to-text LLM) ────────────────────────────────────────
-      if (node.type === "assistantNode") {
-        const upstream = resolveInputs(nodeId, nodes as Node<NodeData>[], edges);
-        const prompt = upstream.prompt ?? (node.data.localPrompt as string | undefined) ?? "";
-
-        if (!prompt.trim()) {
-          push(`[${node.id}] skipped — prompt is empty`, false);
-          continue;
-        }
-
-        if (debugMode) {
-          console.log(`[DEBUG] assistantNode=${node.id}`, { prompt, model: node.data.model });
-          push(`[DEBUG] ${node.id} — logged to console`);
-          continue;
-        }
-
-        push(`[${node.id}] generating text…`);
-        updateNodeData(nodeId, { status: "running", outputText: "", errorMsg: undefined });
-
-        try {
-          const res = await fetch("/api/assistant", {
-            method: "POST",
-            headers: authHeaders(token),
-            body: JSON.stringify({
-              prompt,
-              model: node.data.model ?? "claude-sonnet-4-6",
-              systemPrompt: "You are an expert prompt engineer. Rewrite the user's prompt to be clearer, more specific, and more effective for an AI model. Output only the improved prompt — no explanation, no preamble, no quotes, no commentary of any kind.",
-            }),
-          });
-          if (!res.ok) {
-            const err = await res.json().catch(() => ({ error: "Generation failed" }));
-            throw new Error(err.error ?? "Generation failed");
-          }
-
-          const reader = res.body!.getReader();
-          const decoder = new TextDecoder();
-          let accumulated = "";
-          outer: while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            for (const line of decoder.decode(value, { stream: true }).split("\n")) {
-              if (!line.startsWith("data: ")) continue;
-              const payload = line.slice(6).trim();
-              if (payload === "[DONE]") break outer;
-              try {
-                const parsed = JSON.parse(payload);
-                if (parsed.type === "content_block_delta" && parsed.delta?.type === "text_delta") {
-                  const delta = parsed.delta.text ?? "";
-                  if (delta) { accumulated += delta; updateNodeData(nodeId, { outputText: accumulated }); }
-                }
-              } catch { /* skip */ }
-            }
-          }
-          updateNodeData(nodeId, { status: "done", outputText: accumulated });
-          push(`[${node.id}] done`);
-        } catch (e: unknown) {
-          const msg = e instanceof Error ? e.message : String(e);
-          updateNodeData(nodeId, { status: "error", errorMsg: msg });
-          push(`[${node.id}] error: ${msg}`, false);
-        }
-      }
-
-      // ── Video generator (Kling 3.0) ─────────────────────────────────────────
-      if (node.type === "videoGeneratorNode") {
-        const upstream = resolveInputs(nodeId, useWorkflowStore.getState().nodes as Node<NodeData>[], edges);
-        const prompt = upstream.prompt ?? "";
-        const duration = node.data.duration ?? 5;
-        const aspectRatio = node.data.aspectRatio ?? "16:9";
-        const klingMode = node.data.klingMode ?? "pro";
-        const sound = node.data.sound ?? false;
-        const payload = {
-          prompt,
-          startFrameUrl: upstream.startFrameUrl,
-          endFrameUrl: upstream.endFrameUrl,
-          resources: upstream.resources,
-          sound, duration, aspectRatio,
-          mode: klingMode,
-        };
-
-        if (!prompt.trim()) {
-          const promptNodeId = edges.find(
-            (e) => e.target === nodeId && e.targetHandle === "prompt"
-          )?.source;
-          if (promptNodeId) updateNodeData(promptNodeId, { hasError: true });
-          push(`[${node.id}] skipped — prompt is empty`, false);
-          continue;
-        }
-
-        if (debugMode) {
-          console.log(`[DEBUG] videoNode=${node.id}`, payload);
-          push(`[DEBUG] ${node.id} — logged to console`);
-          continue;
-        }
-
-        push(`[${node.id}] Kling 3.0 · ${klingMode} · ${duration}s…`);
-        updateNodeData(nodeId, { status: "running", videoUrl: undefined });
-
-        try {
-          const res = await fetch("/api/generate-video", {
-            method: "POST",
-            headers: authHeaders(token),
-            body: JSON.stringify(payload),
-          });
-          const data = await res.json();
-          if (!res.ok) throw new Error(data.error);
-          updateNodeData(nodeId, { status: "done", videoUrl: data.videoUrl });
-          push(`[${node.id}] done`);
-        } catch (e: unknown) {
-          const msg = e instanceof Error ? e.message : String(e);
-          updateNodeData(nodeId, { status: "error", errorMsg: msg });
-          push(`[${node.id}] error: ${msg}`, false);
-        }
-      }
-    }
-
-    push("Complete");
-    setIsRunning(false);
-  }, [nodes, edges, updateNodeData, setIsRunning, debugMode, push, kieKeySet, addToast]);
-
   // ── Place a node at the viewport center (used by the empty-state picker) ────
   const addNodeAtCenter = useCallback((type: string) => {
     const rect = wrapperRef.current?.getBoundingClientRect();
@@ -1405,21 +1144,9 @@ export default function WorkflowCanvas() {
       style: type === "imageInputNode" || type === "videoInputNode"
         ? { width: size.w }
         : { width: size.w, height: size.h },
-      data: { label: nodeLabel(type, currentNodes), status: "idle", ...getLastNodeSettings(type, currentNodes) },
+      data: { label: nextNodeLabel(type, currentNodes), status: "idle", ...getLastNodeSettings(type, currentNodes) },
     });
   }, [addNode, insertEdge]);
-
-  const clear = useCallback(() => {
-    const { activeSpaceId, spaces } = useWorkflowStore.getState();
-    useWorkflowStore.setState({
-      nodes: [],
-      edges: [],
-      spaces: spaces.map((sp) =>
-        sp.id === activeSpaceId ? { ...sp, nodes: [], edges: [] } : sp
-      ),
-    });
-    setLog([]);
-  }, []);
 
   const handleNodeDragStop = useCallback(() => {
     setSnapGuides([]);
@@ -1495,10 +1222,6 @@ export default function WorkflowCanvas() {
     setPotentialGroupIds(null);
   }, []);
 
-  const canRun = !isRunning && nodes.some(
-    (n) => n.type === "generateNode" || n.type === "videoGeneratorNode" || n.type === "assistantNode"
-  );
-
   const computedNodes = useMemo(() => {
     // During rubber-band: return nodes as-is so only actually-changed nodes (selected state)
     // get new references. Wrapping every node in a new object causes ReactFlow to re-render
@@ -1553,17 +1276,11 @@ export default function WorkflowCanvas() {
   }, [edges, ancestorEdgeIds, potentialGroupIds, dyingEdgeIds]);
 
   return (
-    <div className="relative flex-1 flex flex-col min-w-0 h-full" style={{ background: "#0B0E14" }}>
+    <div className="relative flex h-full min-w-0 flex-1 flex-col bg-paper">
       <div
         ref={wrapperRef}
         className={`relative flex-1 flex flex-col min-h-0 min-w-0${activeTool === "hand" ? " canvas-hand-mode" : ""}`}
-        style={{ background: "transparent" }}
         onMouseMoveCapture={(e) => {
-          const rect = e.currentTarget.getBoundingClientRect();
-          const x = e.clientX - rect.left;
-          const y = e.clientY - rect.top;
-          e.currentTarget.style.setProperty("--mouse-x", `${x}px`);
-          e.currentTarget.style.setProperty("--mouse-y", `${y}px`);
           mousePosRef.current = { x: e.clientX, y: e.clientY };
         }}
       >
@@ -1595,9 +1312,8 @@ export default function WorkflowCanvas() {
           edgeTypes={edgeTypes}
           fitView
           minZoom={0.05}
-          colorMode="dark"
+          colorMode={theme === "ink" ? "dark" : "light"}
           className={`flex-1${isRubberBandSelecting ? " is-rubber-band-selecting" : ""}`}
-          style={{ background: "transparent" }}
           // Hand mode: left-click pans; Select mode: right-click pans + left-click selects
           panOnDrag={activeTool === "hand" ? [0] : [2]}
           selectionOnDrag={activeTool !== "hand"}
@@ -1607,13 +1323,13 @@ export default function WorkflowCanvas() {
           panOnScroll
           defaultEdgeOptions={{ animated: false }}
           connectionLineStyle={{
-            stroke: "#555555",
-            strokeWidth: 2,
-            strokeDasharray: "6 3",
+            stroke: "var(--edge-stroke-active)",
+            strokeWidth: 1.5,
+            strokeDasharray: "6 4",
             strokeLinecap: "round",
           }}
         >
-          <Background variant={BackgroundVariant.Dots} gap={28} size={1.5} color="#888888" />
+          <Background variant={BackgroundVariant.Dots} gap={24} size={1.25} color="var(--canvas-dot)" />
           <ViewportSyncer />
           <GroupPreviewOverlay groupIds={potentialGroupIds} />
           <SelectionToolbar />
@@ -1633,198 +1349,76 @@ export default function WorkflowCanvas() {
             />
           )}
 
-          <Controls
-            showInteractive={false}
-            className="[&>button]:!bg-[#0B0E14] [&>button]:!border-[#1A2030] [&>button]:!text-[#A0A0A0] [&>button:hover]:!text-white"
-          />
-
+          <Controls showInteractive={false} />
         </ReactFlow>
 
         {/* ── Left-middle toolbar ───────────────────────────────────────────── */}
         <CanvasToolbar
           activeTool={activeTool}
-          onToolChange={(tool) => setActiveTool(tool as "select" | "hand")}
-          onAddNode={(rect) => setAddMenuAnchor(rect)}
+          onToolChange={setActiveTool}
+          onAddNode={setAddMenuAnchor}
           onUndo={handleUndo}
           onRedo={handleRedo}
           canUndo={canUndo}
           canRedo={canRedo}
-          onOpenSettings={() => setSettingsOpen(true)}
           onExport={handleExport}
           exporting={exporting}
         />
 
-
         {/* ── Alignment guide lines ────────────────────────────────────────────── */}
         {snapGuides.length > 0 && (
-          <svg
-            className="absolute inset-0 pointer-events-none z-20"
-            style={{ width: "100%", height: "100%" }}
-          >
+          <svg className="pointer-events-none absolute inset-0 z-20 size-full">
             {snapGuides.map((guide, i) => {
               const { x: panX, y: panY, zoom } = viewportRef.current;
+              const guideStyle = { stroke: "rgb(var(--lapis-rgb) / 0.5)" };
               if (guide.type === "h") {
                 const sy = guide.canvasPos * zoom + panY;
-                return (
-                  <line key={i} x1={-100000} y1={sy} x2={100000} y2={sy}
-                    stroke="#555" strokeWidth={1} opacity={0.8} />
-                );
+                return <line key={i} x1={-100000} y1={sy} x2={100000} y2={sy} strokeWidth={1} style={guideStyle} />;
               }
               const sx = guide.canvasPos * zoom + panX;
-              return (
-                <line key={i} x1={sx} y1={-100000} x2={sx} y2={100000}
-                  stroke="#555" strokeWidth={1} opacity={0.8} />
-              );
+              return <line key={i} x1={sx} y1={-100000} x2={sx} y2={100000} strokeWidth={1} style={guideStyle} />;
             })}
           </svg>
         )}
 
-        {/* ── Welcome screen (empty state) ─────────────────────────────────────── */}
+        {/* ── Empty canvas ─────────────────────────────────────────────────────── */}
         {nodes.length === 0 && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none z-10">
-            {/* Ambient glow */}
-            <div
-              className="absolute inset-0 pointer-events-none"
-              style={{
-                background: "radial-gradient(ellipse 70% 50% at 50% 52%, rgba(45,212,191,0.06) 0%, transparent 70%)",
-              }}
-            />
-
-            <div className="flex flex-col items-center gap-12">
-              {/* Logo + title */}
-              <div className="flex flex-col items-center gap-4 pointer-events-none">
-                {/* Helios star icon */}
-                <svg width="44" height="44" viewBox="0 0 20 20" fill="#2DD4BF" stroke="none">
-                  <path d="M11.8525 4.21651L11.7221 3.2387C11.6906 3.00226 11.4889 2.82568 11.2504 2.82568C11.0118 2.82568 10.8102 3.00226 10.7786 3.23869L10.6483 4.21651C10.2658 7.0847 8.00939 9.34115 5.14119 9.72358L4.16338 9.85396C3.92694 9.88549 3.75037 10.0872 3.75037 10.3257C3.75037 10.5642 3.92694 10.7659 4.16338 10.7974L5.14119 10.9278C8.00938 11.3102 10.2658 13.5667 10.6483 16.4349L10.7786 17.4127C10.8102 17.6491 11.0118 17.8257 11.2504 17.8257C11.4889 17.8257 11.6906 17.6491 11.7221 17.4127L11.8525 16.4349C12.2349 13.5667 14.4913 11.3102 17.3595 10.9278L18.3374 10.7974C18.5738 10.7659 18.7504 10.5642 18.7504 10.3257C18.7504 10.0872 18.5738 9.88549 18.3374 9.85396L17.3595 9.72358C14.4913 9.34115 12.2349 7.0847 11.8525 4.21651Z" />
-                </svg>
-
-                <TypewriterHeading text="Build awesome workflows" />
-                <motion.p
-                  initial={{ filter: "blur(8px)", opacity: 0 }}
-                  animate={{ filter: "blur(0px)", opacity: 1 }}
-                  transition={{ duration: 0.9, delay: 0.15 }}
-                  style={{ color: "rgba(255,255,255,0.35)", fontSize: "14px", margin: 0 }}
-                >
-                  Pick a node below to start building
-                </motion.p>
+          <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center px-8">
+            <motion.div
+              className="flex flex-col items-center gap-10"
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.36, ease: [0.22, 1, 0.36, 1] }}
+            >
+              <div className="flex flex-col items-center gap-4 text-center">
+                <Mark className="size-10 text-ink" />
+                <h2 className="type-display text-ink">What shall we build?</h2>
+                <p className="max-w-md text-[14px] text-ink-2">
+                  Start with a node below, or drop images and videos onto the canvas.
+                </p>
               </div>
 
-              {/* Node cards */}
-              <motion.div
-                className="flex items-stretch gap-4 pointer-events-auto"
-                initial={{ opacity: 0, y: 12 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.6, delay: 0.25 }}
-              >
-                {[
-                  {
-                    type: "promptNode",
-                    label: "Text",
-                    desc: "Write & refine prompts",
-                    accent: "#4ee5b7",
-                    icon: <MessageSquare size={20} strokeWidth={1.6} />,
-                  },
-                  {
-                    type: "generateNode",
-                    label: "Image Generator",
-                    desc: "Generate images from a text prompt",
-                    accent: "#ff955a",
-                    icon: <Sparkles size={20} strokeWidth={1.6} />,
-                  },
-                  {
-                    type: "videoGeneratorNode",
-                    label: "Video Generator",
-                    desc: "Generate videos from a text prompt",
-                    accent: "#a78bfa",
-                    icon: <Clapperboard size={20} strokeWidth={1.6} />,
-                  },
-                ].map(({ type, label, desc, icon, accent }) => (
+              <div className="pointer-events-auto flex flex-wrap items-stretch justify-center gap-4">
+                {EMPTY_STATE_NODES.map(({ type, label, desc }) => (
                   <button
                     key={type}
+                    type="button"
                     onClick={() => addNodeAtCenter(type)}
-                    style={{
-                      position: "relative",
-                      display: "flex",
-                      flexDirection: "column",
-                      alignItems: "flex-start",
-                      gap: "16px",
-                      width: "210px",
-                      padding: "24px 22px 26px",
-                      borderRadius: "18px",
-                      border: "1px solid rgba(255,255,255,0.08)",
-                      background: "rgba(255,255,255,0.03)",
-                      cursor: "pointer",
-                      outline: "none",
-                      transition: "transform 200ms ease, box-shadow 220ms ease, border-color 220ms ease, background 220ms ease",
-                    }}
-                    onMouseEnter={(e) => {
-                      const el = e.currentTarget;
-                      el.style.transform = "translateY(-4px)";
-                      el.style.boxShadow = `0 0 0 1px ${accent}35, 0 16px 40px rgba(0,0,0,0.4)`;
-                      el.style.borderColor = `${accent}35`;
-                      el.style.background = `rgba(255,255,255,0.05)`;
-                    }}
-                    onMouseLeave={(e) => {
-                      const el = e.currentTarget;
-                      el.style.transform = "translateY(0)";
-                      el.style.boxShadow = "";
-                      el.style.borderColor = "rgba(255,255,255,0.08)";
-                      el.style.background = "rgba(255,255,255,0.03)";
-                    }}
+                    className="flex w-[208px] flex-col items-start gap-4 rounded-[var(--radius-lg)] bg-surface p-5 text-left shadow-[var(--shadow-sm)] outline-none transition-[box-shadow,transform] duration-200 ease-[var(--ease-out)] hover:-translate-y-0.5 hover:shadow-[var(--shadow-md)] focus-visible:shadow-[var(--focus-ring)]"
                   >
-                    {/* Icon badge */}
-                    <div style={{
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      width: "44px",
-                      height: "44px",
-                      borderRadius: "12px",
-                      background: `${accent}22`,
-                      color: accent,
-                      flexShrink: 0,
-                    }}>
-                      {icon}
-                    </div>
-
-                    {/* Label + desc */}
-                    <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: "7px" }}>
-                      <span style={{
-                        fontSize: "15px", fontWeight: 700,
-                        color: "rgba(255,255,255,0.92)",
-                        letterSpacing: "-0.2px",
-                        lineHeight: 1.2,
-                      }}>
-                        {label}
-                      </span>
-                      <span style={{ fontSize: "12.5px", color: "rgba(255,255,255,0.42)", fontWeight: 400, lineHeight: 1.4 }}>
-                        {desc}
-                      </span>
-                    </div>
+                    <TypeBadge accent={NODE_META[type]?.accent} icon={NODE_META[type]?.bigIcon} size={40} />
+                    <span className="flex flex-col gap-1">
+                      <span className="text-[14px] font-medium leading-tight text-ink">{label}</span>
+                      <span className="text-[12.5px] leading-snug text-ink-3">{desc}</span>
+                    </span>
                   </button>
                 ))}
-              </motion.div>
+              </div>
 
-              <motion.p
-                className="text-[11px] tracking-wide pointer-events-none select-none"
-                style={{ color: "rgba(255,255,255,0.15)" }}
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ duration: 0.6, delay: 0.5 }}
-              >
-                or drag &amp; drop images and videos onto the canvas
-              </motion.p>
-            </div>
-          </div>
-        )}
-
-        {log.length > 0 && (
-          <div className="h-24 bg-[#0B0E14] border-t border-[#1A2030] overflow-y-auto px-4 py-2 shrink-0">
-            {log.map((l, i) => (
-              <p key={i} className={`text-[11px] font-mono leading-5 ${l.ok ? "text-[#A0A0A0]" : "text-red-500"}`}>
-                {l.text}
+              <p className="flex items-center gap-1.5 text-[12px] text-ink-3 select-none">
+                Press <Kbd>A</Kbd> to add anything
               </p>
-            ))}
+            </motion.div>
           </div>
         )}
       </div>

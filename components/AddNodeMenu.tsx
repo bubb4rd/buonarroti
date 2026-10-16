@@ -3,35 +3,47 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useReactFlow } from "@xyflow/react";
 import { useWorkflowStore, NodeData } from "@/lib/store";
-import { NODES, NODE_SIZE, FALLBACK_SIZE, NODE_META, getLastNodeSettings, getDefaultNodeSize } from "@/lib/nodeTypes";
+import { NODES, NODE_SIZE, FALLBACK_SIZE, NODE_META, TypeBadge, getLastNodeSettings, getDefaultNodeSize, nextNodeLabel } from "@/lib/nodeTypes";
 import { getToken } from "@/lib/galleryUtils";
 import { MediaPickerModal } from "@/components/MediaPickerModal";
+import { Kbd } from "@/components/ui/kbd";
+import { floatingPanelClass } from "@/components/ui/floating-toolbar";
+import { cn } from "@/lib/utils";
 
 import { Search, X, Upload, LayoutGrid } from "lucide-react";
 
 const TOOLBAR_OFFSET_PX = 80;
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 
-/* Node types replaced by Upload/Assets — hide from search results */
-const HIDDEN_FROM_MENU = new Set(["imageInputNode", "videoInputNode"]);
+/* Node types replaced by Upload/Assets — hidden from search results */
+const HIDDEN_FROM_MENU: Record<string, true> = { imageInputNode: true, videoInputNode: true };
 
 const SECTIONS: Array<{ id: string; label: string; nodeTypes: string[] }> = [
   {
     id: "generators",
-    label: "GENERATORS",
+    label: "Generators",
     nodeTypes: ["generateNode", "videoGeneratorNode", "assistantNode"],
   },
   {
     id: "resources",
-    label: "INPUTS",
+    label: "Inputs",
     nodeTypes: ["promptNode"],
   },
   {
     id: "annotate",
-    label: "ANNOTATE",
+    label: "Annotate",
     nodeTypes: ["commentNode"],
   },
 ];
+
+interface MenuRow {
+  id: string;
+  label: string;
+  description: string;
+  accent?: string;
+  icon: React.ReactNode;
+  run: (point?: { x: number; y: number }) => void;
+}
 
 interface AddNodeMenuProps {
   anchorRect: DOMRect;
@@ -68,9 +80,13 @@ export default function AddNodeMenu({ anchorRect, onClose }: AddNodeMenuProps) {
   }, [onClose, pickerOpen]);
 
   const q = query.trim().toLowerCase();
-  const allNodes = NODES.filter((n) => !HIDDEN_FROM_MENU.has(n.type));
+  const allNodes = NODES.filter((n) => !HIDDEN_FROM_MENU[n.type]);
+  // Label matches rank above description-only matches.
   const filtered = q
-    ? allNodes.filter((n) => n.label.toLowerCase().includes(q) || n.description.toLowerCase().includes(q))
+    ? [
+        ...allNodes.filter((n) => n.label.toLowerCase().includes(q)),
+        ...allNodes.filter((n) => !n.label.toLowerCase().includes(q) && n.description.toLowerCase().includes(q)),
+      ]
     : null;
 
   function rectsOverlap(
@@ -89,20 +105,8 @@ export default function AddNodeMenu({ anchorRect, onClose }: AddNodeMenuProps) {
       const storeState = useWorkflowStore.getState();
       const size = getDefaultNodeSize(type, storeState.lastNodeSize);
       const GAP = 40;
-
       const nodesNow = storeState.nodes;
-      const count = nodesNow.filter((n) => n.type === type).length + 1;
-
-      const DISPLAY: Record<string, string> = {
-        promptNode: "TEXT",
-        imageInputNode: "IMAGE",
-        videoInputNode: "VIDEO",
-        generateNode: "IMAGE GEN",
-        videoGeneratorNode: "VIDEO GEN",
-        assistantNode: "ASSISTANT",
-        commentNode: "COMMENT",
-      };
-      const label = `${DISPLAY[type] ?? type} #${count}`;
+      const label = nextNodeLabel(type, nodesNow);
 
       let nodeX: number;
       let nodeY: number;
@@ -248,110 +252,69 @@ export default function AddNodeMenu({ anchorRect, onClose }: AddNodeMenuProps) {
   );
 
   /* Menu position */
-  const MENU_W = 280;
+  const MENU_W = 288;
   const MENU_MAX_H = 460;
   const left = anchorRect.right + 10;
   const topRaw = anchorRect.top + anchorRect.height / 2 - MENU_MAX_H / 2;
   const top = Math.max(12, Math.min(topRaw, window.innerHeight - MENU_MAX_H - 12));
 
-  const ROW_STYLE = (isHovered: boolean) => ({
-    display: "flex" as const,
-    alignItems: "center" as const,
-    gap: "12px",
-    width: "100%",
-    padding: "9px 14px",
-    background: isHovered ? "rgba(255,255,255,0.05)" : "transparent",
-    border: "none",
-    cursor: "pointer",
-    textAlign: "left" as const,
-    transition: "background 120ms ease",
-    borderRadius: "8px",
-  });
+  /* Rows: node types, plus Upload / Library under Inputs */
+  const nodeRow = (type: string): MenuRow[] => {
+    const node = allNodes.find((n) => n.type === type);
+    if (!node) return [];
+    return [{
+      id: type,
+      label: node.label,
+      description: node.description,
+      accent: NODE_META[type]?.accent,
+      icon: NODE_META[type]?.bigIcon ?? node.icon,
+      run: () => addNextToToolbar(type),
+    }];
+  };
+  const mediaRows: MenuRow[] = [
+    {
+      id: "upload",
+      label: "Upload",
+      description: "An image or video from your computer",
+      accent: "var(--verdigris)",
+      icon: <Upload size={18} strokeWidth={1.7} />,
+      run: () => fileInputRef.current?.click(),
+    },
+    {
+      id: "assets",
+      label: "From your library",
+      description: "Your generations and uploads",
+      accent: "var(--handle-image)",
+      icon: <LayoutGrid size={18} strokeWidth={1.7} />,
+      run: (point) => {
+        setPickerPos(point ?? { x: left + MENU_W, y: top + 40 });
+        setPickerOpen(true);
+      },
+    },
+  ];
+  const groups: Array<{ id: string; label?: string; rows: MenuRow[] }> = filtered
+    ? [{ id: "results", rows: filtered.flatMap((n) => nodeRow(n.type)) }]
+    : SECTIONS.map((s) => ({
+        id: s.id,
+        label: s.label,
+        rows: [...s.nodeTypes.flatMap(nodeRow), ...(s.id === "resources" ? mediaRows : [])],
+      }));
+  const flatRows = groups.flatMap((g) => g.rows);
 
-  function NodeRow({ nodeType }: { nodeType: string }) {
-    const node = allNodes.find((n) => n.type === nodeType);
-    if (!node) return null;
-    const meta = NODE_META[nodeType];
-    const isHovered = focused === nodeType;
-
-    return (
-      <button
-        key={nodeType}
-        id={`add-node-${nodeType}`}
-        onMouseEnter={() => setFocused(nodeType)}
-        onMouseLeave={() => setFocused(null)}
-        onClick={() => addNextToToolbar(nodeType)}
-        style={ROW_STYLE(isHovered)}
-      >
-        <span style={{
-          flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center",
-          width: "34px", height: "34px", borderRadius: "9px",
-          background: meta?.bg ?? "rgba(255,255,255,0.06)",
-          color: meta?.accent ?? "#aaa",
-          border: `1px solid ${meta?.accent ?? "#333"}28`,
-        }}>
-          {meta?.bigIcon ?? node.icon}
-        </span>
-        <span style={{ display: "flex", flexDirection: "column", gap: "2px", minWidth: 0 }}>
-          <span style={{ fontSize: "13px", fontWeight: 500, color: isHovered ? "#fff" : "rgba(255,255,255,0.82)", lineHeight: 1.2, transition: "color 120ms ease" }}>
-            {node.label}
-          </span>
-          <span style={{ fontSize: "11px", color: "rgba(255,255,255,0.3)", lineHeight: 1.3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {node.description}
-          </span>
-        </span>
-        {isHovered && (
-          <span style={{ marginLeft: "auto", flexShrink: 0, fontSize: "10px", color: "rgba(255,255,255,0.25)", background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "4px", padding: "2px 5px", fontFamily: "monospace" }}>
-            ↵
-          </span>
-        )}
-      </button>
-    );
-  }
-
-  function CustomRow({
-    id,
-    icon,
-    accent,
-    bg,
-    label,
-    description,
-    onClick,
-  }: {
-    id: string;
-    icon: React.ReactNode;
-    accent: string;
-    bg: string;
-    label: string;
-    description: string;
-    onClick: (e: React.MouseEvent) => void;
-  }) {
-    const isHovered = focused === id;
-    return (
-      <button
-        onMouseEnter={() => setFocused(id)}
-        onMouseLeave={() => setFocused(null)}
-        onClick={onClick}
-        style={ROW_STYLE(isHovered)}
-      >
-        <span style={{
-          flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center",
-          width: "34px", height: "34px", borderRadius: "9px",
-          background: bg, color: accent,
-          border: `1px solid ${accent}28`,
-        }}>
-          {icon}
-        </span>
-        <span style={{ display: "flex", flexDirection: "column", gap: "2px", minWidth: 0 }}>
-          <span style={{ fontSize: "13px", fontWeight: 500, color: isHovered ? "#fff" : "rgba(255,255,255,0.82)", lineHeight: 1.2, transition: "color 120ms ease" }}>
-            {label}
-          </span>
-          <span style={{ fontSize: "11px", color: "rgba(255,255,255,0.3)", lineHeight: 1.3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {description}
-          </span>
-        </span>
-      </button>
-    );
+  function handleSearchKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      if (flatRows.length === 0) return;
+      const idx = flatRows.findIndex((r) => r.id === focused);
+      const next = e.key === "ArrowDown"
+        ? flatRows[(idx + 1) % flatRows.length]
+        : flatRows[(idx <= 0 ? flatRows.length : idx) - 1];
+      setFocused(next.id);
+      document.getElementById(`add-node-${next.id}`)?.scrollIntoView({ block: "nearest" });
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      (flatRows.find((r) => r.id === focused) ?? flatRows[0])?.run();
+    }
   }
 
   const menu = (
@@ -369,94 +332,80 @@ export default function AddNodeMenu({ anchorRect, onClose }: AddNodeMenuProps) {
         id="add-node-menu"
         ref={menuRef}
         onMouseDown={(e) => e.stopPropagation()}
-        style={{
-          position: "fixed", left, top, width: MENU_W, maxHeight: MENU_MAX_H, zIndex: 99999,
-          display: "flex", flexDirection: "column",
-          background: "rgba(10,11,13,0.98)",
-          backdropFilter: "blur(24px)", WebkitBackdropFilter: "blur(24px)",
-          border: "1px solid rgba(255,255,255,0.09)", borderRadius: "16px",
-          boxShadow: "0 0 0 1px rgba(255,255,255,0.04) inset, 0 28px 70px rgba(0,0,0,0.8), 0 4px 20px rgba(0,0,0,0.5)",
-          overflow: "hidden",
-          animation: "addMenuIn 160ms cubic-bezier(0.22,1,0.36,1) both",
-        }}
+        className={cn(
+          floatingPanelClass,
+          "fixed z-[99999] flex flex-col overflow-hidden animate-in fade-in-0 slide-in-from-left-2 duration-150",
+        )}
+        style={{ left, top, width: MENU_W, maxHeight: MENU_MAX_H }}
       >
-        <style>{`
-          @keyframes addMenuIn {
-            from { opacity: 0; transform: translateX(-10px) scale(0.96); }
-            to   { opacity: 1; transform: translateX(0) scale(1); }
-          }
-        `}</style>
-
-        {/* Search bar */}
-        <div style={{ display: "flex", alignItems: "center", gap: "8px", padding: "10px 14px", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
-          <Search size={14} color="rgba(255,255,255,0.3)" />
+        {/* Search */}
+        <div className="flex items-center gap-2 border-b border-rule px-3.5 py-2.5">
+          <Search className="size-3.5 shrink-0 text-ink-3" strokeWidth={1.75} />
           <input
             ref={searchRef}
             id="add-node-search"
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search nodes…"
-            style={{ flex: 1, background: "transparent", border: "none", outline: "none", color: "rgba(255,255,255,0.82)", fontSize: "13px", caretColor: "#2DD4BF" }}
+            onChange={(e) => { setQuery(e.target.value); setFocused(null); }}
+            onKeyDown={handleSearchKeyDown}
+            placeholder="Add to canvas…"
+            className="min-w-0 flex-1 bg-transparent text-[13px] text-ink caret-lapis outline-none placeholder:text-ink-4 focus-visible:shadow-none"
           />
           {query && (
-            <button onClick={() => setQuery("")} style={{ background: "transparent", border: "none", cursor: "pointer", color: "rgba(255,255,255,0.3)", padding: 0, lineHeight: 1 }}>
-              <X size={14} />
+            <button
+              type="button"
+              aria-label="Clear search"
+              onClick={() => setQuery("")}
+              className="text-ink-3 transition-colors hover:text-ink"
+            >
+              <X className="size-3.5" />
             </button>
           )}
         </div>
 
-        {/* Node list */}
-        <div style={{ overflowY: "auto", flex: 1, padding: "8px" }}>
-          {filtered ? (
-            filtered.length === 0 ? (
-              <p style={{ fontSize: "12px", color: "rgba(255,255,255,0.25)", textAlign: "center", padding: "24px 0" }}>
-                No nodes match &ldquo;{query}&rdquo;
-              </p>
-            ) : (
-              filtered.map((n) => <NodeRow key={n.type} nodeType={n.type} />)
-            )
+        {/* Rows */}
+        <div className="flex-1 overflow-y-auto p-1.5">
+          {flatRows.length === 0 ? (
+            <p className="px-3 py-6 text-center text-[12.5px] text-ink-3">
+              Nothing matches &ldquo;{query}&rdquo;.
+            </p>
           ) : (
-            SECTIONS.map((section) => (
-              <div key={section.id} style={{ marginBottom: "4px" }}>
-                <p style={{ fontSize: "10px", fontWeight: 600, letterSpacing: "0.08em", color: "rgba(255,255,255,0.25)", padding: "8px 14px 4px", margin: 0 }}>
-                  {section.label}
-                </p>
-                {section.nodeTypes.map((t) => <NodeRow key={t} nodeType={t} />)}
-                {section.id === "resources" && (
-                  <>
-                    <CustomRow
-                      id="upload"
-                      label="Upload"
-                      description="Image or video — auto-detects type"
-                      accent="#34d399"
-                      bg="#052e16"
-                      icon={<Upload size={18} strokeWidth={1.8} />}
-                      onClick={() => fileInputRef.current?.click()}
-                    />
-                    <CustomRow
-                      id="assets"
-                      label="Assets"
-                      description="Browse your generations & uploads"
-                      accent="#60a5fa"
-                      bg="#0c1a3b"
-                      icon={<LayoutGrid size={18} strokeWidth={1.8} />}
-                      onClick={(e) => {
-                        setPickerPos({ x: e.clientX, y: e.clientY });
-                        setPickerOpen(true);
-                      }}
-                    />
-                  </>
+            groups.map((group) => (
+              <div key={group.id} className="mb-1 last:mb-0">
+                {group.label && (
+                  <p className="type-label px-2.5 pt-2 pb-1">{group.label}</p>
                 )}
+                {group.rows.map((row) => {
+                  const active = focused === row.id;
+                  return (
+                    <button
+                      key={row.id}
+                      id={`add-node-${row.id}`}
+                      type="button"
+                      data-active={active || undefined}
+                      onMouseEnter={() => setFocused(row.id)}
+                      onMouseLeave={() => setFocused(null)}
+                      onClick={(e) => row.run({ x: e.clientX, y: e.clientY })}
+                      className="flex w-full items-center gap-3 rounded-[var(--radius)] px-2.5 py-2 text-left transition-colors duration-100 data-[active]:bg-wash"
+                    >
+                      <TypeBadge accent={row.accent} icon={row.icon} />
+                      <span className="flex min-w-0 flex-col gap-0.5">
+                        <span className="text-[13px] leading-tight font-medium text-ink">{row.label}</span>
+                        <span className="truncate text-[11.5px] leading-snug text-ink-3">{row.description}</span>
+                      </span>
+                      {active && <Kbd className="ml-auto">↵</Kbd>}
+                    </button>
+                  );
+                })}
               </div>
             ))
           )}
         </div>
 
-        {/* Bottom hint bar */}
-        <div style={{ display: "flex", alignItems: "center", gap: "12px", padding: "8px 14px", borderTop: "1px solid rgba(255,255,255,0.06)", fontSize: "11px", color: "rgba(255,255,255,0.25)" }}>
-          <span><kbd style={{ fontFamily: "monospace", opacity: 0.7 }}>↑↓</kbd> Navigate</span>
-          <span><kbd style={{ fontFamily: "monospace", opacity: 0.7 }}>↵</kbd> Insert</span>
-          <span style={{ marginLeft: "auto" }}><kbd style={{ fontFamily: "monospace", opacity: 0.7 }}>Esc</kbd> Close</span>
+        {/* Hints */}
+        <div className="flex items-center gap-3 border-t border-rule bg-paper/50 px-3.5 py-2 text-[11.5px] text-ink-3">
+          <span className="flex items-center gap-1"><Kbd>↑</Kbd><Kbd>↓</Kbd> Move</span>
+          <span className="flex items-center gap-1"><Kbd>↵</Kbd> Add</span>
+          <span className="ml-auto flex items-center gap-1"><Kbd>esc</Kbd> Close</span>
         </div>
       </div>
 

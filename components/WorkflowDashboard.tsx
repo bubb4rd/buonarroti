@@ -1,267 +1,67 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
+import { useCallback, useEffect, useRef, useState } from "react";
 import NextImage from "next/image";
 import { useRouter } from "next/navigation";
-import { useWorkflowStore, Space } from "@/lib/store";
+import {
+  ArrowUpRight,
+  Copy,
+  Download,
+  Ellipsis,
+  ImageIcon,
+  LoaderCircle,
+  Pencil,
+  Plus,
+  Trash2,
+} from "lucide-react";
+import { useWorkflowStore } from "@/lib/store";
+import type { Space } from "@/lib/store";
 import { makeUGCTemplate } from "@/lib/templates";
 import { timeAgo } from "@/lib/useSpaceSync";
-import { WorkflowHero } from "@/components/WorkflowHero";
-import DotCanvasBackground from "@/components/ui/DotCanvasBackground";
+import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { Kbd } from "@/components/ui/kbd";
+import { Segmented } from "@/components/ui/segmented";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
-// ── CSS ───────────────────────────────────────────────────────────────────────
+const TEMPLATE_NAME = "UGC Template";
 
-const CSS = `
-  .wsd-card {
-    position: relative;
-    background: #0C0F16;
-    border: 1px solid rgba(255,255,255,0.06);
-    border-radius: 18px;
-    overflow: hidden;
-    cursor: pointer;
-    transition: transform 240ms cubic-bezier(.22,1,.36,1),
-                box-shadow  240ms cubic-bezier(.22,1,.36,1),
-                border-color 240ms ease;
-  }
-  .wsd-card:hover {
-    transform: translateY(-4px);
-    border-color: rgba(255,255,255,0.13);
-    box-shadow:
-      0 0 0 1px rgba(45,212,191,0.12),
-      0 16px 48px rgba(0,0,0,0.7),
-      0 4px 12px rgba(0,0,0,0.4);
-  }
-  .wsd-card:hover .wsd-actions { opacity: 1; transform: translateY(0); }
-  .wsd-card:hover .wsd-thumb-overlay { opacity: 1; }
+type SortKey = "recent" | "name";
 
-  .wsd-actions {
-    position: absolute; top: 12px; right: 12px;
-    display: inline-flex; gap: 4px;
-    opacity: 0; transform: translateY(-6px);
-    transition: opacity 180ms ease, transform 180ms ease;
-    z-index: 3;
-  }
-  .wsd-act {
-    width: 30px; height: 30px; border-radius: 8px;
-    display: grid; place-items: center;
-    background: rgba(10,12,18,0.82);
-    color: rgba(255,255,255,0.7);
-    border: 1px solid rgba(255,255,255,0.1);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    cursor: pointer;
-    transition: all 130ms ease;
-  }
-  .wsd-act:hover { color: white; border-color: rgba(255,255,255,0.22); background: rgba(30,34,44,0.95); }
-
-  .wsd-thumbs {
-    position: relative;
-    aspect-ratio: 3/2;
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    grid-template-rows: 1fr 1fr;
-    gap: 1px;
-    background: #060709;
-  }
-  .wsd-thumb-cell {
-    position: relative; overflow: hidden;
-  }
-  .wsd-thumb-cell-empty {
-    background: linear-gradient(145deg, #111520 0%, #0a0d14 100%);
-    display: grid; place-items: center;
-  }
-  .wsd-thumb-overlay {
-    position: absolute; inset: 0;
-    background: linear-gradient(180deg,
-      rgba(0,0,0,0) 40%,
-      rgba(0,0,0,0.55) 100%);
-    opacity: 0; transition: opacity 240ms ease;
-    pointer-events: none; z-index: 1;
-  }
-
-  .wsd-foot {
-    padding: 14px 16px 16px;
-    display: flex; flex-direction: column; gap: 10px;
-    border-top: 1px solid rgba(255,255,255,0.05);
-    background: linear-gradient(180deg, rgba(12,14,20,0.5) 0%, rgba(8,10,16,0.9) 100%);
-  }
-  .wsd-foot-row {
-    display: flex; align-items: center; gap: 8px;
-  }
-
-  .wsd-new {
-    position: relative;
-    background: #0C0F16;
-    border: 1px dashed rgba(255,255,255,0.12);
-    border-radius: 18px;
-    overflow: hidden;
-    cursor: pointer;
-    display: flex; flex-direction: column;
-    transition: transform 240ms cubic-bezier(.22,1,.36,1),
-                box-shadow  240ms cubic-bezier(.22,1,.36,1),
-                border-color 240ms ease,
-                background 240ms ease;
-  }
-  .wsd-new:hover {
-    border-color: rgba(45,212,191,0.35);
-    background: #0e1219;
-    box-shadow:
-      0 0 0 1px rgba(45,212,191,0.12),
-      0 16px 48px rgba(0,0,0,0.6);
-    transform: translateY(-4px);
-  }
-  .wsd-new:hover .wsd-plus-orb {
-    box-shadow: 0 0 32px rgba(45,212,191,0.4), 0 0 0 1px rgba(255,255,255,0.15) inset;
-  }
-  .wsd-new-art {
-    flex: 1; aspect-ratio: 3/2;
-    display: grid; place-items: center;
-    position: relative; overflow: hidden;
-  }
-  .wsd-new-art::before {
-    content:""; position:absolute; inset: 0;
-    background-image:
-      linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px);
-    background-size: 20px 20px;
-    mask-image: radial-gradient(ellipse 70% 70% at 50% 50%, black 0%, transparent 100%);
-    -webkit-mask-image: radial-gradient(ellipse 70% 70% at 50% 50%, black 0%, transparent 100%);
-  }
-  .wsd-plus-orb {
-    position: relative; z-index: 1;
-    width: 64px; height: 64px; border-radius: 50%;
-    background: linear-gradient(135deg, #0D9488 0%, #2DD4BF 100%);
-    display: grid; place-items: center;
-    color: white;
-    box-shadow: 0 0 0 1px rgba(255,255,255,0.15) inset;
-    transition: box-shadow 240ms ease;
-  }
-
-  .wsd-new-btn {
-    appearance: none; border: 0; cursor: pointer;
-    display: inline-flex; align-items: center; gap: 8px;
-    padding: 9px 16px;
-    background: linear-gradient(135deg, #0D9488 0%, #2DD4BF 100%);
-    color: white; font-size: 12px; font-weight: 600; border-radius: 10px;
-    transition: filter 140ms ease, transform 140ms ease;
-    white-space: nowrap; font-family: inherit;
-    letter-spacing: 0.01em;
-  }
-  .wsd-new-btn:hover { filter: brightness(1.1); transform: translateY(-1px); }
-
-  .wsd-import-btn {
-    appearance: none; cursor: pointer;
-    display: inline-flex; align-items: center; gap: 8px;
-    padding: 9px 16px;
-    background: rgba(255,255,255,0.04);
-    border: 1px solid rgba(255,255,255,0.12);
-    color: rgba(255,255,255,0.75); font-size: 12px; font-weight: 600; border-radius: 10px;
-    transition: background 140ms ease, border-color 140ms ease, transform 140ms ease, color 140ms ease;
-    white-space: nowrap; font-family: inherit; letter-spacing: 0.01em;
-  }
-  .wsd-import-btn:hover:not(:disabled) {
-    background: rgba(255,255,255,0.08);
-    border-color: rgba(255,255,255,0.22);
-    color: #fff;
-    transform: translateY(-1px);
-  }
-  .wsd-import-btn:disabled { opacity: 0.5; cursor: default; }
-
-  @keyframes wsd-spin { to { transform: rotate(360deg); } }
-
-  .wsd-tmpl {
-    position: relative;
-    background: #0C0F16;
-    border: 1px dashed rgba(99,102,241,0.3);
-    border-radius: 18px;
-    overflow: hidden;
-    cursor: pointer;
-    display: flex; flex-direction: column;
-    transition: transform 240ms cubic-bezier(.22,1,.36,1),
-                box-shadow  240ms cubic-bezier(.22,1,.36,1),
-                border-color 240ms ease,
-                background 240ms ease;
-  }
-  .wsd-tmpl:hover {
-    border-color: rgba(99,102,241,0.55);
-    background: #0e1019;
-    box-shadow:
-      0 0 0 1px rgba(99,102,241,0.15),
-      0 16px 48px rgba(0,0,0,0.6);
-    transform: translateY(-4px);
-  }
-  .wsd-tmpl:hover .wsd-tmpl-orb {
-    box-shadow: 0 0 32px rgba(99,102,241,0.45), 0 0 0 1px rgba(255,255,255,0.15) inset;
-  }
-`;
-
-// ── Template card ─────────────────────────────────────────────────────────────
-
-const TEMPLATE_PREVIEWS = [
-  "https://pub-73a59b956f1c4a7db2934522c13d8027.r2.dev/workflow-template/1.png",
-  "https://pub-73a59b956f1c4a7db2934522c13d8027.r2.dev/workflow-template/2.png",
-  "https://pub-73a59b956f1c4a7db2934522c13d8027.r2.dev/workflow-template/3.png",
-  "https://pub-73a59b956f1c4a7db2934522c13d8027.r2.dev/workflow-template/4.png",
+const SORT_OPTIONS: { value: SortKey; label: string }[] = [
+  { value: "recent", label: "Recent" },
+  { value: "name", label: "Name" },
 ];
 
-function TemplateCard({ onLoad, onReset }: { onLoad: () => void; onReset: (e: React.MouseEvent) => void }) {
-  return (
-    <div
-      className="wsd-tmpl"
-      role="button"
-      tabIndex={0}
-      onClick={onLoad}
-      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") onLoad(); }}
-    >
-      <div className="wsd-thumbs">
-        {TEMPLATE_PREVIEWS.map((url, i) => (
-          <div key={i} className="wsd-thumb-cell">
-            <NextImage src={url} alt="" fill sizes="160px" style={{ objectFit: "cover" }} />
-          </div>
-        ))}
-        <div className="wsd-thumb-overlay" />
-      </div>
-      <div style={{
-        padding: "14px 16px 16px",
-        borderTop: "1px solid rgba(99,102,241,0.1)",
-        display: "flex", flexDirection: "column", gap: "10px",
-      }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <div style={{ fontSize: "15px", fontWeight: 600, color: "#fff", letterSpacing: "-0.015em" }}>
-            UGC Template
-          </div>
-          <button
-            onClick={onReset}
-            title="Reset template"
-            style={{
-              appearance: "none", border: "1px solid rgba(99,102,241,0.25)", background: "rgba(99,102,241,0.08)",
-              borderRadius: "7px", width: "28px", height: "28px", display: "grid", placeItems: "center",
-              cursor: "pointer", color: "rgba(99,102,241,0.7)", transition: "all 140ms ease", flexShrink: 0,
-            }}
-            onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(99,102,241,0.2)"; e.currentTarget.style.color = "#818cf8"; }}
-            onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(99,102,241,0.08)"; e.currentTarget.style.color = "rgba(99,102,241,0.7)"; }}
-          >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ width: 13, height: 13 }}>
-              <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
-              <path d="M3 3v5h5" />
-            </svg>
-          </button>
-        </div>
-        <div style={{
-          display: "flex", alignItems: "center", gap: "6px",
-          fontSize: "10px", fontWeight: 500, letterSpacing: "0.04em",
-          color: "rgba(99,102,241,0.6)", textTransform: "uppercase",
-        }}>
-          <span>4× Image → 4× Video</span>
-        </div>
-      </div>
-    </div>
-  );
-}
+const GRID = "grid grid-cols-[repeat(auto-fill,minmax(232px,1fr))] gap-5";
 
-// ── Media collection ──────────────────────────────────────────────────────────
+/** Card shell shared by workflow and template cards. */
+const CARD =
+  "group/card relative flex flex-col gap-3 rounded-[var(--radius-lg)] bg-surface p-2.5 pb-3.5 text-left transition-shadow duration-200 ease-[var(--ease-out)]";
 
-type MediaItem = { type: "image"; url: string } | { type: "video"; url: string };
+/** Crop marks that register around a card's frame on hover, and in lapis on keyboard focus. */
+const FRAME_MARKS =
+  "crop-marks block [--crop:10px] [--crop-gap:5px] [--crop-color:transparent]! group-hover/card:[--crop-color:var(--ink-3)]! group-has-[:focus-visible]/card:[--crop-color:var(--lapis)]!";
+
+const FRAME = "relative block aspect-[3/2] overflow-hidden rounded-[var(--radius)] bg-mat";
+
+// ── Media ─────────────────────────────────────────────────────────────────────
+
+type MediaItem = { type: "image" | "video"; url: string };
 
 function collectMedia(space: Space): MediaItem[] {
   const items: MediaItem[] = [];
@@ -278,196 +78,49 @@ function collectMedia(space: Space): MediaItem[] {
   return items;
 }
 
-// ── 4-cell thumbnail mosaic ───────────────────────────────────────────────────
-
-function ThumbnailMosaic({ space }: { space: Space }) {
-  const media = collectMedia(space).slice(0, 4);
-  return (
-    <div className="wsd-thumbs">
-      {Array.from({ length: 4 }).map((_, i) => {
-        const item = media[i];
-        return (
-          <div key={i} className={`wsd-thumb-cell${item ? "" : " wsd-thumb-cell-empty"}`}>
-            {item ? (
-              item.type === "video" ? (
-                <video
-                  src={item.url}
-                  muted loop playsInline autoPlay preload="metadata"
-                  style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
-                />
-              ) : (
-                <NextImage src={item.url} alt="" fill sizes="160px" style={{ objectFit: "cover" }} />
-              )
-            ) : (
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"
-                style={{ opacity: 0.12 }}>
-                <rect x="3" y="3" width="18" height="18" rx="3" />
-                <path d="M3 16l5-5 4 4 3-3 6 5" />
-              </svg>
-            )}
-          </div>
-        );
-      })}
-      <div className="wsd-thumb-overlay" />
-    </div>
-  );
-}
-
-// ── Card menu ─────────────────────────────────────────────────────────────────
-
-interface CardMenuProps {
-  spaceId: string;
-  spaceName: string;
-  onOpen: () => void;
-  onStartRename: () => void;
-  onDelete: () => void;
-  onClose: () => void;
-}
-
-function CardMenu({ spaceId, onOpen, onStartRename, onDelete, onClose }: CardMenuProps) {
-  const duplicateSpace = useWorkflowStore((s) => s.duplicateSpace);
-  const spaces = useWorkflowStore((s) => s.spaces);
-  const menuRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (!menuRef.current?.contains(e.target as Node)) onClose();
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [onClose]);
-
-  const item = (
-    label: string,
-    icon: React.ReactNode,
-    action: () => void,
-    danger = false,
-    disabled = false
-  ) => (
-    <button
-      onClick={(e) => { e.stopPropagation(); if (!disabled) action(); }}
-      disabled={disabled}
-      style={{
-        display: "flex", alignItems: "center", gap: "10px", width: "100%",
-        padding: "8px 12px", background: "transparent", border: "none",
-        color: disabled ? "rgba(255,255,255,0.2)" : danger ? "#f87171" : "rgba(255,255,255,0.85)",
-        fontSize: "13px", fontWeight: 450, cursor: disabled ? "not-allowed" : "pointer",
-        opacity: disabled ? 0.5 : 1, fontFamily: "inherit", textAlign: "left",
-        transition: "background 120ms",
-      }}
-      onMouseEnter={(e) => { if (!disabled) (e.currentTarget as HTMLElement).style.background = "rgba(255,255,255,0.06)"; }}
-      onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}
-    >
-      <span style={{ color: disabled ? "rgba(255,255,255,0.2)" : danger ? "#f87171" : "rgba(255,255,255,0.4)", flexShrink: 0 }}>
-        {icon}
+/** Up to four pieces, laid out to fill the frame: 1 full, 2 side by side, 3 with a lead, 4 in a grid. */
+function Mosaic({ media }: { media: MediaItem[] }) {
+  const items = media.slice(0, 4);
+  if (items.length === 0) {
+    return (
+      <span className="absolute inset-0 grid place-items-center text-ink-4">
+        <ImageIcon className="size-5" strokeWidth={1.5} />
       </span>
-      {label}
-    </button>
-  );
-
+    );
+  }
   return (
-    <div
-      ref={menuRef}
-      onClick={(e) => e.stopPropagation()}
-      style={{
-        position: "absolute",
-        top: "calc(100% + 6px)",
-        right: 0,
-        width: "186px",
-        background: "#131720",
-        border: "1px solid rgba(255,255,255,0.1)",
-        borderRadius: "12px",
-        boxShadow: "0 16px 48px rgba(0,0,0,0.8), 0 2px 8px rgba(0,0,0,0.4)",
-        overflow: "hidden",
-        zIndex: 100,
-      }}
+    <span
+      className={cn(
+        "absolute inset-0 grid gap-px",
+        items.length > 1 && "grid-cols-2",
+        items.length > 2 && "grid-rows-2",
+      )}
     >
-      {item("Open", <OpenIcon />, () => { onClose(); onOpen(); })}
-      <div style={{ height: "1px", background: "rgba(255,255,255,0.07)", margin: "0 10px" }} />
-      {item("Rename", <RenameIcon />, () => { onClose(); onStartRename(); })}
-      {item("Duplicate", <DuplicateIcon />, () => { duplicateSpace(spaceId); onClose(); })}
-      <div style={{ height: "1px", background: "rgba(255,255,255,0.07)", margin: "0 10px" }} />
-      {item("Delete", <DeleteIcon />, () => { onClose(); onDelete(); }, true, spaces.length <= 1)}
-    </div>
+      {items.map((item, i) => (
+        <span
+          key={i}
+          className={cn("relative block overflow-hidden", items.length === 3 && i === 0 && "row-span-2")}
+        >
+          {item.type === "video" ? (
+            <video
+              src={item.url}
+              muted
+              loop
+              playsInline
+              autoPlay
+              preload="metadata"
+              className="block size-full object-cover"
+            />
+          ) : (
+            <NextImage src={item.url} alt="" fill sizes="(max-width: 768px) 50vw, 240px" className="object-cover" />
+          )}
+        </span>
+      ))}
+    </span>
   );
 }
 
-// ── Delete confirmation modal ─────────────────────────────────────────────────
-
-function DeleteConfirmModal({
-  spaceName,
-  onConfirm,
-  onCancel,
-}: {
-  spaceName: string;
-  onConfirm: () => void;
-  onCancel: () => void;
-}) {
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onCancel();
-      if (e.key === "Enter") onConfirm();
-    };
-    document.addEventListener("keydown", handler);
-    return () => document.removeEventListener("keydown", handler);
-  }, [onCancel, onConfirm]);
-
-  return createPortal(
-    <div
-      onClick={onCancel}
-      style={{
-        position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)",
-        display: "flex", alignItems: "center", justifyContent: "center",
-        zIndex: 1000, backdropFilter: "blur(8px)",
-      }}
-    >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          background: "#131720",
-          border: "1px solid rgba(255,255,255,0.1)",
-          borderRadius: "16px", padding: "24px", width: "320px",
-          boxShadow: "0 24px 64px rgba(0,0,0,0.8)",
-        }}
-      >
-        <p style={{ fontSize: "15px", fontWeight: 600, color: "#fff", margin: "0 0 8px" }}>
-          Delete workflow?
-        </p>
-        <p style={{ fontSize: "13px", color: "rgba(255,255,255,0.45)", margin: "0 0 24px", lineHeight: 1.5 }}>
-          &ldquo;{spaceName}&rdquo; will be permanently deleted. This cannot be undone.
-        </p>
-        <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end" }}>
-          <button
-            onClick={onCancel}
-            style={{
-              padding: "8px 16px", borderRadius: "8px",
-              border: "1px solid rgba(255,255,255,0.15)", background: "transparent",
-              color: "rgba(255,255,255,0.6)", fontSize: "13px", fontWeight: 500,
-              cursor: "pointer", fontFamily: "inherit",
-            }}
-          >
-            Cancel
-          </button>
-          <button
-            onClick={onConfirm}
-            style={{
-              padding: "8px 16px", borderRadius: "8px", border: "none",
-              background: "#ef4444", color: "#fff", fontSize: "13px", fontWeight: 600,
-              cursor: "pointer", fontFamily: "inherit",
-            }}
-          >
-            Delete
-          </button>
-        </div>
-      </div>
-    </div>,
-    document.body
-  );
-}
-
-// ── Space card ────────────────────────────────────────────────────────────────
-
+// ── Workflow card ─────────────────────────────────────────────────────────────
 
 function SpaceCard({ space, onOpen }: { space: Space; onOpen: () => void }) {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -475,16 +128,19 @@ function SpaceCard({ space, onOpen }: { space: Space; onOpen: () => void }) {
   const [draft, setDraft] = useState(space.name);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const deleteRef = useRef<HTMLButtonElement>(null);
 
   const renameSpace = useWorkflowStore((s) => s.renameSpace);
   const deleteSpace = useWorkflowStore((s) => s.deleteSpace);
+  const duplicateSpace = useWorkflowStore((s) => s.duplicateSpace);
+  const isLastSpace = useWorkflowStore((s) => s.spaces.length <= 1);
 
+  const nodeCount = space.nodes.length;
   const ts = space.updatedAt ?? space.createdAt;
 
   const startRename = () => {
     setDraft(space.name);
     setRenaming(true);
-    setTimeout(() => inputRef.current?.select(), 0);
   };
 
   const commitRename = () => {
@@ -494,135 +150,221 @@ function SpaceCard({ space, onOpen }: { space: Space; onOpen: () => void }) {
   };
 
   return (
-    <article
-      className="wsd-card"
-      onClick={() => { if (!renaming && !menuOpen) onOpen(); }}
-    >
-      {/* Hover action buttons */}
-      <div className="wsd-actions" onClick={(e) => e.stopPropagation()}>
-        <div style={{ position: "relative" }}>
-          <button
-            className="wsd-act"
-            aria-label="More"
-            onClick={(e) => { e.stopPropagation(); setMenuOpen((o) => !o); }}
-          >
-            <MoreHorizIcon />
+    <>
+      <article
+        className={cn(
+          CARD,
+          "cursor-pointer shadow-[var(--shadow-sm)] hover:shadow-[var(--shadow-md)] has-[:focus-visible]:shadow-[var(--shadow-md)]",
+        )}
+        onClick={() => { if (!renaming && !menuOpen) onOpen(); }}
+      >
+        <span className={FRAME_MARKS}>
+          {/* Keyboard entry point; its click bubbles to the card. */}
+          <button type="button" aria-label={`Open ${space.name}`} className={cn(FRAME, "w-full outline-none")}>
+            <Mosaic media={collectMedia(space)} />
           </button>
-          {menuOpen && (
-            <CardMenu
-              spaceId={space.id}
-              spaceName={space.name}
-              onOpen={onOpen}
-              onStartRename={startRename}
-              onDelete={() => setConfirmDelete(true)}
-              onClose={() => setMenuOpen(false)}
-            />
-          )}
-        </div>
-      </div>
+        </span>
 
-      {/* Thumbnails */}
-      <ThumbnailMosaic space={space} />
+        <div className="flex items-start gap-2 px-1">
+          <div className="min-w-0 flex-1">
+            {renaming ? (
+              <input
+                ref={inputRef}
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                onBlur={commitRename}
+                onFocus={(e) => e.currentTarget.select()}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") commitRename();
+                  if (e.key === "Escape") { setDraft(space.name); setRenaming(false); }
+                }}
+                onClick={(e) => e.stopPropagation()}
+                autoFocus
+                aria-label="Workflow name"
+                className="-mx-1 block w-[calc(100%+0.5rem)] rounded-[var(--radius-xs)] bg-surface-raised px-1 font-serif text-[16.5px] leading-6 text-ink shadow-[inset_0_0_0_1px_var(--rule-strong)] outline-none focus:shadow-[var(--focus-ring)]"
+              />
+            ) : (
+              <h3 className="truncate font-serif text-[16.5px] leading-6 text-ink">{space.name}</h3>
+            )}
+            <p className="mt-0.5 text-[12px] text-ink-3 tabular-nums">
+              {nodeCount} {nodeCount === 1 ? "node" : "nodes"} · {timeAgo(new Date(ts))}
+            </p>
+          </div>
 
-      {/* Footer */}
-      <div className="wsd-foot">
-        {/* Title row */}
-        <div className="wsd-foot-row">
-          {renaming ? (
-            <input
-              ref={inputRef}
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              onBlur={commitRename}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") commitRename();
-                if (e.key === "Escape") { setDraft(space.name); setRenaming(false); }
-              }}
+          <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+            <DropdownMenuTrigger
+              render={
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label={`More actions for ${space.name}`}
+                  className="-mr-1 opacity-0 group-hover/card:opacity-100 focus-visible:opacity-100 aria-expanded:opacity-100 pointer-coarse:opacity-100"
+                />
+              }
               onClick={(e) => e.stopPropagation()}
-              autoFocus
-              style={{
-                flex: 1, background: "transparent", border: "none",
-                color: "#fff", fontSize: "15px", fontWeight: 600,
-                outline: "none", padding: 0, fontFamily: "inherit",
-                letterSpacing: "-0.015em",
-              }}
-            />
-          ) : (
-            <div style={{
-              flex: 1, minWidth: 0,
-              fontSize: "15px", fontWeight: 600, color: "#fff",
-              letterSpacing: "-0.015em",
-              whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-            }}>
-              {space.name}
-            </div>
-          )}
+            >
+              <Ellipsis strokeWidth={1.75} />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              align="end"
+              className="w-44"
+              onClick={(e) => e.stopPropagation()}
+              finalFocus={() => inputRef.current ?? !confirmDelete}
+            >
+              <DropdownMenuItem onClick={onOpen}>
+                <ArrowUpRight strokeWidth={1.75} />
+                Open
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={startRename}>
+                <Pencil strokeWidth={1.75} />
+                Rename
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => duplicateSpace(space.id)}>
+                <Copy strokeWidth={1.75} />
+                Duplicate
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                variant="destructive"
+                disabled={isLastSpace}
+                onClick={() => setConfirmDelete(true)}
+              >
+                <Trash2 strokeWidth={1.75} />
+                Delete
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
+      </article>
 
-        {/* Meta row: timestamp */}
-        <div className="wsd-foot-row">
-          <span style={{
-            fontFamily: "var(--font-geist-mono), monospace",
-            fontSize: "10px", fontWeight: 500,
-            color: "rgba(255,255,255,0.28)",
-            letterSpacing: "0.05em", textTransform: "uppercase",
-          }}>
-            {timeAgo(new Date(ts))}
-          </span>
-        </div>
-      </div>
-
-      {confirmDelete && (
-        <DeleteConfirmModal
-          spaceName={space.name}
-          onConfirm={() => { deleteSpace(space.id); setConfirmDelete(false); }}
-          onCancel={() => setConfirmDelete(false)}
-        />
-      )}
-    </article>
+      {/* Outside the card so dialog clicks don't bubble into it. */}
+      <Dialog open={confirmDelete} onOpenChange={setConfirmDelete}>
+        <DialogContent className="w-[min(92vw,420px)]" initialFocus={deleteRef}>
+          <DialogHeader>
+            <DialogTitle>Delete this workflow?</DialogTitle>
+            <DialogDescription>
+              {`“${space.name}” and its ${nodeCount} ${nodeCount === 1 ? "node" : "nodes"} will be removed. This can’t be undone.`}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="h-4" />
+          <DialogFooter>
+            <DialogClose render={<Button variant="ghost" />}>Cancel</DialogClose>
+            <Button
+              ref={deleteRef}
+              variant="ink"
+              className="bg-sanguine hover:bg-sanguine/90"
+              onClick={() => { deleteSpace(space.id); setConfirmDelete(false); }}
+            >
+              Delete <Kbd className="bg-paper/14 text-paper/80 shadow-none">↵</Kbd>
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 
-// ── Create card ───────────────────────────────────────────────────────────────
+// ── Template card ─────────────────────────────────────────────────────────────
 
-function CreateCard({ onCreate }: { onCreate: () => void }) {
+/** Row offsets for the four image → video pairs in the UGC template schematic (viewBox 300×200). */
+const SCHEMATIC_ROWS = [23, 65, 107, 149];
+
+/** A drawn plan of the template's graph: four image nodes, each feeding a video node. */
+function TemplateSchematic() {
   return (
-    <div
-      className="wsd-new"
-      role="button"
-      tabIndex={0}
-      onClick={onCreate}
-      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") onCreate(); }}
+    <svg viewBox="0 0 300 200" className="absolute inset-0 size-full" fill="none" aria-hidden="true">
+      {SCHEMATIC_ROWS.map((y) => (
+        <g key={y}>
+          <line x1={118} y1={y + 14} x2={182} y2={y + 14} className="stroke-ink-4" strokeDasharray="3 3" />
+          <rect x={46.5} y={y + 0.5} width={72} height={28} rx={6} className="fill-surface stroke-rule-strong" />
+          <path d={`M56 ${y + 19} l4 -5 3 3 2.5 -2 3.5 4 z`} className="fill-ink-4" />
+          <rect x={74} y={y + 12} width={34} height={4} rx={2} className="fill-ink-4" />
+          <rect x={182.5} y={y + 0.5} width={72} height={28} rx={6} className="fill-surface stroke-rule-strong" />
+          <path d={`M193 ${y + 9.5} l8 4.5 -8 4.5 z`} className="fill-ink-3" />
+          <rect x={210} y={y + 12} width={34} height={4} rx={2} className="fill-ink-4" />
+          <circle cx={118.5} cy={y + 14.5} r={2} className="fill-ink-3" />
+          <circle cx={182.5} cy={y + 14.5} r={2} className="fill-ink-3" />
+        </g>
+      ))}
+    </svg>
+  );
+}
+
+function TemplateCard({ onLoad }: { onLoad: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onLoad}
+      className={cn(
+        CARD,
+        "cursor-pointer outline-none shadow-[inset_0_0_0_1px_var(--rule)] hover:shadow-[var(--shadow-sm)] focus-visible:shadow-[var(--shadow-sm)]",
+      )}
     >
-      <div className="wsd-new-art">
-        <div className="wsd-plus-orb">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeLinecap="round"
-            style={{ width: 26, height: 26, strokeWidth: 2 }}>
-            <path d="M12 5v14M5 12h14" />
-          </svg>
+      <span className={FRAME_MARKS}>
+        <span className={FRAME}>
+          <TemplateSchematic />
+        </span>
+      </span>
+      <span className="block px-1">
+        <span className="block truncate font-serif text-[16.5px] leading-6 text-ink">UGC set</span>
+        <span className="mt-0.5 block text-[12px] text-ink-3 tabular-nums">4 images → 4 videos</span>
+      </span>
+    </button>
+  );
+}
+
+// ── Empty state ───────────────────────────────────────────────────────────────
+
+function EmptyState({ onCreate }: { onCreate: () => void }) {
+  return (
+    <section className="fresco paper-grain mt-10 flex flex-col items-center overflow-hidden rounded-[var(--radius-lg)] px-8 pt-14 pb-12 text-center shadow-[var(--shadow-sm)]">
+      <div className="crop-marks w-[min(420px,100%)]">
+        <div className="overflow-hidden rounded-[var(--radius)] bg-mat">
+          <NextImage
+            src="/art/the-touch.webp"
+            alt="Two hands reaching toward each other, from Michelangelo’s Creation of Adam"
+            width={1000}
+            height={566}
+            priority
+            className="block h-auto w-full"
+          />
         </div>
       </div>
-      <div style={{
-        padding: "14px 16px 16px",
-        borderTop: "1px solid rgba(255,255,255,0.05)",
-        display: "flex", flexDirection: "column", gap: "10px",
-      }}>
-        <div style={{ fontSize: "15px", fontWeight: 600, color: "#fff", letterSpacing: "-0.015em" }}>
-          New workflow
-        </div>
-        <div style={{
-          display: "flex", alignItems: "center", gap: "6px",
-          fontSize: "10px", fontWeight: 500, letterSpacing: "0.04em",
-          color: "rgba(255,255,255,0.25)", textTransform: "uppercase",
-        }}>
-          <span>Start from scratch</span>
-        </div>
-      </div>
+      <h2 className="type-title mt-9 text-ink">Nothing here yet</h2>
+      <p className="mt-2 max-w-[44ch] text-[14px] leading-relaxed text-ink-2">
+        Connect a prompt to a model and your first workflow will appear here.
+      </p>
+      <Button variant="primary" size="lg" className="mt-6" onClick={onCreate}>
+        <Plus strokeWidth={2} />
+        New workflow <Kbd>N</Kbd>
+      </Button>
+    </section>
+  );
+}
+
+// ── Section header ────────────────────────────────────────────────────────────
+
+function SectionHeader({ title, meta, children }: { title: string; meta?: string; children?: React.ReactNode }) {
+  return (
+    <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-2">
+      <h2 className="type-heading text-ink">{title}</h2>
+      {meta && <span className="text-[12.5px] text-ink-3 tabular-nums">{meta}</span>}
+      {children && <div className="ml-auto">{children}</div>}
     </div>
   );
 }
 
 // ── Dashboard ─────────────────────────────────────────────────────────────────
+
+/** Single-key shortcuts only fire when focus isn't in a field, menu or dialog. */
+function isShortcutBlocked(e: KeyboardEvent) {
+  if (e.defaultPrevented || e.repeat || e.metaKey || e.ctrlKey || e.altKey) return true;
+  const target = e.target as HTMLElement | null;
+  return !!target?.closest?.(
+    'input, textarea, select, [contenteditable=""], [contenteditable="true"], [role="dialog"], [role="alertdialog"], [role="menu"]',
+  );
+}
 
 export default function WorkflowDashboard() {
   const router = useRouter();
@@ -633,6 +375,7 @@ export default function WorkflowDashboard() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [importing, setImporting] = useState(false);
+  const [sort, setSort] = useState<SortKey>("recent");
 
   const openSpace = (id: string) => {
     switchSpace(id);
@@ -647,6 +390,7 @@ export default function WorkflowDashboard() {
     const { addToast } = useWorkflowStore.getState();
     setImporting(true);
     try {
+      // Loaded on demand: the zip reader is heavy and only needed when importing.
       const { importWorkflowZip } = await import("@/lib/importWorkflow");
       const wf = await importWorkflowZip(file);
 
@@ -660,27 +404,24 @@ export default function WorkflowDashboard() {
 
       addToast(
         wf.skipped > 0
-          ? `Imported "${wf.name}" — ${wf.assetCount} asset(s), ${wf.skipped} couldn't be restored`
-          : `Imported "${wf.name}" — ${wf.assetCount} asset(s)`,
+          ? `Imported “${wf.name}” with ${wf.assetCount} asset(s). ${wf.skipped} couldn’t be restored.`
+          : `Imported “${wf.name}” with ${wf.assetCount} asset(s).`,
         wf.skipped > 0 ? "info" : "success",
       );
       router.push(`/workflow/${newId}`);
     } catch (err) {
-      addToast(`Import failed: ${(err as Error).message}`, "error");
+      addToast((err as Error).message, "error", undefined, "Couldn't import that workflow");
     } finally {
       setImporting(false);
     }
   };
 
-  const handleCreate = () => {
-    createSpace(`Space ${spaces.length + 1}`);
-    const newId = useWorkflowStore.getState().activeSpaceId;
-    router.push(`/workflow/${newId}`);
-  };
+  const handleCreate = useCallback(() => {
+    createSpace(`Space ${useWorkflowStore.getState().spaces.length + 1}`);
+    router.push(`/workflow/${useWorkflowStore.getState().activeSpaceId}`);
+  }, [createSpace, router]);
 
-  const TEMPLATE_NAME = "UGC Template";
-
-  const spawnFreshTemplate = () => {
+  const openTemplate = () => {
     const store = useWorkflowStore.getState();
     const existing = store.spaces.find((sp) => sp.name === TEMPLATE_NAME);
     if (existing) {
@@ -692,175 +433,91 @@ export default function WorkflowDashboard() {
     router.push(`/workflow/${newId}`);
   };
 
-  const handleLoadTemplate = () => spawnFreshTemplate();
+  // N: new workflow · I: import
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (isShortcutBlocked(e)) return;
+      const key = e.key.toLowerCase();
+      if (key === "n") {
+        e.preventDefault();
+        handleCreate();
+      } else if (key === "i" && !importing) {
+        e.preventDefault();
+        fileInputRef.current?.click();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [handleCreate, importing]);
 
-  const handleResetTemplate = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    spawnFreshTemplate();
-  };
-
-  const sorted = [...spaces]
+  const workflows = spaces
     .filter((sp) => sp.nodes.length > 0 && sp.name !== TEMPLATE_NAME)
-    .sort((a, b) => (b.updatedAt ?? b.createdAt) - (a.updatedAt ?? a.createdAt));
+    .sort(
+      sort === "name"
+        ? (a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" })
+        : (a, b) => (b.updatedAt ?? b.createdAt) - (a.updatedAt ?? a.createdAt),
+    );
+  const isEmpty = workflows.length === 0;
 
   return (
-    <div
-      style={{
-        flex: 1,
-        minHeight: 0,
-        overflowY: "auto",
-        position: "relative",
-        background: "#0B0E14",
-      }}
-    >
-      <DotCanvasBackground />
-      <style>{CSS}</style>
-
-      <div style={{ paddingBottom: "80px" }}>
-
-        <WorkflowHero />
-
-        {/* ── Page header ── */}
-        <section style={{
-          padding: "28px 32px 20px",
-          display: "flex", alignItems: "center", gap: "24px",
-          flexWrap: "wrap", rowGap: "16px",
-        }}>
+    <div className="relative min-h-0 flex-1 overflow-y-auto">
+      <div className="mx-auto max-w-[1200px] px-8 pt-10 pb-20 md:px-12">
+        <header className="flex flex-wrap items-end gap-x-6 gap-y-4">
           <div>
-            <h1 style={{
-              margin: 0,
-              fontSize: "28px", fontWeight: 600, lineHeight: 1.1, letterSpacing: "-0.02em",
-              color: "#ffffff",
-            }}>
-              My Workflows
-            </h1>
-            <div style={{
-              marginTop: "10px",
-              display: "inline-flex", alignItems: "center", gap: "8px",
-              fontFamily: "var(--font-geist-mono), monospace",
-              fontSize: "11px", fontWeight: 500, color: "rgba(255,255,255,0.4)",
-              letterSpacing: "0.06em", textTransform: "uppercase",
-            }}>
-              <b style={{ color: "rgba(255,255,255,0.7)", fontWeight: 500 }}>{sorted.length}</b>
-              <span>workspace{sorted.length !== 1 ? "s" : ""}</span>
-            </div>
+            <h1 className="type-title text-ink">Workflows</h1>
+            <p className="mt-1.5 text-[13.5px] text-ink-2">
+              Graphs that carry a prompt from first idea to finished image and video.
+            </p>
           </div>
 
-          <div style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: "10px" }}>
+          <div className="ml-auto flex items-center gap-2">
             <input
               ref={fileInputRef}
               type="file"
               accept=".zip,application/zip"
               onChange={handleImportFile}
-              style={{ display: "none" }}
+              className="hidden"
             />
-            <button
-              className="wsd-import-btn"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={importing}
-            >
-              {importing ? <SpinnerIcon /> : <ImportIcon />}
+            <Button variant="outline" onClick={() => fileInputRef.current?.click()} disabled={importing}>
+              {importing ? <LoaderCircle className="animate-spin" strokeWidth={1.75} /> : <Download strokeWidth={1.75} />}
               {importing ? "Importing…" : "Import"}
-            </button>
-            <button className="wsd-new-btn" onClick={handleCreate}>
-              <PlusIcon />
-              New workflow
-            </button>
+              <Kbd>I</Kbd>
+            </Button>
+            {/* The empty state carries the primary action when there's nothing to list. */}
+            {!isEmpty && (
+              <Button variant="primary" onClick={handleCreate}>
+                <Plus strokeWidth={2} />
+                New workflow <Kbd>N</Kbd>
+              </Button>
+            )}
+          </div>
+        </header>
+
+        {isEmpty ? (
+          <EmptyState onCreate={handleCreate} />
+        ) : (
+          <section className="mt-10">
+            <SectionHeader
+              title="Your workflows"
+              meta={`${workflows.length} ${workflows.length === 1 ? "workflow" : "workflows"}`}
+            >
+              <Segmented size="sm" aria-label="Sort workflows" value={sort} onChange={setSort} options={SORT_OPTIONS} />
+            </SectionHeader>
+            <div className={GRID}>
+              {workflows.map((sp) => (
+                <SpaceCard key={sp.id} space={sp} onOpen={() => openSpace(sp.id)} />
+              ))}
+            </div>
+          </section>
+        )}
+
+        <section className="mt-12">
+          <SectionHeader title="Start from a template" meta="Ready-made graphs you can run as is, or adapt." />
+          <div className={GRID}>
+            <TemplateCard onLoad={openTemplate} />
           </div>
         </section>
-
-        {/* ── Grid ── */}
-        <section style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(4, 1fr)",
-          gap: "18px",
-          padding: "0 32px",
-        }}>
-          <CreateCard onCreate={handleCreate} />
-          <TemplateCard onLoad={handleLoadTemplate} onReset={handleResetTemplate} />
-          {sorted.map((sp) => (
-            <SpaceCard key={sp.id} space={sp} onOpen={() => openSpace(sp.id)} />
-          ))}
-        </section>
-
       </div>
     </div>
-  );
-}
-
-// ── Icons ─────────────────────────────────────────────────────────────────────
-
-function MoreHorizIcon() {
-  return (
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" stroke="none">
-      <circle cx="5" cy="12" r="2" />
-      <circle cx="12" cy="12" r="2" />
-      <circle cx="19" cy="12" r="2" />
-    </svg>
-  );
-}
-
-function PlusIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-      <path d="M12 5v14M5 12h14" />
-    </svg>
-  );
-}
-
-function ImportIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-      <polyline points="7 10 12 15 17 10" />
-      <line x1="12" y1="15" x2="12" y2="3" />
-    </svg>
-  );
-}
-
-function SpinnerIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" style={{ animation: "wsd-spin 0.7s linear infinite", transformOrigin: "center" }}>
-      <path d="M12 3a9 9 0 1 0 9 9" />
-    </svg>
-  );
-}
-
-function OpenIcon() {
-  return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-      <polyline points="15 3 21 3 21 9" />
-      <line x1="10" y1="14" x2="21" y2="3" />
-    </svg>
-  );
-}
-
-function RenameIcon() {
-  return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-      <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-    </svg>
-  );
-}
-
-function DuplicateIcon() {
-  return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="9" y="9" width="13" height="13" rx="2" />
-      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-    </svg>
-  );
-}
-
-function DeleteIcon() {
-  return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-      <polyline points="3 6 5 6 21 6" />
-      <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
-      <path d="M10 11v6M14 11v6" />
-      <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
-    </svg>
   );
 }

@@ -1,5 +1,7 @@
 "use client";
-import React, { useState } from "react";
+import { Loader2, Send } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 interface Props {
   onClick: () => void;
@@ -9,86 +11,48 @@ interface Props {
   warningMessages?: string[];
 }
 
+/** The node's primary action. Lapis when ready, sanguine outline when inputs are missing. */
 export default function GenerateButton({ onClick, busy, disabled, extracting, warningMessages }: Props) {
-  const [tooltipVisible, setTooltipVisible] = useState(false);
-  const hasWarning = !!(warningMessages?.length);
-
-  const bg = hasWarning
-    ? "rgba(239,68,68,0.15)"
-    : extracting
-    ? "rgba(251,146,60,0.15)"
-    : "rgba(45,212,191,0.18)";
-
-  const border = hasWarning
-    ? "1px solid rgba(239,68,68,0.45)"
-    : extracting
-    ? "1px solid rgba(251,146,60,0.45)"
-    : "1px solid rgba(45,212,191,0.55)";
+  const hasWarning = !!warningMessages?.length;
 
   return (
-    <div
-      style={{ position: "relative", flexShrink: 0 }}
-      onMouseEnter={() => hasWarning && setTooltipVisible(true)}
-      onMouseLeave={() => setTooltipVisible(false)}
-    >
-      <button
+    <div className="group/generate relative shrink-0">
+      <Button
+        size="sm"
+        variant={hasWarning || extracting ? "outline" : "primary"}
         onMouseDown={(e) => e.stopPropagation()}
         onClick={(e) => { e.stopPropagation(); onClick(); }}
         disabled={disabled || busy || extracting}
-        className="h-7 px-3 rounded-lg flex items-center gap-1.5 transition-all disabled:opacity-50 hover:brightness-110"
-        style={{
-          background: bg,
-          backdropFilter: "blur(10px)",
-          WebkitBackdropFilter: "blur(10px)",
-          border,
-          cursor: disabled || busy || hasWarning ? "not-allowed" : "pointer",
-        }}
+        aria-busy={busy || extracting}
+        className={cn(
+          "h-7 gap-1.5 px-3 text-[12px]",
+          hasWarning && "cursor-not-allowed text-sanguine shadow-[inset_0_0_0_1px_rgb(var(--sanguine-rgb)/0.45)]",
+          extracting && "text-ochre",
+        )}
       >
         {busy ? (
-          <svg width="10" height="10" viewBox="0 0 10 10" fill="none" style={{ animation: "spin 0.9s linear infinite" }}>
-            <circle cx="5" cy="5" r="4" stroke="rgba(255,255,255,0.2)" strokeWidth="1.5" />
-            <path d="M5 1 A4 4 0 0 1 9 5" stroke="rgba(255,255,255,0.85)" strokeWidth="1.5" strokeLinecap="round" />
-          </svg>
+          <Loader2 className="size-3 animate-spin" />
         ) : extracting ? (
           <>
-            <svg width="10" height="10" viewBox="0 0 10 10" fill="none" style={{ animation: "spin 0.9s linear infinite", flexShrink: 0 }}>
-              <circle cx="5" cy="5" r="4" stroke="rgba(251,146,60,0.25)" strokeWidth="1.5" />
-              <path d="M5 1 A4 4 0 0 1 9 5" stroke="#fb923c" strokeWidth="1.5" strokeLinecap="round" />
-            </svg>
-            <span className="text-[11px] font-medium" style={{ color: "#fb923c" }}>Extracting…</span>
+            <Loader2 className="size-3 animate-spin" />
+            Extracting…
           </>
         ) : (
           <>
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={hasWarning ? "#ef4444" : "rgba(255,255,255,0.9)"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-              <line x1="22" y1="2" x2="11" y2="13" />
-              <polygon points="22 2 15 22 11 13 2 9 22 2" />
-            </svg>
-            <span className="text-[11px] font-medium" style={{ color: hasWarning ? "#ef4444" : "rgba(255,255,255,0.9)" }}>Generate</span>
+            <Send className="size-3" strokeWidth={2} />
+            Generate
           </>
         )}
-      </button>
+      </Button>
 
-      {tooltipVisible && warningMessages && (
+      {hasWarning && (
         <div
-          style={{
-            position: "absolute",
-            bottom: "calc(100% + 5px)",
-            right: 0,
-            background: "#1A1A1A",
-            border: "1px solid rgba(239,68,68,0.3)",
-            borderRadius: 6,
-            padding: "5px 9px",
-            whiteSpace: "nowrap",
-            fontSize: 11,
-            color: "#CCCCCC",
-            boxShadow: "0 4px 14px rgba(0,0,0,0.55)",
-            zIndex: 200,
-            pointerEvents: "none",
-          }}
+          role="tooltip"
+          className="pointer-events-none absolute right-0 bottom-[calc(100%+6px)] z-[200] rounded-[var(--radius-sm)] bg-surface-raised px-2.5 py-1.5 text-[12px] whitespace-nowrap text-ink-2 opacity-0 shadow-[var(--shadow-lg)] transition-opacity duration-150 group-hover/generate:opacity-100"
         >
           {warningMessages.map((msg, i) => (
-            <div key={i} style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <span style={{ color: "#ef4444", fontSize: 8 }}>●</span>
+            <div key={i} className="flex items-center gap-1.5">
+              <span className="size-1.5 shrink-0 rounded-full bg-sanguine" />
               {msg}
             </div>
           ))}

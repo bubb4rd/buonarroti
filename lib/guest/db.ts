@@ -6,7 +6,7 @@ import { db } from "./sqlite";
  * unchanged from the old JSON implementation so every caller stays the same.
  */
 
-interface Generation {
+export interface Generation {
   id: string;
   user_id: string | null;
   task_id: string;
@@ -25,6 +25,9 @@ interface Generation {
   image_urls?: string[];
   video_url?: string;
   error_msg?: string;
+  error_code?: string;
+  provider?: string;
+  client_request_id?: string;
   created_at: string;
   updated_at: string;
 }
@@ -81,6 +84,9 @@ function rowToGeneration(r: GenRow): Generation {
     image_urls: parseArr(r.image_urls),
     video_url: (r.video_url as string) ?? undefined,
     error_msg: (r.error_msg as string) ?? undefined,
+    error_code: (r.error_code as string) ?? undefined,
+    provider: (r.provider as string) ?? undefined,
+    client_request_id: (r.client_request_id as string) ?? undefined,
     created_at: r.created_at as string,
     updated_at: r.updated_at as string,
   };
@@ -99,9 +105,10 @@ export function insertGeneration(data: Omit<Generation, "id" | "created_at" | "u
       INSERT INTO generations
         (id, user_id, task_id, generation_type, status, prompt, model, aspect_ratio,
          quality, azure_resolution, duration, kling_mode, sound, reference_image_urls,
-         image_url, image_urls, video_url, error_msg, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(task_id) DO NOTHING
+         image_url, image_urls, video_url, error_msg, error_code, provider, client_request_id,
+         created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT DO NOTHING
     `)
     .run(
       randomUUID(), data.user_id ?? null, data.task_id, data.generation_type, data.status,
@@ -110,13 +117,14 @@ export function insertGeneration(data: Omit<Generation, "id" | "created_at" | "u
       data.sound ? 1 : 0,
       data.reference_image_urls ? JSON.stringify(data.reference_image_urls) : null,
       data.image_url ?? null, data.image_urls ? JSON.stringify(data.image_urls) : null,
-      data.video_url ?? null, data.error_msg ?? null, ts, ts,
+      data.video_url ?? null, data.error_msg ?? null, data.error_code ?? null,
+      data.provider ?? null, data.client_request_id ?? null, ts, ts,
     );
 }
 
 export function updateGeneration(
   taskId: string,
-  updates: Partial<Pick<Generation, "status" | "image_url" | "image_urls" | "video_url" | "error_msg">>,
+  updates: Partial<Pick<Generation, "status" | "image_url" | "image_urls" | "video_url" | "error_msg" | "error_code">>,
 ): void {
   const sets: string[] = ["updated_at = ?"];
   const vals: unknown[] = [now()];
@@ -125,15 +133,26 @@ export function updateGeneration(
   if ("image_urls" in updates) { sets.push("image_urls = ?"); vals.push(updates.image_urls ? JSON.stringify(updates.image_urls) : null); }
   if ("video_url" in updates) { sets.push("video_url = ?"); vals.push(updates.video_url ?? null); }
   if ("error_msg" in updates) { sets.push("error_msg = ?"); vals.push(updates.error_msg ?? null); }
+  if ("error_code" in updates) { sets.push("error_code = ?"); vals.push(updates.error_code ?? null); }
   vals.push(taskId);
   db().prepare(`UPDATE generations SET ${sets.join(", ")} WHERE task_id = ?`).run(...(vals as never[]));
 }
 
-export function recoverJob(
-  taskId: string,
-): Pick<Generation, "status" | "video_url" | "image_url" | "image_urls" | "error_msg"> | null {
+export function getGenerationByTaskId(taskId: string): Generation | null {
   const r = db().prepare("SELECT * FROM generations WHERE task_id = ?").get(taskId) as GenRow | undefined;
   return r ? rowToGeneration(r) : null;
+}
+
+export function getGenerationByClientRequestId(clientRequestId: string): Generation | null {
+  const r = db()
+    .prepare("SELECT * FROM generations WHERE client_request_id = ?")
+    .get(clientRequestId) as GenRow | undefined;
+  return r ? rowToGeneration(r) : null;
+}
+
+export function listPendingGenerations(): Generation[] {
+  const rows = db().prepare("SELECT * FROM generations WHERE status = 'pending'").all() as GenRow[];
+  return rows.map(rowToGeneration);
 }
 
 export function getGenerations(userId: string, type: "image" | "video"): Generation[] {

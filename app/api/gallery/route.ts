@@ -1,11 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { GUEST_USER_ID } from "@/lib/guestMode";
 import * as guestDb from "@/lib/guest/db";
+import { ensureJobsRecovered } from "@/lib/kieJobPoller";
 
 const LIMIT = 20;
 
 export async function GET(req: NextRequest) {
   const { searchParams } = req.nextUrl;
+  // The gallery is usually the first screen after launch — a good moment to
+  // resume (or close out) generations a previous run left pending.
+  void ensureJobsRecovered();
   const mediaType = searchParams.get("type") === "video" ? "video" : "image";
   const page      = Math.max(0, Number(searchParams.get("page") ?? 0));
   const source    = searchParams.get("source") as "generation" | "upload" | null;

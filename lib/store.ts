@@ -4,6 +4,7 @@ import { persist, createJSONStorage } from "zustand/middleware";
 import { edgeStyle } from "./edgeStyles";
 import { VIDEO_MODELS } from "./modelConfig";
 import { requestWorkflowSync } from "./workflowSyncBus";
+import { NODE_LABELS } from "./nodeTypes";
 import {
   Node,
   Edge,
@@ -59,12 +60,99 @@ export interface NodeData extends Record<string, unknown> {
   seed?: number;
   // error
   errorMsg?: string;
+  /** Contract error code of the last failed job ("credits", "interrupted", …). */
+  errorCode?: string;
   // validation
   hasError?: boolean;
   locked?: boolean;
-  // pending job
+  // in-flight job
   taskId?: string;
+  /** Idempotency key sent with the POST; kept on interruption so a retry can't double-bill. */
+  clientRequestId?: string;
+  /** Index into `generations` reserved for the in-flight job at submit time. */
+  jobSlot?: number;
+  /** Epoch ms the in-flight job was submitted. */
+  jobStartedAt?: number;
+  // pipeline runner flags (never meaningful across reloads)
+  pendingGenerate?: boolean;
+  pipelineQueued?: boolean;
 }
+
+export const INTERRUPTED_MESSAGE = "This generation was interrupted. Retry?";
+
+/**
+ * Node ids whose generation POST is currently in flight in this tab. A node in
+ * this set is legitimately `running` without a `taskId` yet.
+ */
+export const inflightSubmits = new Set<string>();
+
+type GenSlot = string | null | { error: string };
+
+/**
+ * Make persisted node state honest after a reload / space load:
+ * - `pending`, or `running` without a taskId (and no live POST) → interrupted error
+ *   (prompt, inputs and clientRequestId are kept so Retry can reuse the request id).
+ * - `running` with a taskId is left alone; the node resumes watching it.
+ * - Pipeline flags are cleared; the pipeline itself is never persisted.
+ * - Pre-rebrand labels ("Image Generator #2", "ASSISTANT") become sentence case.
+ * Returns the same array when nothing changed.
+ */
+export function sanitizeNodes(nodes: Node<NodeData>[]): Node<NodeData>[] {
+  let changed = false;
+  const out = nodes.map((n) => {
+    const d = n.data;
+    if (!d) return n;
+    const stale = !inflightSubmits.has(n.id) &&
+      (d.status === "pending" || (d.status === "running" && !d.taskId));
+    const pending = d.status === "pending" && !!d.taskId;
+    const label = migrateLabel(d.label);
+    if (!stale && !pending && !d.pendingGenerate && !d.pipelineQueued && !label) return n;
+    changed = true;
+    const data: NodeData = { ...d, pendingGenerate: false, pipelineQueued: false, ...(label ? { label } : {}) };
+    if (pending) data.status = "running";
+    if (stale) {
+      const gens = Array.isArray(d.generations) ? [...(d.generations as GenSlot[])] : [];
+      let slot = typeof d.jobSlot === "number" && gens[d.jobSlot] === null ? d.jobSlot : gens.lastIndexOf(null);
+      if (slot !== -1) gens[slot] = { error: INTERRUPTED_MESSAGE };
+      else slot = (d.currentGenIdx as number | undefined) ?? 0;
+      Object.assign(data, {
+        status: "error",
+        errorMsg: INTERRUPTED_MESSAGE,
+        errorCode: "interrupted",
+        taskId: undefined,
+        jobSlot: undefined,
+        jobStartedAt: undefined,
+        ...(Array.isArray(d.generations) ? { generations: gens, currentGenIdx: slot, imageUrl: undefined } : {}),
+      } satisfies Partial<NodeData>);
+    }
+    return { ...n, data };
+  });
+  return changed ? out : nodes;
+}
+
+function sanitizeSpace(sp: Space): Space {
+  const nodes = sanitizeNodes(sp.nodes);
+  return nodes === sp.nodes ? sp : { ...sp, nodes };
+}
+
+// ── Persisted key migration (heliosgen-guest → buonarroti-workspace) ─────────
+
+const PERSIST_KEY = "buonarroti-workspace";
+const LEGACY_PERSIST_KEY = "heliosgen-guest";
+
+const migratingStorage = {
+  getItem: (name: string): string | null => {
+    const current = localStorage.getItem(name);
+    if (current !== null || name !== PERSIST_KEY) return current;
+    const legacy = localStorage.getItem(LEGACY_PERSIST_KEY);
+    if (legacy === null) return null;
+    localStorage.setItem(PERSIST_KEY, legacy);
+    localStorage.removeItem(LEGACY_PERSIST_KEY);
+    return legacy;
+  },
+  setItem: (name: string, value: string) => localStorage.setItem(name, value),
+  removeItem: (name: string) => localStorage.removeItem(name),
+};
 
 /** Pick only the listed keys from an object; returns null if none are present. */
 function filterKeys<T extends object>(obj: T, keys: (keyof T)[]): Partial<T> | null {
@@ -76,17 +164,12 @@ function filterKeys<T extends object>(obj: T, keys: (keyof T)[]): Partial<T> | n
   return found ? result : null;
 }
 
-/** Human-readable label for each node type, including the counter */
-export function getNodeLabel(type: string, n: number): string {
-  if (type === "assistantNode") return "ASSISTANT";
-  const map: Record<string, string> = {
-    promptNode:          `Text #${n}`,
-    imageInputNode:      `Image #${n}`,
-    generateNode:        `Image Generator #${n}`,
-    videoGeneratorNode:  `Video Generator #${n}`,
-    commentNode:         `Comment #${n}`,
-  };
-  return map[type] ?? `Node #${n}`;
+/** Pre-rebrand labels ("Image Generator #2", "ASSISTANT") → sentence case; undefined if already fine. */
+function migrateLabel(label: unknown): string | undefined {
+  if (typeof label !== "string") return undefined;
+  if (label === "ASSISTANT") return NODE_LABELS.assistantNode;
+  const m = /^(Image|Video) Generator (#\d+)$/.exec(label);
+  return m ? `${m[1]} generator ${m[2]}` : undefined;
 }
 
 // ── Space ─────────────────────────────────────────────────────────────────────
@@ -147,6 +230,10 @@ export interface Toast {
   preview?: string;
 }
 
+/** Sections of the Settings window (components/SettingsModal.tsx). */
+export type SettingsSectionId =
+  | "appearance" | "api-keys" | "codex" | "image-models" | "video-models" | "text-models" | "debug";
+
 interface WorkflowStore {
   // ── Toasts
   toasts:      Toast[];
@@ -196,7 +283,8 @@ interface WorkflowStore {
   killEdgesForHandles:  (nodeId: string, handleIds: string[]) => void;
   remapTargetHandle:    (nodeId: string, fromHandle: string, toHandle: string) => void;
   flashEdgeError:       (edgeId: string) => void;
-  updateNodeData:     (id: string, data: Partial<NodeData>) => void;
+  /** Merge into a node's data. `spaceId` targets a (possibly inactive) space; defaults to the active one. */
+  updateNodeData:     (id: string, data: Partial<NodeData>, spaceId?: string) => void;
   updateNodeSize:     (id: string, width: number, height: number) => void;
   setIsRunning:       (v: boolean) => void;
   toggleDebug:        () => void;
@@ -204,7 +292,10 @@ interface WorkflowStore {
   connectingHandleType: string | null;
   setConnectingHandleType: (type: string | null) => void;
   settingsOpen:              boolean;
-  setSettingsOpen:           (v: boolean) => void;
+  /** Section the Settings window shows; pass one to `setSettingsOpen` to jump there. */
+  settingsSection:           SettingsSectionId;
+  setSettingsOpen:           (v: boolean, section?: SettingsSectionId) => void;
+  setSettingsSection:        (section: SettingsSectionId) => void;
   showDashboard:             boolean;
   setShowDashboard:          (v: boolean) => void;
   globalMuted:               boolean;
@@ -307,9 +398,11 @@ export const useWorkflowStore = create<WorkflowStore>()(
         switchSpace: (id) =>
           set((s) => {
             if (id === s.activeSpaceId) return {};
-            const target = s.spaces.find((sp) => sp.id === id);
-            if (!target) return {};
-            const spaces = syncSpace(s.spaces, s.activeSpaceId, s.nodes, s.edges, s.nodeCounters);
+            const found = s.spaces.find((sp) => sp.id === id);
+            if (!found) return {};
+            const target = sanitizeSpace(found);
+            const spaces = syncSpace(s.spaces, s.activeSpaceId, s.nodes, s.edges, s.nodeCounters)
+              .map((sp) => (sp.id === id ? target : sp));
             return {
               spaces,
               activeSpaceId: id,
@@ -442,7 +535,7 @@ export const useWorkflowStore = create<WorkflowStore>()(
             const undoStack    = [...s.undoStack.slice(-(MAX_UNDO - 1)), { nodes: s.nodes, edges: s.edges }];
             const type         = node.type ?? "unknown";
             const count        = (s.nodeCounters[type] ?? 0) + 1;
-            const label        = getNodeLabel(type, count);
+            const label        = `${NODE_LABELS[type] ?? "Node"} #${count}`;
             const savedDefaults =
               type === "generateNode"       ? s.nodeDefaults.generateNode :
               type === "videoGeneratorNode" ? s.nodeDefaults.videoGeneratorNode : {};
@@ -532,8 +625,22 @@ export const useWorkflowStore = create<WorkflowStore>()(
           setTimeout(() => setError(false), 1400);
         },
 
-        updateNodeData: (id, data) =>
+        updateNodeData: (id, data, spaceId) =>
           set((s) => {
+            // A late write (e.g. a POST resolving after the user switched space)
+            // lands in the space the node lives in instead of being dropped.
+            if (spaceId && spaceId !== s.activeSpaceId) {
+              return {
+                spaces: s.spaces.map((sp) =>
+                  sp.id !== spaceId ? sp : {
+                    ...sp,
+                    updatedAt: Date.now(),
+                    nodes: sp.nodes.map((n) => (n.id === id ? { ...n, data: { ...n.data, ...data } } : n)),
+                  }
+                ),
+              };
+            }
+
             const nodes = s.nodes.map((n) =>
               n.id === id ? { ...n, data: { ...n.data, ...data } } : n
             );
@@ -662,10 +769,11 @@ export const useWorkflowStore = create<WorkflowStore>()(
 
             // If the current active space isn't in the merged set (e.g. it was an
             // empty placeholder), fall back to the first real DB space.
-            const activeId = merged.find((sp) => sp.id === s.activeSpaceId)?.id ?? merged[0].id;
-            const active   = merged.find((sp) => sp.id === activeId)!;
+            const spaces   = merged.map(sanitizeSpace);
+            const activeId = spaces.find((sp) => sp.id === s.activeSpaceId)?.id ?? spaces[0].id;
+            const active   = spaces.find((sp) => sp.id === activeId)!;
             return {
-              spaces:        merged,
+              spaces,
               activeSpaceId: activeId,
               nodes:         active.nodes,
               edges:         active.edges,
@@ -702,7 +810,9 @@ export const useWorkflowStore = create<WorkflowStore>()(
         setAzureKeySet: (v) => set({ azureKeySet: v }),
 
         settingsOpen:              false,
-        setSettingsOpen:           (v) => set({ settingsOpen: v }),
+        settingsSection:           "appearance",
+        setSettingsOpen:           (v, section) => set(section ? { settingsOpen: v, settingsSection: section } : { settingsOpen: v }),
+        setSettingsSection:        (section) => set({ settingsSection: section }),
         showDashboard:             true,
         setShowDashboard:          (v) => set({ showDashboard: v }),
         globalMuted:               true,
@@ -712,8 +822,12 @@ export const useWorkflowStore = create<WorkflowStore>()(
       };
     },
     {
-      name: "heliosgen-guest",
-      storage: createJSONStorage(() => localStorage),
+      name: PERSIST_KEY,
+      storage: createJSONStorage(() => {
+        // No localStorage on the server: throwing disables persistence there, as before.
+        if (typeof localStorage === "undefined") throw new Error("localStorage unavailable");
+        return migratingStorage;
+      }),
       partialize: (s) => ({
         spaces: s.spaces.map((sp) => ({
           ...sp,
@@ -738,7 +852,8 @@ export const useWorkflowStore = create<WorkflowStore>()(
         lastNodeSize: s.lastNodeSize,
       }),
 
-      // Migration: v0 had flat nodes/edges/nodeCounters; wrap them in a space
+      // Migration: v0 had flat nodes/edges/nodeCounters; wrap them in a space.
+      // Also sanitize in-flight job state so nothing is stuck "generating" forever.
       onRehydrateStorage: () => (state) => {
         if (!state) return;
         // Ensure nodeDefaults exists for old stored data
@@ -759,6 +874,8 @@ export const useWorkflowStore = create<WorkflowStore>()(
           state.spaces        = [sp];
           state.activeSpaceId = sp.id;
         }
+        state.spaces = state.spaces.map(sanitizeSpace);
+        state.nodes  = sanitizeNodes(state.nodes ?? []);
       },
     }
   )

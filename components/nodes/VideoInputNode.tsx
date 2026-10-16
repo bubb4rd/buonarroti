@@ -13,9 +13,9 @@ const MAX_BYTES = 100 * 1024 * 1024; // 100 MB
 const IMAGE_HANDLES = new Set(["startFrame", "endFrame", "resource", "image"]);
 
 const VIDEO_SRC_COLORS: Record<string, string> = {
-  image: "#2DD4BF",
-  video: "#22d3ee",
-  audio: "#5EEAD4",
+  image: "var(--handle-image)",
+  video: "var(--handle-video)",
+  audio: "var(--handle-audio)",
 };
 
 const VIDEO_SOURCE_HANDLES = [
@@ -702,8 +702,8 @@ export default function VideoInputNode({ id, data, selected }: NodeProps<VideoIn
           const color = VIDEO_SRC_COLORS[def.type];
           return (
             <div
-              className="absolute pointer-events-none z-[1001] text-[10px] px-2.5 py-1 rounded-lg whitespace-nowrap shadow-xl"
-              style={{ top: `calc(50% + ${videoSourceHandleCenterOffset(idx)}px)`, right: 0, transform: "translate(calc(100% + 34px), -50%)", background: "#1A1A1A", border: `1px solid ${color}33`, color: "#CCCCCC" }}
+              className="absolute pointer-events-none z-[1001] text-[11px] px-2.5 py-1 rounded-[var(--radius-sm)] whitespace-nowrap bg-surface-raised text-ink-2 shadow-[var(--shadow-lg)]"
+              style={{ top: `calc(50% + ${videoSourceHandleCenterOffset(idx)}px)`, right: 0, transform: "translate(calc(100% + 34px), -50%)" }}
             >
               <span style={{ color }} className="mr-1.5">●</span>{def.label}
             </div>
@@ -819,8 +819,7 @@ export default function VideoInputNode({ id, data, selected }: NodeProps<VideoIn
             <>
               {/* Video / Frame toggle switch — top-left, visible on hover */}
               <div
-                className="absolute top-2 left-2 z-10 flex items-center p-1 rounded-full gap-0.5 opacity-0 group-hover/player:opacity-100 transition-opacity node-slide-reveal"
-                style={{ background: "rgba(0,0,0,0.55)", backdropFilter: "blur(8px)" }}
+                className="on-media absolute top-2 left-2 z-10 flex items-center p-1 rounded-full gap-0.5 bg-black/55 backdrop-blur-md opacity-0 group-hover/player:opacity-100 transition-opacity node-slide-reveal"
                 onMouseDown={(e) => e.stopPropagation()}
               >
                 {/* Sliding active indicator */}
@@ -829,8 +828,8 @@ export default function VideoInputNode({ id, data, selected }: NodeProps<VideoIn
                   top: 4, left: 4,
                   width: 28, height: 28,
                   borderRadius: "50%",
-                  background: viewMode === "frame" && displayFrameUrl ? "transparent" : "rgba(255,255,255,0.18)",
-                  border: "1.5px solid rgba(255,255,255,0.45)",
+                  background: viewMode === "frame" && displayFrameUrl ? "transparent" : "rgb(255 255 255 / 0.18)",
+                  border: "1.5px solid rgb(255 255 255 / 0.45)",
                   transform: `translateX(${viewMode === "frame" ? 30 : 0}px)`,
                   transition: "transform 220ms cubic-bezier(0.34, 1.56, 0.64, 1)",
                   pointerEvents: "none",
@@ -841,7 +840,7 @@ export default function VideoInputNode({ id, data, selected }: NodeProps<VideoIn
                   className="w-7 h-7 rounded-full flex items-center justify-center relative z-10"
                   title="Show video"
                 >
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={viewMode === "video" ? "white" : "#777"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ transition: "stroke 220ms" }}>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`transition-colors duration-200 ${viewMode === "video" ? "text-white" : "text-white/45"}`}>
                     <rect width="15" height="14" x="2" y="5" rx="2" />
                     <path d="m17 8 5-3v14l-5-3V8Z" />
                   </svg>
@@ -868,7 +867,7 @@ export default function VideoInputNode({ id, data, selected }: NodeProps<VideoIn
                       flexShrink: 0,
                     }} />
                   ) : (
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={viewMode === "frame" ? "white" : "#777"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ transition: "stroke 220ms" }}>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`transition-colors duration-200 ${viewMode === "frame" ? "text-white" : "text-white/45"}`}>
                       <rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="8.5" cy="8.5" r="1.5" /><polyline points="21 15 16 10 5 21" />
                     </svg>
                   )}
@@ -967,8 +966,8 @@ export default function VideoInputNode({ id, data, selected }: NodeProps<VideoIn
                   <button
                     onMouseDown={(e) => e.stopPropagation()}
                     onClick={() => { fileRef.current?.click(); }}
-                    className="h-6 px-3 rounded-full bg-black/50 backdrop-blur-sm border border-white/10 text-[10px] text-[#CCCCCC] hover:text-white hover:bg-black/70 transition-colors pointer-events-auto"
-                  >replace</button>
+                    className="on-media h-6 px-3 rounded-full bg-black/45 backdrop-blur-md border border-white/10 text-[11px] text-white/80 hover:text-white hover:bg-black/70 transition-colors pointer-events-auto"
+                  >Replace</button>
                 </div>
               )}
 
@@ -977,10 +976,10 @@ export default function VideoInputNode({ id, data, selected }: NodeProps<VideoIn
                 <button
                   onMouseDown={(e) => e.stopPropagation()}
                   onClick={(e) => { e.stopPropagation(); openTrim(); }}
-                  className={`absolute right-2 bottom-2 w-7 h-7 rounded-full backdrop-blur-sm flex items-center justify-center opacity-0 group-hover/player:opacity-100 transition-opacity pointer-events-auto z-10 node-slide-reveal ${data.trimStart !== undefined ? "bg-amber-400/80 hover:bg-amber-400" : "bg-black/40 hover:bg-black/60"}`}
+                  className={`on-media absolute right-2 bottom-2 w-7 h-7 rounded-full backdrop-blur-md flex items-center justify-center opacity-0 group-hover/player:opacity-100 transition-opacity pointer-events-auto z-10 node-slide-reveal ${data.trimStart !== undefined ? "bg-ochre/85 hover:bg-ochre text-paper" : "bg-black/45 hover:bg-black/60 text-white"}`}
                   title="Trim video"
                 >
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={data.trimStart !== undefined ? "black" : "white"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <circle cx="6" cy="6" r="3" /><circle cx="6" cy="18" r="3" />
                     <line x1="20" y1="4" x2="8.12" y2="15.88" />
                     <line x1="14.47" y1="14.48" x2="20" y2="20" />
@@ -1016,7 +1015,7 @@ export default function VideoInputNode({ id, data, selected }: NodeProps<VideoIn
                     if (v) { v.pause(); setScrubPos(v.currentTime / (v.duration || 1)); }
                     setPickerOpen(true);
                   }}
-                  className="absolute bottom-2 left-1/2 -translate-x-1/2 h-6 px-3 rounded-full bg-black/50 backdrop-blur-sm border border-white/10 text-[10px] text-[#CCCCCC] hover:text-white hover:bg-black/70 transition-colors opacity-0 group-hover/player:opacity-100 pointer-events-auto z-10 node-slide-reveal"
+                  className="on-media absolute bottom-2 left-1/2 -translate-x-1/2 h-6 px-3 rounded-full bg-black/45 backdrop-blur-md border border-white/10 text-[11px] text-white/80 hover:text-white hover:bg-black/70 transition-colors opacity-0 group-hover/player:opacity-100 pointer-events-auto z-10 node-slide-reveal"
                   title="Retake frame"
                 >
                   <span className="flex items-center gap-1">
@@ -1076,7 +1075,7 @@ export default function VideoInputNode({ id, data, selected }: NodeProps<VideoIn
                         style={{
                           left:   `${(localTrimStart / videoDuration) * 100}%`,
                           right:  `${100 - (localTrimEnd / videoDuration) * 100}%`,
-                          border: "1.5px solid #FBBF24",
+                          border: "1.5px solid var(--ochre)",
                         }}
                         onPointerDown={startSelectionDrag}
                       />
@@ -1107,7 +1106,7 @@ export default function VideoInputNode({ id, data, selected }: NodeProps<VideoIn
 
               {/* Row: times + action buttons */}
               <div className="flex items-center justify-between">
-                <span className="text-[10px] text-amber-400 font-mono">{fmtTime(localTrimStart)} – {fmtTime(localTrimEnd)}</span>
+                <span className="text-[11px] text-ochre font-mono tabular-nums">{fmtTime(localTrimStart)} – {fmtTime(localTrimEnd)}</span>
                 <div className="flex gap-1.5">
                   {data.trimStart !== undefined && (
                     <button
@@ -1127,8 +1126,7 @@ export default function VideoInputNode({ id, data, selected }: NodeProps<VideoIn
                     onMouseDown={(e) => e.stopPropagation()}
                     onPointerDown={(e) => e.stopPropagation()}
                     onClick={(e) => { e.stopPropagation(); applyTrim(); }}
-                    className="nodrag h-5 px-2 rounded-full text-black text-[10px] font-semibold flex items-center cursor-pointer"
-                    style={{ background: "#FBBF24" }}
+                    className="nodrag h-5 px-2 rounded-full bg-ochre text-paper text-[10px] font-semibold flex items-center cursor-pointer"
                   >Apply</button>
                 </div>
               </div>
@@ -1222,8 +1220,8 @@ export default function VideoInputNode({ id, data, selected }: NodeProps<VideoIn
                 <div className="flex items-center justify-between">
                   <span className="text-[11px] text-white font-mono tabular-nums">{fmtTime(currentSec)}</span>
                   {captureErr
-                    ? <span className="text-[10px] text-red-400">{captureErr}</span>
-                    : <span className="text-[10px] text-white/40">drag to seek</span>
+                    ? <span className="text-[11px] text-sanguine">{captureErr}</span>
+                    : <span className="text-[11px] text-white/50">Drag to seek</span>
                   }
                 </div>
                 <input
@@ -1250,8 +1248,8 @@ export default function VideoInputNode({ id, data, selected }: NodeProps<VideoIn
                     {capturing ? (
                       <>
                         <svg width="11" height="11" viewBox="0 0 22 22" fill="none" style={{ animation: "spin 0.9s linear infinite" }}>
-                          <circle cx="11" cy="11" r="8" stroke="#333" strokeWidth="2.5" />
-                          <path d="M11 3A8 8 0 0 1 19 11" stroke="#000" strokeWidth="2.5" strokeLinecap="round" />
+                          <circle cx="11" cy="11" r="8" stroke="currentColor" strokeOpacity={0.25} strokeWidth="2.5" />
+                          <path d="M11 3A8 8 0 0 1 19 11" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
                         </svg>
                         Capturing…
                       </>
@@ -1285,30 +1283,27 @@ export default function VideoInputNode({ id, data, selected }: NodeProps<VideoIn
 
           {/* Upload overlay */}
           {uploading && (
-            <div className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center gap-2 pointer-events-none">
-              <svg width="22" height="22" viewBox="0 0 22 22" fill="none" style={{ animation: "spin 0.9s linear infinite" }}>
-                <circle cx="11" cy="11" r="8" stroke="#333" strokeWidth="2.5" />
-                <path d="M11 3A8 8 0 0 1 19 11" stroke="#22d3ee" strokeWidth="2.5" strokeLinecap="round" />
-              </svg>
-              <span className="text-[10px] text-[#22d3ee]">Uploading…</span>
+            <div className="on-media absolute inset-0 bg-black/45 flex flex-col items-center justify-center gap-2 pointer-events-none">
+              <div className="ink-shimmer absolute inset-0" aria-hidden />
+              <span className="relative text-[11px] text-white">Uploading…</span>
             </div>
           )}
 
           {/* Frame extraction badge */}
           {isExtractingFrame && !uploading && !pickerOpen && (
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-20">
-              <div className="flex items-center gap-1.5 h-7 px-3 rounded-full bg-black/60 backdrop-blur-sm border border-white/10">
+              <div className="on-media flex items-center gap-1.5 h-7 px-3 rounded-full bg-black/45 backdrop-blur-md text-white">
                 <svg width="11" height="11" viewBox="0 0 22 22" fill="none" style={{ animation: "spin 0.9s linear infinite" }}>
-                  <circle cx="11" cy="11" r="8" stroke="#333" strokeWidth="2.5" />
-                  <path d="M11 3A8 8 0 0 1 19 11" stroke="#2DD4BF" strokeWidth="2.5" strokeLinecap="round" />
+                  <circle cx="11" cy="11" r="8" stroke="currentColor" strokeOpacity={0.3} strokeWidth="2.5" />
+                  <path d="M11 3A8 8 0 0 1 19 11" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
                 </svg>
-                <span className="text-[10px] text-[#2DD4BF]">Extracting…</span>
+                <span className="text-[11px]">Extracting frame…</span>
               </div>
             </div>
           )}
 
           {uploadErr && !uploading && (
-            <div className="absolute bottom-0 left-0 right-0 bg-black/70 px-2 py-1 text-[10px] text-red-400 text-center">
+            <div className="absolute bottom-0 left-0 right-0 bg-surface-raised border-t border-rule px-2 py-1 text-[11px] text-sanguine text-center">
               {uploadErr}
             </div>
           )}
@@ -1378,8 +1373,8 @@ export default function VideoInputNode({ id, data, selected }: NodeProps<VideoIn
         const color = VIDEO_SRC_COLORS[def.type];
         return (
           <div
-            className="absolute pointer-events-none z-[1001] text-[10px] px-2.5 py-1 rounded-lg whitespace-nowrap shadow-xl"
-            style={{ top: `calc(50% + ${videoSourceHandleCenterOffset(idx)}px)`, right: 0, transform: "translate(calc(100% + 34px), -50%)", background: "#1A1A1A", border: `1px solid ${color}33`, color: "#CCCCCC" }}
+            className="absolute pointer-events-none z-[1001] text-[11px] px-2.5 py-1 rounded-[var(--radius-sm)] whitespace-nowrap bg-surface-raised text-ink-2 shadow-[var(--shadow-lg)]"
+            style={{ top: `calc(50% + ${videoSourceHandleCenterOffset(idx)}px)`, right: 0, transform: "translate(calc(100% + 34px), -50%)" }}
           >
             <span style={{ color }} className="mr-1.5">●</span>{def.label}
           </div>
@@ -1391,16 +1386,16 @@ export default function VideoInputNode({ id, data, selected }: NodeProps<VideoIn
           onDrop={onDrop}
           onDragOver={(e) => e.preventDefault()}
           onClick={() => { fileRef.current?.click(); }}
-          className="border border-dashed border-[#22d3ee]/20 hover:border-[#22d3ee]/40 rounded-md cursor-pointer transition-colors py-8 text-center"
+          className="bg-mat border border-dashed border-rule-strong hover:border-lapis rounded-[var(--radius)] cursor-pointer transition-colors py-8 text-center"
         >
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#22d3ee" strokeWidth="1.5" strokeLinecap="round" className="mx-auto mb-2 opacity-40">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className="mx-auto mb-2 text-ink-3">
             <rect width="18" height="14" x="3" y="5" rx="2" />
-            <path d="m16 10-4-2.5v5L16 10z" fill="#22d3ee" stroke="none" />
+            <path d="m16 10-4-2.5v5L16 10z" fill="currentColor" stroke="none" />
           </svg>
-          <p className="text-[11px] text-[#A0A0A0]">Drop video or{" "}<span className="underline underline-offset-2 text-white">browse</span></p>
-          <p className="text-[10px] text-[#4A4A45] mt-1">Max 100 MB</p>
+          <p className="text-[12px] text-ink-2">Drop a video or{" "}<span className="underline underline-offset-2 text-ink">browse</span></p>
+          <p className="text-[11px] text-ink-3 mt-1">Up to 100 MB</p>
         </div>
-        {uploadErr && <p className="text-[10px] text-red-400 mt-1.5 text-center">{uploadErr}</p>}
+        {uploadErr && <p className="text-[11px] text-sanguine mt-1.5 text-center">{uploadErr}</p>}
       </div>
 
       <input ref={fileRef} type="file" accept="video/*" className="hidden"
@@ -1411,7 +1406,7 @@ export default function VideoInputNode({ id, data, selected }: NodeProps<VideoIn
 
 function PromptIcon() {
   return (
-    <svg width="12" height="12" viewBox="0 0 14 14" fill="white">
+    <svg width="12" height="12" viewBox="0 0 14 14" fill="currentColor">
       <path d="M1.5 2h11v2H8.5v8H5.5V4H1.5V2z" />
     </svg>
   );
@@ -1419,9 +1414,9 @@ function PromptIcon() {
 
 function PhotoIcon() {
   return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
       <rect width="18" height="18" x="3" y="3" rx="2" ry="2" />
-      <circle cx="9" cy="9" r="2" fill="white" stroke="none" />
+      <circle cx="9" cy="9" r="2" fill="currentColor" stroke="none" />
       <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" />
     </svg>
   );
@@ -1429,7 +1424,7 @@ function PhotoIcon() {
 
 function VidSrcFrameStartIcon() {
   return (
-    <svg width="13" height="11" viewBox="0 0 14 12" fill="none" stroke="white" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round">
+    <svg width="13" height="11" viewBox="0 0 14 12" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round">
       <rect x="0.7" y="0.7" width="12.6" height="10.6" rx="1.3" />
       <path d="M4.5 6h5M7 4l2.5 2L7 8" />
     </svg>
@@ -1438,7 +1433,7 @@ function VidSrcFrameStartIcon() {
 
 function VidSrcFrameEndIcon() {
   return (
-    <svg width="13" height="11" viewBox="0 0 14 12" fill="none" stroke="white" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round">
+    <svg width="13" height="11" viewBox="0 0 14 12" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round">
       <rect x="0.7" y="0.7" width="12.6" height="10.6" rx="1.3" />
       <path d="M9.5 6h-5M7 4 4.5 6 7 8" />
     </svg>
@@ -1447,9 +1442,9 @@ function VidSrcFrameEndIcon() {
 
 function VidSrcImagePickIcon() {
   return (
-    <svg width="13" height="11" viewBox="0 0 14 12" fill="none" stroke="white" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round">
+    <svg width="13" height="11" viewBox="0 0 14 12" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round">
       <rect x="0.7" y="0.7" width="12.6" height="10.6" rx="1.3" />
-      <circle cx="4.5" cy="4" r="1.2" fill="white" stroke="none" />
+      <circle cx="4.5" cy="4" r="1.2" fill="currentColor" stroke="none" />
       <path d="m0.7 9 3.5-3.5 2.5 2.5 2-2 5 4" />
     </svg>
   );
@@ -1457,16 +1452,16 @@ function VidSrcImagePickIcon() {
 
 function VidSrcVideoIcon() {
   return (
-    <svg width="13" height="11" viewBox="0 0 14 12" fill="none" stroke="white" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round">
+    <svg width="13" height="11" viewBox="0 0 14 12" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round">
       <rect x="0.7" y="0.7" width="12.6" height="10.6" rx="1.3" />
-      <path d="M5.5 4.5v3l3-1.5-3-1.5z" fill="white" stroke="none" />
+      <path d="M5.5 4.5v3l3-1.5-3-1.5z" fill="currentColor" stroke="none" />
     </svg>
   );
 }
 
 function VidSrcAudioIcon() {
   return (
-    <svg width="12" height="11" viewBox="0 0 13 12" fill="none" stroke="white" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round">
+    <svg width="12" height="11" viewBox="0 0 13 12" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round">
       <path d="M2 4v4M4.5 2v8M6.5 3.5v5M9 2v8M11 4v4" />
     </svg>
   );

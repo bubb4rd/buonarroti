@@ -21,12 +21,12 @@ export default function WorkflowPage({
 
   useSpaceSync();
 
-  // Guard: if this ID doesn't exist in the store, redirect home.
+  // Guard: if this ID doesn't exist in the store, return to the workflows index.
   // Also ensures the correct space is active on direct URL access.
   useEffect(() => {
     const spaces = useWorkflowStore.getState().spaces;
     if (!spaces.some((sp) => sp.id === id)) {
-      router.replace("/");
+      router.replace("/workflow");
       return;
     }
     switchSpace(id);

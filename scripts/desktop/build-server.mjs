@@ -40,10 +40,10 @@ const APP_VERSION = JSON.parse(
  */
 function stageShim(triple) {
   const manifest = join(SRC_TAURI, "loader", "Cargo.toml");
-  console.log("[desktop] building sidecar shim (helios-node)…");
+  console.log("[desktop] building sidecar shim (buonarroti-node)…");
   run("cargo", ["build", "--release", "--manifest-path", manifest]);
-  const src = join(SRC_TAURI, "loader", "target", "release", `helios-node${EXE}`);
-  const dest = join(BIN_DIR, `helios-node-${triple}${EXE}`);
+  const src = join(SRC_TAURI, "loader", "target", "release", `buonarroti-node${EXE}`);
+  const dest = join(BIN_DIR, `buonarroti-node-${triple}${EXE}`);
   mkdirSync(BIN_DIR, { recursive: true });
   copyFileSync(src, dest);
   if (process.platform !== "win32") chmodSync(dest, 0o755);

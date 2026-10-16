@@ -11,7 +11,7 @@
  */
 import type { Edge, Node } from "@xyflow/react";
 import type { NodeData } from "./store";
-import { WORKFLOW_FORMAT } from "./exportWorkflow";
+import { LEGACY_WORKFLOW_FORMATS, WORKFLOW_FORMAT } from "./exportWorkflow";
 
 const ASSET_PREFIX = "assets/";
 
@@ -50,14 +50,14 @@ async function unzip(buf: ArrayBuffer): Promise<UnzipEntry[]> {
     const dataStart = nameStart + nameLen + extraLen;
 
     if (flags & 0x08 && compSize === 0) {
-      throw new Error("zip uses streaming data descriptors — re-export the workflow");
+      throw new Error("This zip was written in a streaming format Buonarroti can't read. Export the workflow again, then import the new file.");
     }
 
     const raw = bytes.slice(dataStart, dataStart + compSize);
     let data: Uint8Array;
     if (compression === 0) data = raw;
     else if (compression === 8) data = await inflateRaw(raw);
-    else throw new Error(`unsupported zip compression method ${compression}`);
+    else throw new Error(`This zip uses a compression method (${compression}) Buonarroti can't read. Export the workflow again, then import the new file.`);
 
     entries.push({ name, data });
     off = dataStart + compSize;
@@ -115,7 +115,7 @@ export async function importWorkflowZip(file: File): Promise<ImportedWorkflow> {
   const entries = await unzip(await file.arrayBuffer());
 
   const manifestEntry = entries.find((e) => e.name === "workflow.json");
-  if (!manifestEntry) throw new Error("workflow.json not found in zip");
+  if (!manifestEntry) throw new Error("This zip doesn't contain a workflow. Choose a .zip exported from Buonarroti.");
 
   let manifest: {
     format?: string;
@@ -131,16 +131,16 @@ export async function importWorkflowZip(file: File): Promise<ImportedWorkflow> {
   try {
     manifest = JSON.parse(new TextDecoder().decode(manifestEntry.data));
   } catch {
-    throw new Error("workflow.json is not valid JSON");
+    throw new Error("The workflow inside this zip is damaged. Export it again, then import the new file.");
   }
 
-  if (manifest.format !== WORKFLOW_FORMAT) {
-    throw new Error("this zip is not a HeliosGen workflow export");
+  if (manifest.format !== WORKFLOW_FORMAT && !LEGACY_WORKFLOW_FORMATS.includes(manifest.format ?? "")) {
+    throw new Error("This file isn't a Buonarroti workflow. Choose a .zip exported from Buonarroti.");
   }
 
   const wf = manifest.workflow ?? {};
   const rawNodes = Array.isArray(wf.nodes) ? wf.nodes : [];
-  if (rawNodes.length === 0) throw new Error("workflow has no nodes");
+  if (rawNodes.length === 0) throw new Error("This workflow is empty, so there's nothing to import.");
 
   // Re-upload every bundled asset, mapping its path → fresh URL.
   const pathToUrl = new Map<string, string>();
