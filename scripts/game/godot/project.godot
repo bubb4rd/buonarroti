@@ -1,0 +1,13 @@
+; Godot 4 project used only to check pipeline output: characters/*.glb are
+; imported with default settings and played by check_walk.gd.
+config_version=5
+
+[application]
+
+config/name="buonarroti-character-check"
+run/main_scene="res://preview.tscn"
+config/features=PackedStringArray("4.7")
+
+[rendering]
+
+renderer/rendering_method="forward_plus"

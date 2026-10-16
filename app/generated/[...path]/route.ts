@@ -22,6 +22,7 @@ const CONTENT_TYPES: Record<string, string> = {
   ".webp": "image/webp",
   ".mp4": "video/mp4",
   ".webm": "video/webm",
+  ".glb": "model/gltf-binary",
 };
 
 export async function GET(

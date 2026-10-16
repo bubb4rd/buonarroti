@@ -11,12 +11,13 @@ import { VIDEO_MODELS } from "./modelConfig";
 import { GUEST_USER_ID } from "./guestMode";
 import * as guestDb from "./guest/db";
 
-export type JobKind = "image" | "video";
-/** "kie" = jobs API, "kie-veo" = Veo API, "azure"/"codex" = run in this process. */
-export type JobProvider = "kie" | "kie-veo" | "azure" | "codex";
+/** "asset" = a character-pipeline step (lib/game); its result carries a typed artifact. */
+export type JobKind = "image" | "video" | "asset";
+/** "kie" = jobs API, "kie-veo" = Veo API, "azure"/"codex"/"game" = run in this process. */
+export type JobProvider = "kie" | "kie-veo" | "azure" | "codex" | "game";
 export type JobErrorCode = "credits" | "interrupted" | "timeout" | "failed" | "rejected";
 
-export type JobDone = { status: "done"; imageUrl?: string; imageUrls?: string[]; videoUrl?: string };
+export type JobDone = { status: "done"; imageUrl?: string; imageUrls?: string[]; videoUrl?: string; artifact?: unknown };
 export type JobError = { status: "error"; error: string; code?: JobErrorCode };
 export type TerminalJobResult = JobDone | JobError;
 /** The exact `GET /api/job-status` / `job-stream` payloads. */
@@ -31,7 +32,7 @@ export interface JobRecord {
 }
 
 const ERROR_CODES = new Set<string>(["credits", "interrupted", "timeout", "failed", "rejected"]);
-const PROVIDERS = new Set<string>(["kie", "kie-veo", "azure", "codex"]);
+const PROVIDERS = new Set<string>(["kie", "kie-veo", "azure", "codex", "game"]);
 const VEO_MODEL_IDS = new Set(VIDEO_MODELS.filter((m) => m.apiInput.useGoogleVeo).map((m) => m.id));
 
 /** Rows written before the `provider` column existed are inferred from the id/model. */
@@ -39,20 +40,24 @@ function providerOf(gen: guestDb.Generation): JobProvider {
   if (gen.provider && PROVIDERS.has(gen.provider)) return gen.provider as JobProvider;
   if (gen.task_id.startsWith("azure-")) return "azure";
   if (gen.task_id.startsWith("codex-")) return "codex";
+  if (gen.task_id.startsWith("game-")) return "game";
   return gen.model && VEO_MODEL_IDS.has(gen.model) ? "kie-veo" : "kie";
 }
 
 export function isLocalProvider(provider: JobProvider): boolean {
-  return provider === "azure" || provider === "codex";
+  return provider === "azure" || provider === "codex" || provider === "game";
 }
 
 function toRecord(gen: guestDb.Generation): JobRecord {
-  const kind: JobKind = gen.generation_type === "video" ? "video" : "image";
+  const kind: JobKind = gen.generation_type === "video" ? "video" : gen.generation_type === "asset" ? "asset" : "image";
   let result: JobRecord["result"];
   if (gen.status === "done") {
     result = gen.video_url
       ? { status: "done", videoUrl: gen.video_url }
-      : { status: "done", imageUrl: gen.image_url, imageUrls: gen.image_urls };
+      : {
+          status: "done", imageUrl: gen.image_url, imageUrls: gen.image_urls,
+          ...(gen.artifact_json ? { artifact: JSON.parse(gen.artifact_json) } : {}),
+        };
   } else if (gen.status === "error") {
     result = {
       status: "error",
@@ -95,7 +100,10 @@ export function settleJob(taskId: string, result: TerminalJobResult): void {
       taskId,
       result.videoUrl
         ? { status: "done", video_url: result.videoUrl, error_msg: undefined, error_code: undefined }
-        : { status: "done", image_url: result.imageUrl, image_urls: result.imageUrls, error_msg: undefined, error_code: undefined },
+        : {
+            status: "done", image_url: result.imageUrl, image_urls: result.imageUrls, error_msg: undefined, error_code: undefined,
+            ...(result.artifact !== undefined ? { artifact_json: JSON.stringify(result.artifact) } : {}),
+          },
     );
   } else {
     guestDb.updateGeneration(taskId, { status: "error", error_msg: result.error, error_code: result.code });

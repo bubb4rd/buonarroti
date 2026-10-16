@@ -90,7 +90,7 @@ function addJobColumns(d: DatabaseSync): void {
   const cols = new Set(
     (d.prepare("PRAGMA table_info(generations)").all() as { name: string }[]).map((c) => c.name),
   );
-  for (const col of ["provider", "client_request_id", "error_code"]) {
+  for (const col of ["provider", "client_request_id", "error_code", "artifact_json"]) {
     if (!cols.has(col)) d.exec(`ALTER TABLE generations ADD COLUMN ${col} TEXT`);
   }
   d.exec(`

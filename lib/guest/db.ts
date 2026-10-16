@@ -28,6 +28,8 @@ export interface Generation {
   error_code?: string;
   provider?: string;
   client_request_id?: string;
+  /** Character-pipeline artifact (lib/game/artifacts.ts) for generation_type "asset". */
+  artifact_json?: string;
   created_at: string;
   updated_at: string;
 }
@@ -87,6 +89,7 @@ function rowToGeneration(r: GenRow): Generation {
     error_code: (r.error_code as string) ?? undefined,
     provider: (r.provider as string) ?? undefined,
     client_request_id: (r.client_request_id as string) ?? undefined,
+    artifact_json: (r.artifact_json as string) ?? undefined,
     created_at: r.created_at as string,
     updated_at: r.updated_at as string,
   };
@@ -124,7 +127,7 @@ export function insertGeneration(data: Omit<Generation, "id" | "created_at" | "u
 
 export function updateGeneration(
   taskId: string,
-  updates: Partial<Pick<Generation, "status" | "image_url" | "image_urls" | "video_url" | "error_msg" | "error_code">>,
+  updates: Partial<Pick<Generation, "status" | "image_url" | "image_urls" | "video_url" | "error_msg" | "error_code" | "artifact_json">>,
 ): void {
   const sets: string[] = ["updated_at = ?"];
   const vals: unknown[] = [now()];
@@ -134,6 +137,7 @@ export function updateGeneration(
   if ("video_url" in updates) { sets.push("video_url = ?"); vals.push(updates.video_url ?? null); }
   if ("error_msg" in updates) { sets.push("error_msg = ?"); vals.push(updates.error_msg ?? null); }
   if ("error_code" in updates) { sets.push("error_code = ?"); vals.push(updates.error_code ?? null); }
+  if ("artifact_json" in updates) { sets.push("artifact_json = ?"); vals.push(updates.artifact_json ?? null); }
   vals.push(taskId);
   db().prepare(`UPDATE generations SET ${sets.join(", ")} WHERE task_id = ?`).run(...(vals as never[]));
 }
@@ -155,7 +159,7 @@ export function listPendingGenerations(): Generation[] {
   return rows.map(rowToGeneration);
 }
 
-export function getGenerations(userId: string, type: "image" | "video"): Generation[] {
+export function getGenerations(userId: string, type: "image" | "video" | "asset"): Generation[] {
   const urlCol = type === "video" ? "video_url" : "image_url";
   const rows = db()
     .prepare(`
@@ -246,6 +250,19 @@ export function getKieApiToken(): string | null {
   const envToken = process.env.KIE_API_KEY ?? "";
   if (!envToken || envToken === "your_kie_api_key_here") return null;
   return envToken;
+}
+
+/** Hugging Face token for the image-to-3D Space (ZeroGPU quota); settings row, else HF_TOKEN. */
+export function getHfToken(): string | null {
+  return getSetting("hf_token") ?? process.env.HF_TOKEN ?? null;
+}
+
+export function setHfToken(token: string): void {
+  setSetting("hf_token", token);
+}
+
+export function deleteHfToken(): void {
+  deleteSetting("hf_token");
 }
 
 export function setKieApiToken(token: string): void {

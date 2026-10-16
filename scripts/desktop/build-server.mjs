@@ -124,6 +124,12 @@ if (existsSync(join(ROOT, "public"))) {
     filter: (src) => !src.includes(`${sep}public${sep}generated`), // runtime data, not an asset
   });
 }
+// Character pipeline: bpy scripts, the Godot check project and the mocap clip are
+// read at runtime from <server>/scripts/game (the sidecar's working directory).
+cpSync(join(ROOT, "scripts", "game"), join(STAGE, "scripts", "game"), {
+  recursive: true,
+  filter: (src) => !/\.(m?ts)$/.test(src) && !src.includes(`${sep}.godot`) && !src.includes("__pycache__"),
+});
 
 // The Next.js file tracer (nft) is unreliable with pnpm's symlinked store — it
 // leaves many packages as a bare package.json. Rather than chase truncations,
