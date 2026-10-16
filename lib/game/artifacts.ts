@@ -178,6 +178,9 @@ export const CHARACTER_BUDGET = {
   maxLoopSeamDeg: 3,
   /** Animated frames: max edge length ratio vs rest (tearing / candy-wrapper detector). */
   maxEdgeStretch: 2.5,
+  /** Animated frames: max distance between vertices sharing a rest position (glTF
+   *  seam copies), as a fraction of height. Above this the mesh visibly cracks. */
+  maxSeamGapFrac: 0.001,
   /** Mesh silhouette vs sheet view IoU (view drift / missing or invented parts). */
   minSilhouetteIoU: { front: 0.85, side: 0.8, back: 0.85 },
 } as const;

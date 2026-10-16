@@ -76,6 +76,9 @@ export interface GodotWalkResult {
   weight_sum_err?: number;
   max_stretch?: number;
   edges_over_2x?: number;
+  seam_pairs?: number;
+  /** Max distance between vertices that share a rest position, / height. */
+  max_seam_gap?: number;
   min_y?: number;
 }
 

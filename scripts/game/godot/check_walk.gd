@@ -4,12 +4,15 @@ extends SceneTree
 ## Skeleton3D poses after AnimationPlayer.seek, ARRAY_BONES / ARRAY_WEIGHTS),
 ## frame by frame. Prints one JSON line per character:
 ##   {"file", "animation", "loop", "length", "frames", "bones", "max_influences",
-##    "weight_sum_err", "max_stretch", "edges_over_2x", "min_y", "ok", "problems"}
-## Tearing shows up as edges that grow far beyond their rest length.
+##    "weight_sum_err", "max_stretch", "edges_over_2x", "max_seam_gap", "min_y", "ok", "problems"}
+## Tearing shows up as edges that grow far beyond their rest length. Cracks
+## show up as vertices that share a rest position (glTF splits vertices at UV
+## and normal seams) drifting apart; max_seam_gap is that distance / height.
 ## usage: godot --headless --path scripts/game/godot -s res://check_walk.gd
 
 const FPS := 30.0
 const MAX_STRETCH := 2.5
+const MAX_SEAM_GAP := 0.001
 
 
 func _init() -> void:
@@ -123,8 +126,27 @@ func check(path: String) -> Dictionary:
 	lens.sort()
 	var min_len: float = lens[lens.size() / 2] / 3.0
 
+	# Seam pairs: vertices at the same rest position (within 1e-5 of height).
+	var lo := Vector3(INF, INF, INF)
+	var hi := -lo
+	for p in verts:
+		lo = lo.min(p)
+		hi = hi.max(p)
+	var height := hi.y - lo.y
+	var q := 1e-5 * height
+	var first := {}
+	var seams := PackedInt32Array()
+	for v in verts.size():
+		var key := Vector3i((verts[v] / q).round())
+		if first.has(key):
+			seams.append(first[key])
+			seams.append(v)
+		else:
+			first[key] = v
+
 	var frames := int(round(anim.length * FPS))
 	var max_stretch := 0.0
+	var max_gap := 0.0
 	var over := {}
 	var min_y := INF
 	player.play(anim_name)
@@ -142,9 +164,13 @@ func check(path: String) -> Dictionary:
 				max_stretch = r
 			if r > 2.0:
 				over[i / 2] = true
+		for i in range(0, seams.size(), 2):
+			max_gap = max(max_gap, pos[seams[i]].distance_to(pos[seams[i + 1]]))
 	result["frames"] = frames + 1
 	result["max_stretch"] = max_stretch
 	result["edges_over_2x"] = over.size()
+	result["seam_pairs"] = seams.size() / 2
+	result["max_seam_gap"] = max_gap / height
 	result["min_y"] = min_y
 	if max_infl > 4:
 		problems.append("more than 4 influences")
@@ -152,6 +178,8 @@ func check(path: String) -> Dictionary:
 		problems.append("weights not normalised")
 	if max_stretch > MAX_STRETCH:
 		problems.append("edge stretch %.2f > %.1f (tearing)" % [max_stretch, MAX_STRETCH])
+	if max_gap / height > MAX_SEAM_GAP:
+		problems.append("seams open %.2f%% of height > %.1f%% (cracks)" % [100 * max_gap / height, 100 * MAX_SEAM_GAP])
 	result["ok"] = problems.is_empty()
 	scene.queue_free()
 	return result

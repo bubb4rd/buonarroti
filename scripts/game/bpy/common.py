@@ -44,9 +44,11 @@ def reset_scene():
     bpy.ops.wm.read_factory_settings(use_empty=True)
 
 
-def import_glb(path):
+def import_glb(path, merge_vertices=False):
+    """merge_vertices welds the copies glTF makes at UV / normal seams back into
+    one vertex (UVs and normals stay per face corner)."""
     before = set(bpy.data.objects)
-    bpy.ops.import_scene.gltf(filepath=path)
+    bpy.ops.import_scene.gltf(filepath=path, merge_vertices=merge_vertices)
     return [o for o in bpy.data.objects if o not in before]
 
 

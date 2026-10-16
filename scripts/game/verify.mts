@@ -59,7 +59,8 @@ try {
   if (rows.length !== files.length) fail(`check_walk.gd reported ${rows.length}/${files.length} characters`);
   for (const r of rows) {
     console.log(`  ${r.file}: clip "${r.animation}" loop=${r.loop} ${r.frames} frames, ${r.bones} bones, ` +
-      `≤${r.max_influences} influences, max edge stretch ${r.max_stretch?.toFixed(3)} (${r.edges_over_2x} edges >2x), min y ${r.min_y?.toFixed(4)}`);
+      `≤${r.max_influences} influences, max edge stretch ${r.max_stretch?.toFixed(3)} (${r.edges_over_2x} edges >2x), ` +
+      `max seam gap ${(100 * r.max_seam_gap).toFixed(3)}% of height (${r.seam_pairs} seam pairs), min y ${r.min_y?.toFixed(4)}`);
     if (!r.ok) fail(`${r.file}: ${r.problems.join("; ")}`);
   }
 

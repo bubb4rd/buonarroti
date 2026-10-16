@@ -9,9 +9,11 @@ the armpits (highest slice where the arms separate from the torso) and the arm
 centre lines. Joint ratios along limbs follow standard human proportions.
 Bone names follow Godot's SkeletonProfileHumanoid so Godot needs no BoneMap.
 
-Weights: Blender bone heat. When it leaves vertices unweighted (self-intersecting
-or non-manifold input), weights are solved on a voxel-remeshed proxy and
-transferred back. Then: at most 4 influences, normalised.
+Weights: Blender bone heat on the welded mesh (glTF seam copies merged). When
+it leaves vertices unweighted (self-intersecting or non-manifold input),
+weights are solved on a voxel-remeshed proxy and transferred back. Then: side
+and height fades per bone, world-space smoothing, at most 4 influences,
+normalised.
 """
 import math
 import os
@@ -346,34 +348,110 @@ def skin(obj, arm, H):
     z_hi = arm.data.bones["Chest"].head_local.z
     distal = {gi: arm.data.bones[n].head_local.z for gi, n in names.items()
               if n.endswith(("LowerLeg", "Foot", "Toes")) and n in arm.data.bones}
+    # Clavicles fade out downwards the same way, from the UpperChest joint (1) to
+    # the Chest joint (0). Bone heat spread Shoulder weight down a knight's
+    # breastplate to the waist (z 0.30H, joint at 0.57H); there it became the
+    # 5th influence beside the thigh, and the 4-influence merge kept the thigh on
+    # one vertex and the clavicle on its neighbour: 2.6x stretch mid-stride.
+    shoulders = {gi for gi, n in names.items() if n.endswith("Shoulder")}
+    s_lo = arm.data.bones["Chest"].head_local.z
+    s_hi = arm.data.bones["UpperChest"].head_local.z
+    # Thighs fade out below the knee, to 0 halfway down the shin. Once the seams
+    # were welded, heat flowed from trousers into boots: a dwarf's mid-shin got
+    # 27% thigh beside 29% foot, and the knee bend of the swing stretched it 3x.
+    # Shin-relative, not height-relative: a dwarf's shin is 9% of height.
+    thighs = {}
+    for gi, n in names.items():
+        if n.endswith("UpperLeg"):
+            side = n[: -len("UpperLeg")]
+            knee = arm.data.bones[side + "LowerLeg"].head_local.z
+            shin = knee - arm.data.bones[side + "Foot"].head_local.z
+            thighs[gi] = (knee - 0.5 * shin, 0.5 * shin)
 
-    def exclusive():
+    def exclusive(vertical):
         for v in obj.data.vertices:
             up = min(1.0, max(0.0, (z_hi - v.co.z) / (z_hi - z_lo)))
+            down = min(1.0, max(0.0, (v.co.z - s_lo) / (s_hi - s_lo)))
             for g in v.groups:
                 sgn = side_of.get(g.group)
                 if sgn is not None:
                     g.weight *= min(1.0, max(0.0, 0.5 + sgn * v.co.x / (2 * band)))
+                if not vertical:
+                    continue
                 if g.group in legs:
                     g.weight *= up
+                if g.group in shoulders:
+                    g.weight *= down
                 head_z = distal.get(g.group)
                 if head_z is not None:
                     g.weight *= min(1.0, max(0.0, (head_z + 0.12 * H - v.co.z) / (0.08 * H)))
+                ramp = thighs.get(g.group)
+                if ramp is not None:
+                    g.weight *= min(1.0, max(0.0, (v.co.z - ramp[0]) / ramp[1]))
 
-    exclusive()
-    # Then spread the remaining weight transitions over more edges: bone heat
-    # leaves steep leg->spine gradients at the buttocks/hem (2.8x stretch on the
-    # knight). Smoothing can leak across the midline again, so exclusivity is
-    # re-applied before the influence cap.
-    bpy.ops.object.select_all(action="DESELECT")
-    obj.select_set(True)
-    bpy.context.view_layer.objects.active = obj
-    bpy.ops.object.mode_set(mode="WEIGHT_PAINT")
-    bpy.ops.object.vertex_group_smooth(group_select_mode="ALL", factor=0.5, repeat=8)
-    bpy.ops.object.mode_set(mode="OBJECT")
-    exclusive()
+    exclusive(vertical=True)
+    # Then spread the remaining weight transitions over more of the surface:
+    # bone heat leaves steep leg->spine gradients at the buttocks/hem (2.8x
+    # stretch on the knight) and across the kneecap. Smoothing can leak across
+    # the midline again, so the lateral cut is re-applied before the influence
+    # cap. The vertical fades are not: applied twice they square, and the
+    # squared knee ramp alone was a 2.5x stretch over the kneecap.
+    smooth_world(obj, 0.02 * H)
+    exclusive(vertical=False)
     limit_by_hierarchy(obj, arm, 4, 0.01)
     return method
+
+
+def smooth_world(obj, sigma):
+    """Gaussian-average every vertex's weights over vertices within 2 sigma, by
+    world distance.
+
+    Blender's vertex_group_smooth averages over edge hops, so dense patches
+    (5 mm edges at a kneecap vs 25 mm on the shin) stayed 5x sharper: 0.2 of
+    thigh weight changed across one 5 mm edge, 2.8x stretch in the swing.
+    Neighbours facing away (normals > 120 degrees apart) are skipped, so the
+    inner thighs, or an arm and the torso side it hangs against, don't mix;
+    a 90 degree gate also cut armour plates off at their rims (2.8x stretch).
+    """
+    from mathutils.kdtree import KDTree
+    verts = obj.data.vertices
+    n = len(verts)
+    co = np.empty(n * 3)
+    verts.foreach_get("co", co)
+    co = co.reshape(-1, 3)
+    nor = np.empty(n * 3)
+    verts.foreach_get("normal", nor)
+    nor = nor.reshape(-1, 3)
+    kd = KDTree(n)
+    for i, p in enumerate(co):
+        kd.insert(p, i)
+    kd.balance()
+    rows, cols, dist = [], [], []
+    for i, p in enumerate(co):
+        for _, j, d in kd.find_range(p, 2 * sigma):
+            rows.append(i)
+            cols.append(j)
+            dist.append(d)
+    rows, cols, dist = np.array(rows), np.array(cols), np.array(dist)
+    k = np.exp(-0.5 * (dist / sigma) ** 2) * ((nor[rows] * nor[cols]).sum(1) > -0.5)
+
+    groups = obj.vertex_groups
+    W = np.zeros((n, len(groups)))
+    for v in verts:
+        for g in v.groups:
+            W[v.index, g.group] = g.weight
+    out = np.zeros_like(W)
+    np.add.at(out, rows, W[cols] * k[:, None])
+    norm = np.zeros(n)
+    np.add.at(norm, rows, k)
+    out /= norm[:, None]  # every vertex is its own neighbour, norm > 0
+    for gi in range(len(groups)):
+        old, new = W[:, gi], out[:, gi]
+        gone = np.nonzero((old > 0) & (new <= 1e-4))[0]
+        if len(gone):
+            groups[gi].remove(gone.tolist())
+        for i in np.nonzero(new > 1e-4)[0]:
+            groups[gi].add([int(i)], float(new[i]), "REPLACE")
 
 
 def limit_by_hierarchy(obj, arm, k, floor):
@@ -494,7 +572,11 @@ def main():
     b = args["budget"]
     t = C.Timer()
     C.reset_scene()
-    C.import_glb(args["mesh_glb"])
+    # Welded: glTF stores one vertex per UV island at every seam (~600 islands
+    # per mesh). Skinned apart, the copies got different weights and the seams
+    # opened 1-2% of height mid-stride; bone heat and smoothing also stopped at
+    # every island border. The exporter re-splits with one weight set per vertex.
+    C.import_glb(args["mesh_glb"], merge_vertices=True)
     obj = C.join_meshes()
     obj.name = "Character"
     co = C.world_coords(obj)

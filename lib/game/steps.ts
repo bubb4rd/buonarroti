@@ -179,6 +179,9 @@ export async function runGltf(clip: AnimClip, opts: { name?: string } = {}): Pro
     checks.push({ id: "godot.walk.no_tearing", pass: (w.max_stretch ?? Infinity) <= CHARACTER_BUDGET.maxEdgeStretch,
       value: w.max_stretch !== undefined ? +w.max_stretch.toFixed(3) : undefined, limit: CHARACTER_BUDGET.maxEdgeStretch,
       detail: `${w.frames} frames skinned from Godot's imported Skin/Skeleton3D; ${w.edges_over_2x} edges over 2x` });
+    checks.push({ id: "godot.walk.no_cracks", pass: (w.max_seam_gap ?? Infinity) <= CHARACTER_BUDGET.maxSeamGapFrac,
+      value: w.max_seam_gap !== undefined ? +w.max_seam_gap.toFixed(5) : undefined, limit: CHARACTER_BUDGET.maxSeamGapFrac,
+      detail: `${w.seam_pairs} vertex pairs sharing a rest position (UV/normal seams); max gap over the clip / height` });
     checks.push({ id: "godot.walk.influences", pass: (w.max_influences ?? 99) <= CHARACTER_BUDGET.maxInfluences, value: w.max_influences, limit: CHARACTER_BUDGET.maxInfluences });
   }
 
