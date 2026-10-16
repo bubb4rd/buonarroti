@@ -187,6 +187,9 @@ export const CHARACTER_BUDGET = {
   maxSeamGapFrac: 0.001,
   /** Mesh silhouette vs sheet view IoU (view drift / missing or invented parts). */
   minSilhouetteIoU: { front: 0.85, side: 0.8, back: 0.85 },
+  /** Baked texture rendered in each sheet view vs the drawing: max fraction of wrong pixels.
+   *  Advisory until calibrated against people's "looks right" verdicts. */
+  maxTextureWrong: 0.05,
 } as const;
 
 /** Required bone names (Godot SkeletonProfileHumanoid, no fingers). */

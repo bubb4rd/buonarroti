@@ -7,10 +7,12 @@ args: raw (glb), views {front, side, back: png path}, height_m, target_tris,
 2. orient: the side view decides which way the character faces (-Y in Blender)
 3. normalise: feet at z=0, centred on x/y, scaled to height_m
 4. decimate to target_tris, smart-UV unwrap
-5. texture: orthographic projection of the three sheet views, blended by face
-   normal, baked into one albedo map (the sheet is the only source of colour,
-   so the back of the mesh shows the drawn back, never a hallucinated one)
-6. silhouette IoU of the mesh against each sheet view (back-side / view drift)
+5. texture: orthographic projection of the three sheet views, each first
+   conformed to the mesh's outline in that view, blended by face normal, baked
+   into one albedo map (the sheet is the only source of colour, so the back of
+   the mesh shows the drawn back, never a hallucinated one)
+6. silhouette IoU of the mesh against each sheet view (back-side / view drift),
+   and the baked mesh rendered in each view against the drawing (ghosts, rings)
 """
 import math
 import os
@@ -98,6 +100,81 @@ def dilate_rgba(rgba, iterations=48):
     out = np.ones_like(rgba)
     out[:, :, :3] = rgb
     return out
+
+
+def _runs(row):
+    """[start, end) of the True runs of a 1-D bool array."""
+    d = np.diff(np.concatenate([[0], row.astype(np.int8), [0]]))
+    return list(zip(np.nonzero(d == 1)[0], np.nonzero(d == -1)[0]))
+
+
+def _gauss1d(a, sigma, axis):
+    r = int(3 * sigma)
+    k = np.exp(-0.5 * (np.arange(-r, r + 1) / sigma) ** 2)
+    k /= k.sum()
+    pad = [(0, 0)] * a.ndim
+    pad[axis] = (r, r)
+    p = np.pad(a, pad, mode="edge")
+    return sum(w * np.take(p, range(i, i + a.shape[axis]), axis=axis) for i, w in enumerate(k))
+
+
+def _warp_rows(img, target, sigma=4.0):
+    """Resample `img` along x so its silhouette lands on `target`'s.
+
+    In rows where both have the same runs (torso | arm | arm, two legs), each
+    run maps onto its partner: that gives a displacement per target pixel. Rows
+    that disagree (an arm merging with the torso in one but not the other)
+    borrow the displacement of the nearest agreeing rows above and below, and
+    the field is smoothed across rows, so the warp has no row-to-row tearing."""
+    h, w = target.shape
+    alpha = img[:, :, 3] > 0.5
+    dx = np.zeros((h, w))
+    known = np.zeros((h, w), dtype=bool)
+    for y in range(h):
+        t, s = _runs(target[y]), _runs(alpha[y])
+        if not t or len(t) != len(s):
+            continue
+        for (a, b), (c, d) in zip(t, s):
+            xs = np.arange(a, b)
+            dx[y, a:b] = c + (xs + 0.5 - a) * (d - c) / (b - a) - 0.5 - xs
+            known[y, a:b] = True
+    rows = np.arange(h)
+    for x in np.nonzero(target.any(0))[0]:
+        k = known[:, x]
+        if k.any() and not k.all():
+            dx[~k, x] = np.interp(rows[~k], rows[k], dx[k, x])
+    dx = _gauss1d(dx, sigma, 0)
+    src = np.clip(np.arange(w)[None, :] + dx, 0, w - 1)
+    x0 = np.floor(src).astype(np.int64)
+    x1 = np.minimum(x0 + 1, w - 1)
+    f = (src - x0)[:, :, None]
+    yy = rows[:, None]
+    out = img[yy, x0] * (1 - f) + img[yy, x1] * f
+    out[~target] = 0
+    return out
+
+
+def conform(rgba, mesh_mask):
+    """The sheet view resampled so its silhouette matches the mesh's, along rows
+    then along columns.
+
+    The mesh is reconstructed from the drawing but never matches it exactly (the
+    farmer's mesh face stuck out ~2.5% of the head height past the drawn
+    profile). Projected as drawn, the surface past the drawing took the dilated
+    outline colour (a grey ghost profile) and the drawn eye landed on the cheek
+    behind the mesh's own. Conformed, every drawn feature sits on the part of
+    the mesh that has the same place in the outline."""
+    rows = _warp_rows(rgba, mesh_mask)
+    return _warp_rows(rows.transpose(1, 0, 2), mesh_mask.T).transpose(1, 0, 2)
+
+
+def mesh_mask_in_view(co, tris, proj, size):
+    """The mesh silhouette in the view image's pixel grid (bottom-up rows), via the
+    same mapping the projection shader uses."""
+    raw = co[:, {"x": 0, "y": 1}[proj["u_axis"]]]
+    px = (proj["ku"] * raw + proj["bu"]) * size
+    py = (proj["kv"] * co[:, 2] + proj["bv"]) * size
+    return C.rasterize(np.stack([px, py], 1), tris, size, (0.0, 0.0, float(size)))
 
 
 def new_image(name, rgba):
@@ -195,8 +272,72 @@ def final_material(obj, albedo):
     img = nt.nodes.new("ShaderNodeTexImage")
     img.image = albedo
     nt.links.new(img.outputs["Color"], bsdf.inputs["Base Color"])
+    nt.nodes.active = img  # Workbench's TEXTURE colour reads the active image node
     obj.data.materials.clear()
     obj.data.materials.append(mat)
+
+
+GHOST_DIFF = 0.25  # per-channel colour difference (0-1) above which a pixel counts as wrong
+HEAD_BAND = 0.2    # top fraction of the figure compared on its own (faces are where errors show)
+
+
+def _blur3(a):
+    """3x3 box blur: resampled line art (1-2 px outlines) differs pixel by pixel
+    without being wrong; a ghost or ring is wider and survives."""
+    p = np.pad(a, ((1, 1), (1, 1), (0, 0)), mode="edge")
+    return sum(p[dy:dy + a.shape[0], dx:dx + a.shape[1]] for dy in range(3) for dx in range(3)) / 9
+
+
+def texture_vs_sheet(proj, want_rgba, head_band, res=512):
+    """Render the baked mesh in `proj`'s view, in the sheet view's own pixel
+    frame, and compare it with `want_rgba` (the drawing conformed to the mesh
+    outline, so every mesh pixel has the drawn colour it should show) over the
+    mesh silhouette: (mean colour error, fraction of wrong pixels, fraction in
+    the head band). A ghost face, a grey outline ring, or surface the drawing
+    doesn't cover shows up as wrong pixels; a correct bake differs only by
+    resampling."""
+    scene = bpy.context.scene
+    scene.render.engine = "BLENDER_WORKBENCH"
+    sh = scene.display.shading
+    sh.light = "FLAT"
+    sh.color_type = "TEXTURE"
+    scene.render.film_transparent = True
+    scene.render.resolution_x = scene.render.resolution_y = res
+    scene.view_settings.view_transform = "Standard"
+    h_img, w_img = want_rgba.shape[:2]
+    k = abs(proj["ku"]) * w_img                       # px per meter (square view image)
+    u_c = (0.5 - proj["bu"]) / proj["ku"]
+    z_c = (0.5 - proj["bv"]) / proj["kv"]
+    cam = bpy.data.objects.new("cam", bpy.data.cameras.new("cam"))
+    scene.collection.objects.link(cam)
+    cam.data.type = "ORTHO"
+    cam.data.ortho_scale = w_img / k
+    d = 10.0
+    cam.location, cam.rotation_euler = {
+        "front": ((u_c, -d, z_c), (math.pi / 2, 0, 0)),
+        "back": ((u_c, d, z_c), (math.pi / 2, 0, math.pi)),
+        "side": ((d, u_c, z_c), (math.pi / 2, 0, math.pi / 2)),
+    }[proj["view"]]
+    scene.camera = cam
+    path = os.path.join(bpy.app.tempdir, f"tex_{proj['view']}.png")
+    scene.render.filepath = path
+    bpy.ops.render.render(write_still=True)
+    got = C.load_image_rgba(path)
+    os.remove(path)
+    bpy.data.objects.remove(cam)
+    idx = ((np.arange(res) + 0.5) * h_img / res).astype(np.int64)
+    want = want_rgba[np.ix_(idx, idx)]
+    inside = got[:, :, 3] > 0.5
+    # One pixel in from the outline: edge pixels blend with the background.
+    core = inside & np.roll(inside, 1, 0) & np.roll(inside, -1, 0) & np.roll(inside, 1, 1) & np.roll(inside, -1, 1)
+    diff = np.abs(_blur3(got[:, :, :3]) - _blur3(want[:, :, :3])).max(2)
+    wrong = core & ((diff > GHOST_DIFF) | (want[:, :, 3] < 0.5))
+    rows = np.nonzero(core.any(1))[0]                 # bottom-up rows
+    top = rows.max() - head_band * (rows.max() - rows.min())
+    head = core & (np.arange(res)[:, None] >= top)
+    n = max(1, core.sum())
+    return (float(diff[core].mean()), float(wrong.sum() / n),
+            float((wrong & head).sum() / max(1, head.sum())))
 
 
 def main():
@@ -299,15 +440,18 @@ def main():
         px_per_cell = vgeo["size_px"] / RES
         shift_x, shift_y = -dx * px_per_cell, -dy * px_per_cell
         h_img, w_img = views[name].shape[:2]
-        projections.append({
+        p = {
             "view": name,
             "u_axis": {"front": "x", "back": "x", "side": "y"}[name],
             "ku": (-k if name == "back" else k) / w_img,
             "bu": (vgeo["cx"] + shift_x - mgeo["cu"] * k) / w_img,
             "kv": k / h_img,
             "bv": (vgeo["y0"] + shift_y - mgeo["v0"] * k) / h_img,
-            "image": new_image(f"view_{name}", dilate_rgba(views[name])),
-        })
+        }
+        # Projected is the drawing conformed to the mesh outline, not the drawing as is.
+        p["conformed"] = conform(views[name], mesh_mask_in_view(co, tris, p, w_img))
+        p["image"] = new_image(f"view_{name}", dilate_rgba(p["conformed"]))
+        projections.append(p)
     t.mark("silhouettes")
 
     # UVs and bake.
@@ -332,6 +476,11 @@ def main():
     albedo.save()
     final_material(obj, albedo)
     t.mark("bake")
+    tex = {}
+    for p in projections:
+        err, wrong, wrong_head = texture_vs_sheet(p, p["conformed"], HEAD_BAND)
+        tex[p["view"]] = {"mean_err": round(err, 4), "wrong": round(wrong, 4), "wrong_head": round(wrong_head, 4)}
+    t.mark("texture_check")
 
     obj.name = "Character"
     obj.data.name = "Character"
@@ -359,6 +508,11 @@ def main():
         limit = b["minSilhouetteIoU"][name]
         checks.append(C.check(f"mesh.silhouette.{name}", score >= limit, score, limit,
                               "mesh outline vs sheet view (view drift / missing parts)"))
+    for name, m in tex.items():
+        checks.append(C.check(f"mesh.texture.matches_sheet.{name}", m["wrong"] <= b["maxTextureWrong"], m["wrong"],
+                              b["maxTextureWrong"], f"baked mesh rendered in the {name} view vs the drawing: "
+                              f"wrong pixel fraction (head {m['wrong_head']:.3f}); ghosts, grey outline rings",
+                              advisory=True))
     C.write_report(args, {
         "raw": {**{k: (v[:5] if k == "components" else v) for k, v in raw.items()}, "spike_faces": spike_count},
         "final": {**{k: (v[:5] if k == "components" else v) for k, v in final.items()},
@@ -366,6 +520,7 @@ def main():
         "turned_180": turned,
         "orientation_scores": {"as_is": round(score_as_is, 4), "flipped": round(score_flip, 4)},
         "silhouette_iou": sil,
+        "texture_vs_sheet": tex,
         "checks": checks,
         "timings": t.marks,
     })

@@ -185,7 +185,7 @@ artifact that failed a check, so nothing is spent on a bad input.
 | Step | Runs on | Cost |
 | --- | --- | --- |
 | Turnaround sheet | kie.ai `nano-banana-pro`, 2K, 3:2, drawn over a mannequin pose template | 18 credits |
-| Image to 3D mesh | Hunyuan3D-2mv on Hugging Face ZeroGPU (shape), texture projected from the sheet in Blender | free, rate-limited quota |
+| Image to 3D mesh | Hunyuan3D-2mv on Hugging Face ZeroGPU (shape), texture projected from the sheet in Blender after warping each view onto the mesh's outline | free, rate-limited quota |
 | Auto-rig | Blender (geometric joint fit, bone heat weights) | local |
 | Walk cycle | Blender, retargets the CMU mocap walk in `scripts/game/mocap` | local |
 | glTF export | Khronos glTF-Validator, Godot headless import + playback (edge stretch and seam cracks, every frame), Blender budget check | local |
