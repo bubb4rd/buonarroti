@@ -174,6 +174,34 @@ In **Settings → Image Models**, set GPT Image 2's provider to **Codex CLI**.
 **Settings → API Keys** shows **READY** once the CLI and login are both in
 place.
 
+## Game characters (optional)
+
+The **Game character** nodes on the canvas turn a text concept into a rigged,
+walking character for Godot 4: **Turnaround sheet → Image to 3D mesh → Auto-rig →
+Walk cycle → glTF export**. Each node produces a typed artifact
+(`lib/game/artifacts.ts`) with measured checks; a node refuses an upstream
+artifact that failed a check, so nothing is spent on a bad input.
+
+| Step | Runs on | Cost |
+| --- | --- | --- |
+| Turnaround sheet | kie.ai `nano-banana-pro`, 2K, 3:2 | 18 credits |
+| Image to 3D mesh | Hunyuan3D-2mv on Hugging Face ZeroGPU (shape), texture projected from the sheet in Blender | free, rate-limited quota |
+| Auto-rig | Blender (geometric joint fit, bone heat weights) | local |
+| Walk cycle | Blender, retargets the CMU mocap walk in `scripts/game/mocap` | local |
+| glTF export | Khronos glTF-Validator, Godot headless import + playback, Blender budget check | local |
+
+Needs **Blender 4.2+** and **Godot 4.3+** on your `PATH` (or `BLENDER_BIN` /
+`GODOT_BIN`). Anonymous ZeroGPU quota covers a few meshes a day; for more, add a
+Hugging Face token in **Settings → API Keys** (or `HF_TOKEN`). The same steps run headless:
+
+```bash
+pnpm game:character --name dwarf --concept "a stocky dwarf blacksmith…"
+pnpm game:verify path/to/dwarf.glb path/to/knight.glb --movie /tmp/frames
+```
+
+The walk clip is from the CMU Graphics Lab Motion Capture Database
+(mocap.cs.cmu.edu, subject 02 trial 01), which is free to use.
+
 ## Tech stack
 
 | Layer | Technology |
