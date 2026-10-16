@@ -117,6 +117,7 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
   const [azureTextModelName, setAzureTextModelName] = useState(loadAzureTextModelName);
   const [kieKeyStatus, setKieKeyStatus] = useState<KeyStatus>("unknown");
   const [azureKeyStatus, setAzureKeyStatus] = useState<KeyStatus>("unknown");
+  const [hfKeyStatus, setHfKeyStatus] = useState<KeyStatus>("unknown");
   const [codexStatus, setCodexStatus] = useState<CodexStatus>({ kind: "unknown" });
   const setKieKeySet = useWorkflowStore((s) => s.setKieKeySet);
   const setAzureKeySet = useWorkflowStore((s) => s.setAzureKeySet);
@@ -140,6 +141,10 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
       .then((r) => r.json())
       .then((d) => setAzureKeyStatus(d.hasToken ? "set" : "unset"))
       .catch(() => setAzureKeyStatus("unset"));
+    fetch("/api/settings/hf-key")
+      .then((r) => r.json())
+      .then((d) => setHfKeyStatus(d.hasToken ? "set" : "unset"))
+      .catch(() => setHfKeyStatus("unset"));
     refreshCodexStatus();
   }, [refreshCodexStatus]);
 
@@ -201,6 +206,16 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
     await deleteKey("/api/settings/azure-key");
     setAzureKeyStatus("unset");
     setAzureKeySet(false);
+  };
+
+  const handleHfKeySave = async (token: string) => {
+    await saveKey("/api/settings/hf-key", { hfToken: token });
+    setHfKeyStatus("set");
+  };
+
+  const handleHfKeyDelete = async () => {
+    await deleteKey("/api/settings/hf-key");
+    setHfKeyStatus("unset");
   };
 
   const handleAzureTextDeploymentChange = (v: string) => {
@@ -265,6 +280,9 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
               onAzureKeyDelete={handleAzureKeyDelete}
               azureBaseUrl={azureBaseUrl}
               onBaseUrlChange={handleBaseUrlChange}
+              hfKeyStatus={hfKeyStatus}
+              onHfKeySave={handleHfKeySave}
+              onHfKeyDelete={handleHfKeyDelete}
             />
           )}
           {activeNav === "subscriptions" && <SubscriptionsPanel />}

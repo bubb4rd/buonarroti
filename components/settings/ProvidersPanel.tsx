@@ -14,7 +14,7 @@ import {
   linkClass,
 } from "./primitives";
 
-/** API keys: kie.ai (images + video) and Azure Foundry. Keys live on the server. */
+/** API keys: kie.ai (images + video), Azure Foundry, Hugging Face (game-character meshes). Keys live on the server. */
 export function ProvidersPanel({
   kieKeyStatus,
   onKieKeySave,
@@ -24,6 +24,9 @@ export function ProvidersPanel({
   onAzureKeyDelete,
   azureBaseUrl,
   onBaseUrlChange,
+  hfKeyStatus,
+  onHfKeySave,
+  onHfKeyDelete,
 }: {
   kieKeyStatus: KeyStatus;
   onKieKeySave: (token: string) => Promise<void>;
@@ -33,6 +36,9 @@ export function ProvidersPanel({
   onAzureKeyDelete: () => Promise<void>;
   azureBaseUrl: string;
   onBaseUrlChange: (v: string) => void;
+  hfKeyStatus: KeyStatus;
+  onHfKeySave: (token: string) => Promise<void>;
+  onHfKeyDelete: () => Promise<void>;
 }) {
   return (
     <SettingsSection
@@ -96,6 +102,37 @@ export function ProvidersPanel({
           <Hint>Combined with each model&apos;s deployment name under Image models.</Hint>
         </div>
       </SettingsGroup>
+
+      <SettingsGroup>
+        <SettingsRow
+          icon={
+            <span className="flex shrink-0 items-center justify-center font-serif text-[11px] font-semibold" style={{ width: 15, height: 15 }}>
+              HF
+            </span>
+          }
+          label="Hugging Face"
+          description="Optional. Raises the free GPU quota for the game-character mesh step."
+          htmlFor="hf-api-key"
+          control={<OptionalKeyChip status={hfKeyStatus} />}
+        >
+          <SecretField
+            id="hf-api-key"
+            status={hfKeyStatus}
+            placeholder="Paste your Hugging Face access token (hf_…)"
+            onSave={onHfKeySave}
+            onRemove={onHfKeyDelete}
+          />
+          {hfKeyStatus === "unset" && (
+            <Hint>
+              Without a token the mesh step uses the small anonymous quota. Create a read token at{" "}
+              <a href="https://huggingface.co/settings/tokens" target="_blank" rel="noreferrer" className={linkClass}>
+                huggingface.co/settings/tokens
+              </a>
+              .
+            </Hint>
+          )}
+        </SettingsRow>
+      </SettingsGroup>
     </SettingsSection>
   );
 }
@@ -104,4 +141,11 @@ function KeyChip({ status }: { status: KeyStatus }) {
   if (status === "unknown") return <StatusChip tone="running">Checking</StatusChip>;
   if (status === "set") return <StatusChip tone="done">Connected</StatusChip>;
   return <StatusChip tone="queued">No key</StatusChip>;
+}
+
+/** Like KeyChip, but an absent key is a normal state, not a warning. */
+function OptionalKeyChip({ status }: { status: KeyStatus }) {
+  if (status === "unknown") return <StatusChip tone="running">Checking</StatusChip>;
+  if (status === "set") return <StatusChip tone="done">Connected</StatusChip>;
+  return <StatusChip tone="idle">Optional</StatusChip>;
 }
