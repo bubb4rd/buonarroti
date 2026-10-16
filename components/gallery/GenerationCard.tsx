@@ -169,7 +169,7 @@ export function GenerationCard({
     e.stopPropagation();
     if (downloading) return;
     setDownloading(true);
-    try { await onDownload?.(item.url, isVideo); } finally { setDownloading(false); }
+    try { await onDownload?.(item.modelUrl ?? item.url, isVideo); } finally { setDownloading(false); }
   };
 
   const handleReuse = (e: React.MouseEvent) => {
@@ -372,8 +372,8 @@ export function GenerationCard({
               <button
                 type="button"
                 className={cn(mediaIconBtn, downloading && "opacity-65")}
-                title={downloading ? "Downloading…" : "Download"}
-                aria-label={downloading ? "Downloading…" : "Download"}
+                title={downloading ? "Downloading…" : item.modelUrl ? "Download .glb" : "Download"}
+                aria-label={downloading ? "Downloading…" : item.modelUrl ? "Download .glb" : "Download"}
                 onClick={handleDownload}
                 disabled={downloading}
               >

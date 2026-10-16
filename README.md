@@ -188,7 +188,11 @@ artifact that failed a check, so nothing is spent on a bad input.
 | Image to 3D mesh | Hunyuan3D-2mv on Hugging Face ZeroGPU (shape), texture projected from the sheet in Blender | free, rate-limited quota |
 | Auto-rig | Blender (geometric joint fit, bone heat weights) | local |
 | Walk cycle | Blender, retargets the CMU mocap walk in `scripts/game/mocap` | local |
-| glTF export | Khronos glTF-Validator, Godot headless import + playback, Blender budget check | local |
+| glTF export | Khronos glTF-Validator, Godot headless import + playback (edge stretch and seam cracks, every frame), Blender budget check | local |
+
+A step interrupted by a restart picks up again on its own: a sheet still
+rendering on kie.ai is polled, not paid for twice. In the gallery, a finished
+character's **Download** saves its `.glb`.
 
 Needs **Blender 4.2+** and **Godot 4.3+** on your `PATH` (or `BLENDER_BIN` /
 `GODOT_BIN`). Anonymous ZeroGPU quota covers a few meshes a day; for more, add a

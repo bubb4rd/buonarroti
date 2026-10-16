@@ -136,7 +136,11 @@ export function Lightbox({ item, thumbUrl, onClose, onReuse, onDownload, onPrev,
     handleClose();
   }, [item, onReuse, handleClose]);
 
-  const download = useCallback(() => onDownload(mediaUrl, isVideo), [onDownload, mediaUrl, isVideo]);
+  // A game character's deliverable is its .glb; the image is only its preview.
+  const download = useCallback(
+    () => onDownload(item.modelUrl ?? mediaUrl, isVideo),
+    [onDownload, item.modelUrl, mediaUrl, isVideo],
+  );
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -403,7 +407,7 @@ export function Lightbox({ item, thumbUrl, onClose, onReuse, onDownload, onPrev,
             </Button>
           )}
           <Button variant="ink" size="sm" className="ml-auto" onClick={download}>
-            Download
+            {item.modelUrl ? "Download .glb" : "Download"}
             <Kbd>D</Kbd>
           </Button>
         </div>

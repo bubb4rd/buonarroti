@@ -11,6 +11,8 @@ export interface GalleryItem {
   source: "generation" | "upload";
   created_at: string;
   referenceImageUrls?: string[];
+  /** Finished game character (.glb) behind this preview image; Download saves it. */
+  modelUrl?: string;
 }
 
 // Matches Next.js's default image `deviceSizes`/`imageSizes` buckets, so the

@@ -264,8 +264,11 @@ function Studio() {
 
   const [downloads, setDownloads] = useState<DownloadTask[]>([]);
   const download = useCallback(async (url: string, isVideo: boolean) => {
-    const ext = url.split("?")[0].split(".").pop()?.toLowerCase();
-    const filename = `${Date.now()}.${isVideo ? "mp4" : ext && ["png", "jpg", "jpeg", "webp", "gif"].includes(ext) ? ext : "png"}`;
+    const base = url.split("?")[0].split("/").pop() ?? "";
+    const ext = base.split(".").pop()?.toLowerCase();
+    // Characters keep their own name (dwarf.glb); media gets a timestamp.
+    const filename = ext === "glb" ? base
+      : `${Date.now()}.${isVideo ? "mp4" : ext && ["png", "jpg", "jpeg", "webp", "gif"].includes(ext) ? ext : "png"}`;
     const id = randomUUID();
     setDownloads(prev => [...prev, { id, filename, status: "preparing" }]);
     try {
@@ -400,7 +403,7 @@ function Studio() {
         onDownload={async () => {
           const toDownload = selectedItems();
           clearSelection();
-          for (const item of toDownload) await download(item.url, item.mediaType === "video");
+          for (const item of toDownload) await download(item.modelUrl ?? item.url, item.mediaType === "video");
         }}
         onRemove={() => {
           const toDelete = selectedItems();
