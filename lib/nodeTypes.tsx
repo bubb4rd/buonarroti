@@ -1,6 +1,6 @@
 // Shared node type definitions — imported by both Sidebar and NodePickerMenu
 import React from "react";
-import { MessageSquare, Image, Film, Sparkles, Bot, Clapperboard, StickyNote, PersonStanding, Box, Bone, Footprints, PackageCheck } from "lucide-react";
+import { MessageSquare, Image, Film, Sparkles, Bot, Clapperboard, StickyNote, PersonStanding, Box, Bone, Footprints, PackageCheck, Gamepad2 } from "lucide-react";
 import { STEP_IO, type ArtifactKind } from "./game/artifacts";
 
 export type NodeCategory = "generators" | "resources";
@@ -14,6 +14,7 @@ export const GAME_NODE_STEP = {
   gameSkeletonNode:   "skeleton",
   gameAnimNode:       "animclip",
   gameGltfNode:       "gltf",
+  gameUnrealNode:     "unreal",
 } as const satisfies Record<string, ArtifactKind>;
 
 export type GameNodeType = keyof typeof GAME_NODE_STEP;
@@ -30,9 +31,9 @@ export function gameNodeTypeFor(step: ArtifactKind): GameNodeType {
   return GAME_NODE_TYPES.find((t) => GAME_NODE_STEP[t] === step)!;
 }
 
-/** Source handle id of a game node: `${outputKind}Out`; gltf has none. */
+/** Source handle id of a game node: `${outputKind}Out`; the export steps have none. */
 export function gameOutHandle(step: ArtifactKind): string | undefined {
-  return step === "gltf" ? undefined : `${STEP_IO[step].output}Out`;
+  return gameNextTypes(step).length ? `${STEP_IO[step].output}Out` : undefined;
 }
 
 /** Node types allowed to feed a game node's single input. */
@@ -41,10 +42,11 @@ export function gameSourceTypes(step: ArtifactKind): string[] {
   return need === "prompt" ? ["promptNode", "assistantNode"] : [gameNodeTypeFor(need)];
 }
 
-/** The game node type that consumes `step`'s output, if any. */
-export function gameNextType(step: ArtifactKind): GameNodeType | undefined {
-  const next = (Object.keys(STEP_IO) as ArtifactKind[]).find((k) => STEP_IO[k].input === STEP_IO[step].output);
-  return next ? gameNodeTypeFor(next) : undefined;
+/** The game node types that consume `step`'s output (the walk feeds both exports). */
+export function gameNextTypes(step: ArtifactKind): GameNodeType[] {
+  return (Object.keys(STEP_IO) as ArtifactKind[])
+    .filter((k) => STEP_IO[k].input === STEP_IO[step].output)
+    .map(gameNodeTypeFor);
 }
 
 /** Per-type accent (a categorical handle pigment from globals.css) + picker icon. */
@@ -61,6 +63,7 @@ export const NODE_META: Record<string, { accent: string; bigIcon: React.ReactNod
   gameSkeletonNode:   { accent: "var(--handle-character)", bigIcon: <Bone           size={18} strokeWidth={1.7} /> },
   gameAnimNode:       { accent: "var(--handle-character)", bigIcon: <Footprints     size={18} strokeWidth={1.7} /> },
   gameGltfNode:       { accent: "var(--handle-character)", bigIcon: <PackageCheck   size={18} strokeWidth={1.7} /> },
+  gameUnrealNode:     { accent: "var(--handle-character)", bigIcon: <Gamepad2       size={18} strokeWidth={1.7} /> },
 };
 
 export const NODES: Array<{
@@ -208,6 +211,14 @@ export const NODES: Array<{
       label: "glTF export",
       description: "A validated .glb that plays in Godot",
     },
+    {
+      type: "gameUnrealNode",
+      category: "generators",
+      canReceiveConnection: true,
+      icon: <Gamepad2 size={14} strokeWidth={1.5} />,
+      label: "Unreal export",
+      description: "An FBX on the UE5 mannequin skeleton",
+    },
   ];
 
 /** Sentence-case display name per node type; new nodes are labelled "Image generator #2". */
@@ -224,6 +235,7 @@ export const NODE_LABELS: Record<string, string> = {
   gameSkeletonNode: "Auto-rig",
   gameAnimNode: "Walk cycle",
   gameGltfNode: "glTF export",
+  gameUnrealNode: "Unreal export",
 };
 
 /** Label for a new node of `type`: its display name plus the next per-type count. */
@@ -290,6 +302,7 @@ export const NODE_SIZE: Record<string, { w: number; h: number }> = {
   gameSkeletonNode: { w: 300, h: 420 },
   gameAnimNode: { w: 300, h: 420 },
   gameGltfNode: { w: 300, h: 460 },
+  gameUnrealNode: { w: 300, h: 460 },
 };
 
 export const FALLBACK_SIZE = { w: 280, h: 280 };

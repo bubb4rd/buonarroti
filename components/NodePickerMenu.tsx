@@ -3,7 +3,7 @@ import { useEffect, useRef } from "react";
 import { useReactFlow, Node, Edge } from "@xyflow/react";
 import { useWorkflowStore, NodeData } from "@/lib/store";
 import { edgeStyle } from "@/lib/edgeStyles";
-import { NODES, NODE_SIZE, FALLBACK_SIZE, NODE_META, TypeBadge, getLastNodeSettings, getDefaultNodeSize, nextNodeLabel, gameStepOf, gameNodeTypeFor, gameNextType, gameOutHandle } from "@/lib/nodeTypes";
+import { NODES, NODE_SIZE, FALLBACK_SIZE, NODE_META, TypeBadge, getLastNodeSettings, getDefaultNodeSize, nextNodeLabel, gameStepOf, gameNodeTypeFor, gameNextTypes, gameOutHandle } from "@/lib/nodeTypes";
 import { STEP_IO } from "@/lib/game/artifacts";
 import { floatingPanelClass } from "@/components/ui/floating-toolbar";
 import { cn } from "@/lib/utils";
@@ -274,11 +274,11 @@ export default function NodePickerMenu({ dropState, onClose }: Props) {
   const HANDLE_ONLY_VIDEO_GEN = new Set(["videoRefOut", "audioRefOut"]);
   const sourceStep = gameStepOf(dropState.sourceNodeType);
   // Game nodes appear only where the chain allows: after a text source (turnaround) or after the previous step.
-  const gameTargetType = sourceStep
-    ? gameNextType(sourceStep)
+  const gameTargetTypes: string[] = sourceStep
+    ? gameNextTypes(sourceStep)
     : dropState.sourceNodeType === "promptNode" || dropState.sourceNodeType === "assistantNode"
-      ? gameNodeTypeFor("turnaround")
-      : undefined;
+      ? [gameNodeTypeFor("turnaround")]
+      : [];
   const linkable = isInput
     ? (() => {
         const allowed = new Set(sourceNodeTypesFor(dropState.sourceHandleId));
@@ -286,7 +286,7 @@ export default function NodePickerMenu({ dropState, onClose }: Props) {
       })()
     : NODES.filter((n) => {
         if (!n.canReceiveConnection) return false;
-        if (sourceStep || gameStepOf(n.type)) return n.type === gameTargetType;
+        if (sourceStep || gameStepOf(n.type)) return gameTargetTypes.includes(n.type);
         if (dropState.sourceHandleId && HANDLE_ONLY_VIDEO_GEN.has(dropState.sourceHandleId)) {
           return n.type === "videoGeneratorNode";
         }

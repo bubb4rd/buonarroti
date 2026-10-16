@@ -20,6 +20,7 @@ import {
   type SheetViewName,
   type Skeleton,
   type TurnaroundSheet,
+  type UnrealAsset,
 } from "./artifacts";
 import { pathForRunUrl, runPath, runUrl } from "./runs";
 import { godotBin, godotCheck, runBlender } from "./tools";
@@ -198,5 +199,26 @@ export async function runGltf(clip: AnimClip, opts: { name?: string } = {}): Pro
     validator: { version: v.validatorVersion, errors: issues.numErrors, warnings: issues.numWarnings, infos: issues.numInfos, hints: issues.numHints },
     godot: { version: godotVersion, importIssues: g.importLog, animation: w?.animation, loop: w?.loop, frames: w?.frames, maxStretch: w?.max_stretch },
     checks, createdAt: now(), cost: { seconds: (Date.now() - t0) / 1000 },
+  };
+}
+
+// ── Step 5 (Unreal): AnimClip → UnrealAsset ──────────────────────────────────
+
+export const MANNY_SPEC = "scripts/game/unreal/manny.json";
+
+export async function runUnreal(clip: AnimClip, opts: { name?: string } = {}): Promise<UnrealAsset> {
+  const t0 = Date.now();
+  const id = clip.runId;
+  const name = (opts.name ?? "character").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "character";
+  const file = `${name}.fbx`;
+  const report = await runBlender<{ bones: string[]; frames: number; checks: Check[] }>("unreal_export", {
+    anim_blend: pathForRunUrl(clip.blendUrl), manny: join(process.cwd(), MANNY_SPEC),
+    clip_name: name, out_fbx: runPath(id, file), budget: BPY_BUDGET,
+  });
+  return {
+    kind: "unreal", runId: id, parent: { kind: "animclip", url: clip.glbUrl },
+    fbxUrl: runUrl(id, file), previewUrl: clip.previewUrl,
+    bones: report.bones, frames: report.frames, fps: clip.fps,
+    checks: report.checks, createdAt: now(), cost: { seconds: (Date.now() - t0) / 1000 },
   };
 }

@@ -1,7 +1,7 @@
 "use client";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Handle, Position, NodeProps, Node, Edge, useUpdateNodeInternals } from "@xyflow/react";
-import { MessageSquare, PersonStanding, Box, Bone, Footprints, PackageCheck, Play, Download, type LucideIcon } from "lucide-react";
+import { MessageSquare, PersonStanding, Box, Bone, Footprints, PackageCheck, Gamepad2, Play, Download, type LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import NodeActionBar from "./NodeActionBar";
 import MissingInputWarning from "./MissingInputWarning";
@@ -27,14 +27,15 @@ const KIND_ICON: Record<ArtifactKind, LucideIcon> = {
   skeleton: Bone,
   animclip: Footprints,
   gltf: PackageCheck,
+  unreal: Gamepad2,
 };
-
 const KIND_NOUN: Record<ArtifactKind, string> = {
   turnaround: "turnaround sheet",
   mesh: "mesh",
   skeleton: "rigged mesh",
   animclip: "walk cycle",
   gltf: "glTF asset",
+  unreal: "Unreal FBX",
 };
 
 /** Find the node in the given space (active space reads the live copy). */
@@ -173,7 +174,12 @@ export default function GameStepNode({ id, type, data, selected }: NodeProps<Gam
   const artifact = data.artifact;
   const failed = artifact ? blockingFailures(artifact) : [];
   const label = data.label;
-  const glbName = `${(data.name ?? label).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "character"}.glb`;
+  const baseName = (data.name ?? label).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "character";
+  /** The export steps' deliverable: Godot .glb or Unreal .fbx. */
+  const exportFile = useMemo(() => (
+    artifact?.kind === "gltf" ? { url: artifact.glbUrl, name: `${baseName}.glb` }
+      : artifact?.kind === "unreal" ? { url: artifact.fbxUrl, name: `${baseName}.fbx` } : undefined
+  ), [artifact, baseName]);
 
   // ── Input state (live) ─────────────────────────────────────────────────────
   const inputCheck = checkInput(id, step, nodes, edges);
@@ -234,21 +240,21 @@ export default function GameStepNode({ id, type, data, selected }: NodeProps<Gam
       }));
   }, [id, addNode, insertEdge, onNodesChange]);
 
-  const saveGlb = useCallback(async () => {
-    if (artifact?.kind !== "gltf" || isSaving) return;
+  const saveFile = useCallback(async () => {
+    if (!exportFile || isSaving) return;
     setIsSaving(true);
     try {
-      const resp = await fetch(artifact.glbUrl);
+      const resp = await fetch(exportFile.url);
       const blob = await resp.blob();
       const obj = URL.createObjectURL(blob);
       const a = document.createElement("a");
-      a.href = obj; a.download = glbName;
+      a.href = obj; a.download = exportFile.name;
       document.body.appendChild(a); a.click(); document.body.removeChild(a);
       URL.revokeObjectURL(obj);
     } finally {
       setIsSaving(false);
     }
-  }, [artifact, glbName, isSaving]);
+  }, [exportFile, isSaving]);
 
   // ── Settle the job ─────────────────────────────────────────────────────────
   const finishJob = useCallback((spaceId: string, outcome: { artifact: Artifact } | { error: string; code?: string }) => {
@@ -314,7 +320,7 @@ export default function GameStepNode({ id, type, data, selected }: NodeProps<Gam
         ...check.body,
         ...(step === "turnaround" ? { build: self.data.build ?? DEFAULT_BUILD } : {}),
         ...(step === "mesh" ? { heightM: self.data.heightM ?? DEFAULT_HEIGHT_M, ...(regenerate ? { regenerate: true } : {}) } : {}),
-        ...(step === "gltf" ? { name: self.data.name ?? self.data.label } : {}),
+        ...(step === "gltf" || step === "unreal" ? { name: self.data.name ?? self.data.label } : {}),
       };
       // Clear the old artifact first so downstream nodes see this output as missing.
       updateNodeData(id, {
@@ -369,10 +375,10 @@ export default function GameStepNode({ id, type, data, selected }: NodeProps<Gam
     >
       <NodeActionBar
         visible={!!selected && !data.locked && !parentGroupSelected && !multiSelected && !readOnly}
-        hasContent={artifact?.kind === "gltf"}
+        hasContent={!!exportFile}
         isSaving={isSaving}
         onDelete={handleDelete}
-        onSave={artifact?.kind === "gltf" ? () => { void saveGlb(); } : undefined}
+        onSave={exportFile ? () => { void saveFile(); } : undefined}
         onDuplicate={handleDuplicate}
       />
       <span className="node-above-label">{label}</span>
@@ -438,6 +444,13 @@ export default function GameStepNode({ id, type, data, selected }: NodeProps<Gam
         {artifact && (
           <div className={`flex flex-col gap-2${outOfDate ? " opacity-50" : ""}`}>
             {artifact.kind === "gltf" && <GltfSummary artifact={artifact} />}
+            {artifact.kind === "unreal" && (
+              <div className="text-[11.5px] leading-[1.5] text-ink-2">
+                <span className="text-ink-3">UE5 mannequin </span>
+                {artifact.bones.length} bones · {artifact.frames} frames @ {artifact.fps} fps
+                {artifact.unreal ? ` · Unreal ${artifact.unreal.version}` : " · not yet imported in Unreal"}
+              </div>
+            )}
             {artifact.checks.length > 0 && (
               <ul className="nowheel max-h-[168px] overflow-y-auto">
                 {artifact.checks.map((c) => <CheckRow key={c.id} check={c} />)}
@@ -451,16 +464,16 @@ export default function GameStepNode({ id, type, data, selected }: NodeProps<Gam
               </span>
               <span className="ml-auto font-mono" title={`Run ${artifact.runId}`}>run {artifact.runId.slice(0, 8)}</span>
             </div>
-            {artifact.kind === "gltf" && (
+            {exportFile && (
               <a
-                href={artifact.glbUrl}
-                download={glbName}
-                onClick={(e) => { e.preventDefault(); e.stopPropagation(); void saveGlb(); }}
+                href={exportFile.url}
+                download={exportFile.name}
+                onClick={(e) => { e.preventDefault(); e.stopPropagation(); void saveFile(); }}
                 onMouseDown={(e) => e.stopPropagation()}
                 className="nodrag inline-flex items-center gap-1.5 self-start text-[12px] text-lapis hover:underline underline-offset-4"
               >
                 <Download className="size-3" strokeWidth={2} />
-                {isSaving ? "Saving…" : glbName}
+                {isSaving ? "Saving…" : exportFile.name}
               </a>
             )}
           </div>
@@ -521,7 +534,7 @@ export default function GameStepNode({ id, type, data, selected }: NodeProps<Gam
                 </label>
               </>
             )}
-            {step === "gltf" && (
+            {(step === "gltf" || step === "unreal") && (
               <input
                 type="text"
                 value={data.name ?? ""}

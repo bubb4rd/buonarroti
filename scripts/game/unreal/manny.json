@@ -1,0 +1,35 @@
+{
+  "_doc": "UE5 mannequin (Manny/Quinn) bones the character pipeline drives, parent first, and where each comes from in our rig (scripts/game/bpy/rig.py BONES). A subset of SK_Mannequin's skeleton with the same names and parent chain, so the mesh can share Manny's Skeleton asset; fingers, twist and IK helper bones are left out. 'chain' bones are spread evenly along one of our bone chains; their weights and motion are split from it by position along the chain.",
+  "bones": [
+    { "name": "root", "parent": null, "from": "Root" },
+    { "name": "pelvis", "parent": "root", "from": "Hips" },
+    { "name": "spine_01", "parent": "pelvis", "chain": "spine", "index": 0 },
+    { "name": "spine_02", "parent": "spine_01", "chain": "spine", "index": 1 },
+    { "name": "spine_03", "parent": "spine_02", "chain": "spine", "index": 2 },
+    { "name": "spine_04", "parent": "spine_03", "chain": "spine", "index": 3 },
+    { "name": "spine_05", "parent": "spine_04", "chain": "spine", "index": 4 },
+    { "name": "neck_01", "parent": "spine_05", "chain": "neck", "index": 0 },
+    { "name": "neck_02", "parent": "neck_01", "chain": "neck", "index": 1 },
+    { "name": "head", "parent": "neck_02", "from": "Head" },
+    { "name": "clavicle_l", "parent": "spine_05", "from": "LeftShoulder" },
+    { "name": "upperarm_l", "parent": "clavicle_l", "from": "LeftUpperArm" },
+    { "name": "lowerarm_l", "parent": "upperarm_l", "from": "LeftLowerArm" },
+    { "name": "hand_l", "parent": "lowerarm_l", "from": "LeftHand" },
+    { "name": "clavicle_r", "parent": "spine_05", "from": "RightShoulder" },
+    { "name": "upperarm_r", "parent": "clavicle_r", "from": "RightUpperArm" },
+    { "name": "lowerarm_r", "parent": "upperarm_r", "from": "RightLowerArm" },
+    { "name": "hand_r", "parent": "lowerarm_r", "from": "RightHand" },
+    { "name": "thigh_l", "parent": "pelvis", "from": "LeftUpperLeg" },
+    { "name": "calf_l", "parent": "thigh_l", "from": "LeftLowerLeg" },
+    { "name": "foot_l", "parent": "calf_l", "from": "LeftFoot" },
+    { "name": "ball_l", "parent": "foot_l", "from": "LeftToes" },
+    { "name": "thigh_r", "parent": "pelvis", "from": "RightUpperLeg" },
+    { "name": "calf_r", "parent": "thigh_r", "from": "RightLowerLeg" },
+    { "name": "foot_r", "parent": "calf_r", "from": "RightFoot" },
+    { "name": "ball_r", "parent": "foot_r", "from": "RightToes" }
+  ],
+  "chains": {
+    "spine": { "from": ["Spine", "Chest", "UpperChest"], "count": 5 },
+    "neck": { "from": ["Neck"], "count": 2 }
+  }
+}

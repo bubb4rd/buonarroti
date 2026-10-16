@@ -1,7 +1,8 @@
 /**
  * Typed artifacts for the character pipeline:
  *
- *   concept → TurnaroundSheet → Mesh → Skeleton (rigged mesh) → AnimClip → GltfAsset
+ *   concept → TurnaroundSheet → Mesh → Skeleton (rigged mesh) → AnimClip → GltfAsset (Godot)
+ *                                                                        ↘ UnrealAsset (FBX)
  *
  * Each artifact is produced by one canvas node, carries the checks that were
  * run on it, and is only accepted downstream when every blocking check passed.
@@ -11,7 +12,7 @@
  * Files live under `/generated/game/<runId>/`; artifacts store those URLs.
  */
 
-export type ArtifactKind = "turnaround" | "mesh" | "skeleton" | "animclip" | "gltf";
+export type ArtifactKind = "turnaround" | "mesh" | "skeleton" | "animclip" | "gltf" | "unreal";
 
 /** One measured check. `pass:false` on a blocking check rejects the artifact. */
 export interface Check {
@@ -112,7 +113,19 @@ export interface GltfAsset extends ArtifactBase {
   godot: { version: string; importIssues: string[]; animation?: string; loop?: boolean; frames?: number; maxStretch?: number };
 }
 
-export type Artifact = TurnaroundSheet | Mesh | Skeleton | AnimClip | GltfAsset;
+export interface UnrealAsset extends ArtifactBase {
+  kind: "unreal";
+  /** Skinned mesh + the walk on the UE5 mannequin's bone names and parent chain. */
+  fbxUrl: string;
+  /** Bones in the file (a subset of SK_Mannequin's skeleton: no fingers, twist or IK helpers). */
+  bones: string[];
+  frames: number;
+  fps: number;
+  /** Headless UnrealEditor-Cmd import of the FBX, when Unreal is installed. */
+  unreal?: { version: string; importIssues: string[] };
+}
+
+export type Artifact = TurnaroundSheet | Mesh | Skeleton | AnimClip | GltfAsset | UnrealAsset;
 
 /** Which artifact each node consumes and emits — the canvas connection contract. */
 export const STEP_IO: Record<ArtifactKind, { input: ArtifactKind | "prompt"; output: ArtifactKind }> = {
@@ -121,6 +134,7 @@ export const STEP_IO: Record<ArtifactKind, { input: ArtifactKind | "prompt"; out
   skeleton: { input: "mesh", output: "skeleton" },
   animclip: { input: "skeleton", output: "animclip" },
   gltf: { input: "animclip", output: "gltf" },
+  unreal: { input: "animclip", output: "unreal" },
 };
 
 export function blockingFailures(a: { checks: Check[] }): Check[] {

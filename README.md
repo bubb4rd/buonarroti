@@ -189,6 +189,10 @@ artifact that failed a check, so nothing is spent on a bad input.
 | Auto-rig | Blender (geometric joint fit, bone heat weights) | local |
 | Walk cycle | Blender, retargets the CMU mocap walk in `scripts/game/mocap` | local |
 | glTF export | Khronos glTF-Validator, Godot headless import + playback (edge stretch and seam cracks, every frame), Blender budget check | local |
+| Unreal export | Blender: the rig rebuilt on UE5 mannequin bone names and parent chain (`scripts/game/unreal/manny.json`), walk re-baked, FBX written and read back. Import in Unreal itself is not verified yet | local |
+
+The walk feeds either export node, or both. From the terminal:
+`pnpm game:character --run <runId> --from unreal --export unreal`.
 
 The pose comes from a picture, not from the prompt: the turnaround request
 carries a mannequin turnaround (`scripts/game/bpy/pose_template.py`) in the

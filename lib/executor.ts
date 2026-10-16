@@ -10,6 +10,7 @@ export const RUNNABLE_NODE_TYPES: Record<string, true> = {
   gameSkeletonNode: true,
   gameAnimNode: true,
   gameGltfNode: true,
+  gameUnrealNode: true,
 };
 
 /** Topological sort — returns node ids in execution order */

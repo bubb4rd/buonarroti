@@ -6,7 +6,7 @@
 import { accepts, STEP_IO, type Artifact, type ArtifactKind } from "./artifacts";
 import { DEFAULT_BUILD, type Build } from "./poses";
 import { runTurnaround } from "./turnaround";
-import { runAnimClip, runGltf, runMesh, runSkeleton } from "./steps";
+import { runAnimClip, runGltf, runMesh, runSkeleton, runUnreal } from "./steps";
 
 export interface StepRequest {
   step: ArtifactKind;
@@ -16,7 +16,7 @@ export interface StepRequest {
   /** Turnaround: the concept prompt, and the mannequin build the character is drawn over. */
   concept?: string;
   build?: Build;
-  /** Final file name (gltf step). */
+  /** Final file name (gltf / unreal step). */
   name?: string;
   heightM?: number;
   regenerate?: boolean;
@@ -40,6 +40,7 @@ export async function runStep(req: StepRequest): Promise<Artifact> {
     case "skeleton": return runSkeleton(input as Extract<Artifact, { kind: "mesh" }>);
     case "animclip": return runAnimClip(input as Extract<Artifact, { kind: "skeleton" }>);
     case "gltf": return runGltf(input as Extract<Artifact, { kind: "animclip" }>, { name: req.name });
+    case "unreal": return runUnreal(input as Extract<Artifact, { kind: "animclip" }>, { name: req.name });
   }
   throw new Error(`unknown step ${req.step}`);
 }

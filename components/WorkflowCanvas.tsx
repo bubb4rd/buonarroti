@@ -21,7 +21,7 @@ import { useWorkflowStore, NodeData } from "@/lib/store";
 import { requestWorkflowSync } from "@/lib/workflowSyncBus";
 import { IMAGE_MODELS, VIDEO_MODELS } from "@/lib/modelConfig";
 import CuttableEdge from "@/components/edges/CuttableEdge";
-import { NODE_SIZE, FALLBACK_SIZE, NODE_META, TypeBadge, getLastNodeSettings, getDefaultNodeSize, nextNodeLabel, gameStepOf, gameSourceTypes, gameOutHandle, gameNextType } from "@/lib/nodeTypes";
+import { NODE_SIZE, FALLBACK_SIZE, NODE_META, TypeBadge, getLastNodeSettings, getDefaultNodeSize, nextNodeLabel, gameStepOf, gameSourceTypes, gameOutHandle, gameNextTypes } from "@/lib/nodeTypes";
 import { STEP_IO } from "@/lib/game/artifacts";
 import { edgeStyle } from "@/lib/edgeStyles";
 import { sha256Hex } from "@/lib/assetHash";
@@ -67,6 +67,7 @@ const nodeTypes = {
   gameSkeletonNode: GameStepNode,
   gameAnimNode: GameStepNode,
   gameGltfNode: GameStepNode,
+  gameUnrealNode: GameStepNode,
 };
 
 const edgeTypes = {
@@ -1077,7 +1078,7 @@ export default function WorkflowCanvas() {
       const srcStep = gameStepOf(source?.type);
       const tgtStep = gameStepOf(target?.type);
       if (srcStep || tgtStep) {
-        if (srcStep && (target?.type !== gameNextType(srcStep) || connection.sourceHandle !== gameOutHandle(srcStep))) return false;
+        if (srcStep && (!(gameNextTypes(srcStep) as string[]).includes(target?.type ?? "") || connection.sourceHandle !== gameOutHandle(srcStep))) return false;
         if (!tgtStep) return false;
         if (!gameSourceTypes(tgtStep).includes(source?.type ?? "")) return false;
         if (connection.targetHandle !== STEP_IO[tgtStep].input) return false;
