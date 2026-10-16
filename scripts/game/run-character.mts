@@ -2,7 +2,7 @@
  * Run the character pipeline end to end (or resume it) outside the UI, through
  * the same lib/game/pipeline.ts the canvas nodes call.
  *
- *   pnpm game:character --name dwarf --concept "a stocky dwarf blacksmith…"
+ *   pnpm game:character --name dwarf --build stocky --concept "a stocky dwarf blacksmith…"
  *   pnpm game:character --run <runId> --from skeleton      # resume after a fix
  *   pnpm game:character --run <runId> --regenerate mesh    # discard the cached mesh
  *
@@ -13,6 +13,7 @@ import { existsSync } from "fs";
 import { readFile, writeFile } from "fs/promises";
 import { parseArgs } from "util";
 import { blockingFailures, type Artifact, type ArtifactKind } from "../../lib/game/artifacts";
+import { BUILDS, isBuild } from "../../lib/game/poses";
 import { runStep } from "../../lib/game/pipeline";
 import { newRunId, runDir, runPath } from "../../lib/game/runs";
 import { getKieToken } from "../../lib/getKieToken";
@@ -23,6 +24,8 @@ const { values } = parseArgs({
   options: {
     name: { type: "string" },
     concept: { type: "string" },
+    /** Mannequin build for the turnaround (scripts/game/poses/builds.json). */
+    build: { type: "string" },
     run: { type: "string" },
     from: { type: "string" },
     to: { type: "string" },
@@ -30,7 +33,10 @@ const { values } = parseArgs({
     regenerate: { type: "string", default: "" },
   },
 });
-
+if (values.build !== undefined && !isBuild(values.build)) {
+  console.error(`unknown --build ${values.build} (one of: ${BUILDS.map((b) => b.id).join(", ")})`);
+  process.exit(1);
+}
 const runId = values.run ?? newRunId();
 await runDir(runId);
 const store = runPath(runId, "artifacts.json");
@@ -49,7 +55,8 @@ for (const step of ORDER.slice(from, to + 1)) {
   try {
     const art = await runStep({
       step, runId, input: prev ? saved.artifacts[prev] : undefined,
-      concept: saved.concept, name: saved.name, regenerate: values.regenerate.split(",").includes(step),
+      concept: saved.concept, build: isBuild(values.build) ? values.build : undefined,
+      name: saved.name, regenerate: values.regenerate.split(",").includes(step),
       kieApiKey: (await getKieToken()) ?? undefined, hfToken: process.env.HF_TOKEN,
     });
     saved.artifacts[step] = art;

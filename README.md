@@ -184,11 +184,19 @@ artifact that failed a check, so nothing is spent on a bad input.
 
 | Step | Runs on | Cost |
 | --- | --- | --- |
-| Turnaround sheet | kie.ai `nano-banana-pro`, 2K, 3:2 | 18 credits |
+| Turnaround sheet | kie.ai `nano-banana-pro`, 2K, 3:2, drawn over a mannequin pose template | 18 credits |
 | Image to 3D mesh | Hunyuan3D-2mv on Hugging Face ZeroGPU (shape), texture projected from the sheet in Blender | free, rate-limited quota |
 | Auto-rig | Blender (geometric joint fit, bone heat weights) | local |
 | Walk cycle | Blender, retargets the CMU mocap walk in `scripts/game/mocap` | local |
 | glTF export | Khronos glTF-Validator, Godot headless import + playback (edge stretch and seam cracks, every frame), Blender budget check | local |
+
+The pose comes from a picture, not from the prompt: the turnaround request
+carries a mannequin turnaround (`scripts/game/bpy/pose_template.py`) in the
+A-pose the rig needs, and your concept only describes the character. Pick the
+mannequin's **Build** (Average, Stocky, Slender) on the Turnaround node; its
+proportions carry into the drawing, so a dwarf wants Stocky. Builds are entries
+in `scripts/game/poses/builds.json`. The sheet step measures the arm angle the
+same way the rig does and rejects an off-pose sheet before any mesh is made.
 
 A step interrupted by a restart picks up again on its own: a sheet still
 rendering on kie.ai is polled, not paid for twice. In the gallery, a finished
@@ -199,7 +207,7 @@ Needs **Blender 4.2+** and **Godot 4.3+** on your `PATH` (or `BLENDER_BIN` /
 Hugging Face token in **Settings → API Keys** (or `HF_TOKEN`). The same steps run headless:
 
 ```bash
-pnpm game:character --name dwarf --concept "a stocky dwarf blacksmith…"
+pnpm game:character --name dwarf --build stocky --concept "a stocky dwarf blacksmith…"
 pnpm game:verify path/to/dwarf.glb path/to/knight.glb --movie /tmp/frames
 ```
 

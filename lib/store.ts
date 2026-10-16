@@ -84,6 +84,8 @@ export interface NodeData extends Record<string, unknown> {
   name?: string;
   /** Mesh step: character height in meters (default 1.8). */
   heightM?: number;
+  /** Turnaround step: mannequin build the character is drawn over (lib/game/poses.ts). */
+  build?: string;
 }
 
 export const INTERRUPTED_MESSAGE = "This generation was interrupted. Retry?";

@@ -15,6 +15,7 @@ import { reportGenerateSubmitted } from "@/lib/usePipelineRunner";
 import { useJobStatus, submitGeneration, newClientRequestId, jobErrorCopy, JobSubmitError } from "@/lib/useJobStatus";
 import { GAME_NODE_STEP, NODE_LABELS, gameNodeTypeFor, gameOutHandle, type GameNodeType } from "@/lib/nodeTypes";
 import { STEP_IO, accepts, blockingFailures, type Artifact, type ArtifactKind, type Check } from "@/lib/game/artifacts";
+import { BUILDS, DEFAULT_BUILD } from "@/lib/game/poses";
 
 type GameStepNodeType = Node<NodeData, GameNodeType>;
 
@@ -288,6 +289,7 @@ export default function GameStepNode({ id, type, data, selected }: NodeProps<Gam
       const body = {
         step,
         ...check.body,
+        ...(step === "turnaround" ? { build: self.data.build ?? DEFAULT_BUILD } : {}),
         ...(step === "mesh" ? { heightM: self.data.heightM ?? DEFAULT_HEIGHT_M, ...(regenerate ? { regenerate: true } : {}) } : {}),
         ...(step === "gltf" ? { name: self.data.name ?? self.data.label } : {}),
       };
@@ -448,6 +450,18 @@ export default function GameStepNode({ id, type, data, selected }: NodeProps<Gam
 
         {!readOnly && (
           <div className="flex items-center gap-2" onMouseDown={(e) => e.stopPropagation()}>
+            {step === "turnaround" && (
+              <label className="flex items-center gap-1.5 text-[11.5px] text-ink-3" title="Body proportions of the mannequin the character is drawn over">
+                Build
+                <select
+                  value={data.build ?? DEFAULT_BUILD}
+                  onChange={(e) => updateNodeData(id, { build: e.target.value })}
+                  className="nodrag h-6 rounded-[var(--radius-sm)] bg-wash px-1 text-[12px] text-ink outline-none focus:ring-1 focus:ring-lapis"
+                >
+                  {BUILDS.map((b) => <option key={b.id} value={b.id}>{b.label}</option>)}
+                </select>
+              </label>
+            )}
             {step === "mesh" && (
               <>
                 <label className="flex items-center gap-1.5 text-[11.5px] text-ink-3">

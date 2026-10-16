@@ -53,6 +53,10 @@ export interface TurnaroundSheet extends ArtifactBase {
   concept: string;
   prompt: string;
   model: string;
+  /** Mannequin build the sheet was drawn over (lib/game/poses.ts); absent on sheets made before pose templates. */
+  build?: string;
+  /** The pose / layout reference sent with the request. */
+  poseUrl?: string;
   sheetUrl: string;
   width: number;
   height: number;

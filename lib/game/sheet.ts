@@ -10,7 +10,7 @@
 import sharp from "sharp";
 import { writeFile } from "fs/promises";
 import { join } from "path";
-import { SHEET_BUDGET, type Check, type SheetView, type SheetViewName } from "./artifacts";
+import { CHARACTER_BUDGET, SHEET_BUDGET, type Check, type SheetView, type SheetViewName } from "./artifacts";
 
 interface Mask {
   w: number;
@@ -141,17 +141,6 @@ function bbox(mask: Mask, x0: number, x1: number): Box | null {
   return y1 < 0 ? null : { x0: bx0, x1: bx1 + 1, y0, y1: y1 + 1 };
 }
 
-/** Foreground runs along row `y` inside the box, ignoring specks narrower than `minRun`. */
-function rowRuns(mask: Mask, box: Box, y: number, minRun: number): number {
-  let count = 0, len = 0;
-  for (let x = box.x0; x <= box.x1; x++) {
-    const on = x < box.x1 && mask.fg[y * mask.w + x] === 1;
-    if (on) len++;
-    else { if (len >= minRun) count++; len = 0; }
-  }
-  return count;
-}
-
 /**
  * Longest contiguous run of rows inside the [from, to] band (0 = feet, 1 = head
  * top) whose foreground run count satisfies `ok`, as a fraction of figure height.
@@ -161,10 +150,68 @@ function longestSpan(mask: Mask, box: Box, from: number, to: number, ok: (n: num
   const minRun = Math.max(2, Math.round(height * 0.004));
   let best = 0, cur = 0;
   for (let y = Math.round(box.y1 - 1 - from * (height - 1)); y >= Math.round(box.y1 - 1 - to * (height - 1)); y--) {
-    if (ok(rowRuns(mask, box, y, minRun))) best = Math.max(best, ++cur);
+    if (ok(runsOf(mask, box, y, minRun).length)) best = Math.max(best, ++cur);
     else cur = 0;
   }
   return best / height;
+}
+
+/** Foreground runs [x0, x1) along row `y` inside the box, ignoring specks narrower than `minRun`. */
+function runsOf(mask: Mask, box: Box, y: number, minRun: number): [number, number][] {
+  const out: [number, number][] = [];
+  let start = -1;
+  for (let x = box.x0; x <= box.x1; x++) {
+    const on = x < box.x1 && mask.fg[y * mask.w + x] === 1;
+    if (on && start < 0) start = x;
+    if (!on && start >= 0) { if (x - start >= minRun) out.push([start, x]); start = -1; }
+  }
+  return out;
+}
+
+/**
+ * Upper-arm angle below horizontal for each arm of a front view, degrees —
+ * the same definition rig.py fits on the mesh (armpit = top of the longest run
+ * of rows reading arm | torso | arm, then a line through the outer runs' centres
+ * down to the hand). Image right is the character's left. Measured on 14
+ * sheets, it matched rig.py's rest.arm_angle within 3.5 degrees and gave the
+ * same pass/fail on every one, so the A-pose is rejected here, before the mesh.
+ */
+function armAngles(mask: Mask, box: Box): { left: number; right: number } | null {
+  const height = box.y1 - box.y0;
+  const minRun = Math.max(2, Math.round(height * 0.004));
+  const cx = (box.x0 + box.x1) / 2;
+  const central = (rs: [number, number][]) => rs.find(([a, b]) => a <= cx && cx < b);
+  let best = { len: 0, top: -1 }, cur = { len: 0, top: -1 };
+  for (let y = box.y0; y < box.y1 - 0.35 * height; y++) {
+    const rs = runsOf(mask, box, y, minRun);
+    const mid = central(rs);
+    if (mid && rs.some(([a]) => a >= mid[1]) && rs.some(([, b]) => b <= mid[0])) {
+      cur = { len: cur.len + 1, top: cur.top >= 0 ? cur.top : y };
+      if (cur.len > best.len) best = cur;
+    } else cur = { len: 0, top: -1 };
+  }
+  if (best.top < 0) return null;
+  const angle = (sgn: 1 | -1): number | null => {
+    const pts: [number, number][] = [];
+    for (let y = best.top; y < box.y1; y++) {
+      const rs = runsOf(mask, box, y, minRun);
+      const mid = central(rs);
+      if (!mid) break;
+      const outer = rs.filter(([a, b]) => (sgn > 0 ? a >= mid[1] : b <= mid[0]));
+      if (!outer.length) { if (pts.length) break; continue; }
+      const [a, b] = sgn > 0 ? outer[outer.length - 1] : outer[0];
+      pts.push([(a + b) / 2, y]);
+    }
+    if (pts.length < 6) return null;
+    // Principal axis of the centre points.
+    const mx = pts.reduce((s, p) => s + p[0], 0) / pts.length, my = pts.reduce((s, p) => s + p[1], 0) / pts.length;
+    let sxx = 0, syy = 0, sxy = 0;
+    for (const [x, y] of pts) { sxx += (x - mx) ** 2; syy += (y - my) ** 2; sxy += (x - mx) * (y - my); }
+    const theta = 0.5 * Math.atan2(2 * sxy, sxx - syy);
+    return (Math.atan2(Math.abs(Math.sin(theta)), Math.abs(Math.cos(theta))) * 180) / Math.PI;
+  };
+  const left = angle(1), right = angle(-1);
+  return left === null || right === null ? null : { left, right };
 }
 
 /** Mean luminance asymmetry between the left half and the mirrored right half of the silhouette. */
@@ -285,6 +332,16 @@ export async function analyzeSheet(sheetPath: string, outDir: string): Promise<S
     checks.push({ id: `sheet.apose.arms_${name}`, pass: arms >= SHEET_BUDGET.minArmGap, value: +arms.toFixed(3), limit: SHEET_BUDGET.minArmGap, detail: "tallest span where both arms are separated from the torso (fraction of height)" });
     const legs = longestSpan(mask, box, SHEET_BUDGET.legBand[0], SHEET_BUDGET.legBand[1], (n) => n >= 2);
     checks.push({ id: `sheet.apose.legs_${name}`, pass: legs >= SHEET_BUDGET.minLegGap, value: +legs.toFixed(3), limit: SHEET_BUDGET.minLegGap, detail: "tallest span where the legs are separated (fraction of height)" });
+  }
+  const [lo, hi] = CHARACTER_BUDGET.aPoseArmDeg;
+  const arm = armAngles(mask, front);
+  for (const side of ["left", "right"] as const) {
+    const v = arm?.[side];
+    checks.push({
+      id: `sheet.apose.arm_angle.${side}`, pass: v !== undefined && v >= lo && v <= hi,
+      value: v !== undefined ? +v.toFixed(1) : undefined, limit: `${lo}–${hi}`,
+      detail: v !== undefined ? "upper-arm angle below horizontal, front view (rig.py measures the same on the mesh)" : "arms not traceable in the front view",
+    });
   }
 
   const iou = silhouetteIoU(mask, front, back, true);

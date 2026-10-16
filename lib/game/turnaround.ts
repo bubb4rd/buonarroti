@@ -4,29 +4,43 @@
  * One sheet with three views is asked for (not three separate images) because
  * a single generation keeps proportions, palette and costume consistent across
  * views; the sheet is then split and checked by `analyzeSheet`.
+ *
+ * Pose and layout are given as an image, not as words: the request carries a
+ * mannequin turnaround (./poses.ts) and the text only says to follow it. With
+ * the pose described in words, arm angles came back anywhere from 46 to 68
+ * degrees (3 of 5 sheets over the rig's 60); with the mannequin, 42-45 on 6 of 6.
  */
 import { existsSync } from "fs";
 import { readFile, rm, writeFile } from "fs/promises";
 import { join } from "path";
 import { setTimeout as sleep } from "timers/promises";
 import { KIE_BASE, createKieTask, fetchKieRecord } from "../kieApi";
+import { ensureKieReachable } from "../kieUpload";
 import { analyzeSheet } from "./sheet";
 import type { TurnaroundSheet } from "./artifacts";
+import { POSE, buildSpec, type Build } from "./poses";
 import { runDir, runUrl } from "./runs";
+import { runBlender } from "./tools";
 
 export const TURNAROUND_MODEL = "nano-banana-pro";
 
 export function turnaroundPrompt(concept: string): string {
   return [
     `Character turnaround model sheet of ${concept.trim().replace(/\.$/, "")}, for a 3D game character.`,
-    "Exactly three full-body views of the same character side by side in one row, evenly spaced, not overlapping, in this order from left to right:",
-    "1) FRONT view facing the viewer; 2) SIDE view in strict profile, facing the left edge of the image; 3) BACK view showing the character's back.",
-    "Orthographic projection, no perspective. All three views at the same scale and the same height, feet on one shared ground line, tops of the heads aligned.",
-    "A-pose: arms straight and angled about 45 degrees down and away from the body so there is clear space between arms and torso, palms facing the thighs, fingers together, legs straight with feet a shoulder-width apart so there is a clear gap between the legs.",
+    "The attached image is the pose and layout guide. Draw the character three times, exactly where the mannequin figures are: front view on the left, strict left profile facing the left edge in the middle, back view on the right.",
+    "Match the mannequin's pose exactly (arm angle, gap between arms and body, leg spread), its proportions, its scale and its ground line. Orthographic, no perspective.",
+    "Take only pose, proportions, camera and layout from the guide; costume, colours and style come from the description.",
     "Neutral expression, mouth closed. No weapon, no props, no cape, nothing held in the hands.",
     "Flat, even, unlit albedo shading: no shadows, no ambient occlusion, no rim light, no specular highlights, no gradients from a light direction.",
     "Plain pure white background (#FFFFFF) everywhere, no ground shadow, no floor, no text, no labels, no arrows, no borders, no color swatches.",
   ].join(" ");
+}
+
+/** Render the mannequin for `build` (2528×1696, the sheet's 3:2 at 2K). */
+export async function renderPoseTemplate(build: Build, outPng: string): Promise<void> {
+  await runBlender("pose_template", {
+    out_png: outPng, arm_deg: POSE.armDeg, stance: POSE.stance, build: buildSpec(build), width: 2528, height: 1696,
+  });
 }
 
 const POLL_MS = 3_000;
@@ -38,14 +52,18 @@ const TIMEOUT_MS = 10 * 60_000;
  * already paid for instead of submitting a second one. Returns true when a new
  * task was submitted.
  */
-async function generateSheet(prompt: string, apiKey: string, outFile: string): Promise<boolean> {
+async function generateSheet(prompt: string, posePng: string, apiKey: string, outFile: string): Promise<boolean> {
   const taskFile = `${outFile}.task`;
   const pending = existsSync(taskFile) ? (await readFile(taskFile, "utf8")).trim() : "";
-  const taskId = pending || await createKieTask(`${KIE_BASE}/api/v1/jobs/createTask`, apiKey, {
-    model: TURNAROUND_MODEL,
-    input: { prompt, aspect_ratio: "3:2", resolution: "2K", output_format: "png" },
-  });
-  if (!pending) await writeFile(taskFile, taskId);
+  let taskId = pending;
+  if (!taskId) {
+    const guide = await ensureKieReachable(`data:image/png;base64,${(await readFile(posePng)).toString("base64")}`, apiKey);
+    taskId = await createKieTask(`${KIE_BASE}/api/v1/jobs/createTask`, apiKey, {
+      model: TURNAROUND_MODEL,
+      input: { prompt, image_input: [guide], aspect_ratio: "3:2", resolution: "2K", output_format: "png" },
+    });
+    await writeFile(taskFile, taskId);
+  }
   const deadline = Date.now() + TIMEOUT_MS;
   try {
     while (Date.now() < deadline) {
@@ -86,12 +104,15 @@ export async function kieBalance(apiKey: string): Promise<number | undefined> {
  * Generate (or, when the run already has a sheet and `regenerate` is false,
  * re-analyse for free) the turnaround sheet. `regenerate` deletes the cached
  * sheet first, so a resumed job (always regenerate: false) keeps what the
- * interrupted attempt paid for.
+ * interrupted attempt paid for. The mannequin used is kept as pose.png, its
+ * build in pose.json, next to the sheet it produced.
  */
-export async function runTurnaround(opts: { runId: string; concept: string; apiKey: string; regenerate?: boolean }): Promise<TurnaroundSheet> {
+export async function runTurnaround(opts: { runId: string; concept: string; build: Build; apiKey: string; regenerate?: boolean }): Promise<TurnaroundSheet> {
   const t0 = Date.now();
   const dir = await runDir(opts.runId);
   const sheet = join(dir, "sheet.png");
+  const pose = join(dir, "pose.png");
+  const poseInfo = join(dir, "pose.json");
   const prompt = turnaroundPrompt(opts.concept);
   if (opts.regenerate) {
     await rm(sheet, { force: true });
@@ -99,20 +120,27 @@ export async function runTurnaround(opts: { runId: string; concept: string; apiK
   }
   let kieCredits: number | undefined = 0;
   if (!existsSync(sheet)) {
+    if (!existsSync(`${sheet}.task`)) {
+      await renderPoseTemplate(opts.build, pose);
+      await writeFile(poseInfo, JSON.stringify({ build: opts.build, ...POSE }));
+    }
     // Balance delta = what this sheet cost (exact unless other kie jobs run
     // concurrently); unknown when an earlier attempt submitted the task.
     const before = await kieBalance(opts.apiKey);
-    const submitted = await generateSheet(prompt, opts.apiKey, sheet);
+    const submitted = await generateSheet(prompt, pose, opts.apiKey, sheet);
     const after = await kieBalance(opts.apiKey);
     kieCredits = submitted && before !== undefined && after !== undefined ? +(before - after).toFixed(2) : undefined;
   }
   const analysis = await analyzeSheet(sheet, dir);
+  const used = existsSync(poseInfo) ? (JSON.parse(await readFile(poseInfo, "utf8")) as { build: Build }) : undefined;
   return {
     kind: "turnaround",
     runId: opts.runId,
     concept: opts.concept,
     prompt,
     model: TURNAROUND_MODEL,
+    build: used?.build,
+    poseUrl: used ? runUrl(opts.runId, "pose.png") : undefined,
     sheetUrl: runUrl(opts.runId, "sheet.png"),
     previewUrl: runUrl(opts.runId, "sheet.png"),
     width: analysis.width,

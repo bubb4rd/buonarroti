@@ -10,6 +10,7 @@ import { runLocalJob, type JobRecord, type TerminalJobResult } from "../jobStore
 import { getKieToken } from "../getKieToken";
 import { getHfToken } from "../guest/db";
 import type { Artifact, ArtifactKind } from "./artifacts";
+import type { Build } from "./poses";
 import { runStep } from "./pipeline";
 
 export interface GameStepRequest {
@@ -17,6 +18,7 @@ export interface GameStepRequest {
   runId: string;
   input?: Artifact;
   concept?: string;
+  build?: Build;
   name?: string;
   heightM?: number;
   regenerate?: boolean;

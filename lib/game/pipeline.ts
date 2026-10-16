@@ -4,6 +4,7 @@
  * The upstream artifact is re-checked here: a step never runs on a rejected input.
  */
 import { accepts, STEP_IO, type Artifact, type ArtifactKind } from "./artifacts";
+import { DEFAULT_BUILD, type Build } from "./poses";
 import { runTurnaround } from "./turnaround";
 import { runAnimClip, runGltf, runMesh, runSkeleton } from "./steps";
 
@@ -12,8 +13,9 @@ export interface StepRequest {
   runId: string;
   /** Upstream artifact (absent for the turnaround step). */
   input?: Artifact;
-  /** Turnaround: the concept prompt. */
+  /** Turnaround: the concept prompt, and the mannequin build the character is drawn over. */
   concept?: string;
+  build?: Build;
   /** Final file name (gltf step). */
   name?: string;
   heightM?: number;
@@ -27,7 +29,7 @@ export async function runStep(req: StepRequest): Promise<Artifact> {
   if (need === "prompt") {
     if (!req.concept?.trim()) throw new Error("the turnaround step needs a concept prompt");
     if (!req.kieApiKey) throw new Error("no kie.ai API key — add it in Settings");
-    return runTurnaround({ runId: req.runId, concept: req.concept, apiKey: req.kieApiKey, regenerate: req.regenerate });
+    return runTurnaround({ runId: req.runId, concept: req.concept, build: req.build ?? DEFAULT_BUILD, apiKey: req.kieApiKey, regenerate: req.regenerate });
   }
   const ok = accepts(req.input, need);
   if (!ok.ok) throw new Error(ok.reason);
