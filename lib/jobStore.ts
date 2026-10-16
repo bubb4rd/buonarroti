@@ -29,6 +29,8 @@ export interface JobRecord {
   provider: JobProvider;
   createdAt: number;
   result: Exclude<JobResult, { status: "not_found" }>;
+  /** What started the job, for in-process jobs that can resume (character pipeline). */
+  request?: unknown;
 }
 
 const ERROR_CODES = new Set<string>(["credits", "interrupted", "timeout", "failed", "rejected"]);
@@ -74,6 +76,7 @@ function toRecord(gen: guestDb.Generation): JobRecord {
     provider: providerOf(gen),
     createdAt: Number.isFinite(createdAt) ? createdAt : Date.now(),
     result,
+    ...(gen.request_json ? { request: JSON.parse(gen.request_json) } : {}),
   };
 }
 

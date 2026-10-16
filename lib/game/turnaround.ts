@@ -6,7 +6,7 @@
  * views; the sheet is then split and checked by `analyzeSheet`.
  */
 import { existsSync } from "fs";
-import { writeFile } from "fs/promises";
+import { readFile, rm, writeFile } from "fs/promises";
 import { join } from "path";
 import { setTimeout as sleep } from "timers/promises";
 import { KIE_BASE, createKieTask, fetchKieRecord } from "../kieApi";
@@ -32,27 +32,40 @@ export function turnaroundPrompt(concept: string): string {
 const POLL_MS = 3_000;
 const TIMEOUT_MS = 10 * 60_000;
 
-/** Submit, poll and download the sheet; returns the file path and the kie task id. */
-async function generateSheet(prompt: string, apiKey: string, outFile: string): Promise<string> {
-  const taskId = await createKieTask(`${KIE_BASE}/api/v1/jobs/createTask`, apiKey, {
+/**
+ * Submit, poll and download the sheet. The kie task id is kept next to the
+ * sheet until it lands, so a step resumed after a restart polls the task it
+ * already paid for instead of submitting a second one. Returns true when a new
+ * task was submitted.
+ */
+async function generateSheet(prompt: string, apiKey: string, outFile: string): Promise<boolean> {
+  const taskFile = `${outFile}.task`;
+  const pending = existsSync(taskFile) ? (await readFile(taskFile, "utf8")).trim() : "";
+  const taskId = pending || await createKieTask(`${KIE_BASE}/api/v1/jobs/createTask`, apiKey, {
     model: TURNAROUND_MODEL,
     input: { prompt, aspect_ratio: "3:2", resolution: "2K", output_format: "png" },
   });
+  if (!pending) await writeFile(taskFile, taskId);
   const deadline = Date.now() + TIMEOUT_MS;
-  while (Date.now() < deadline) {
-    await sleep(POLL_MS);
-    const rec = await fetchKieRecord(taskId, apiKey, "jobs");
-    if (rec.state === "done") {
-      const res = await fetch(rec.urls[0], { signal: AbortSignal.timeout(120_000) });
-      if (!res.ok) throw new Error(`sheet download failed: HTTP ${res.status}`);
-      await writeFile(outFile, Buffer.from(await res.arrayBuffer()));
-      return taskId;
+  try {
+    while (Date.now() < deadline) {
+      await sleep(POLL_MS);
+      const rec = await fetchKieRecord(taskId, apiKey, "jobs");
+      if (rec.state === "done") {
+        const res = await fetch(rec.urls[0], { signal: AbortSignal.timeout(120_000) });
+        if (!res.ok) throw new Error(`sheet download failed: HTTP ${res.status}`);
+        await writeFile(outFile, Buffer.from(await res.arrayBuffer()));
+        return !pending;
+      }
+      if (rec.state === "failed") throw new Error(`kie.ai: ${rec.error}`);
+      if (rec.state === "auth") throw new Error("kie.ai rejected the API key");
+      if (rec.state === "no_output") throw new Error("kie.ai finished without an image");
     }
-    if (rec.state === "failed") throw new Error(`kie.ai: ${rec.error}`);
-    if (rec.state === "auth") throw new Error("kie.ai rejected the API key");
-    if (rec.state === "no_output") throw new Error("kie.ai finished without an image");
+    throw new Error(`kie.ai task ${taskId} timed out`);
+  } finally {
+    // Settled either way (a restart never reaches this): the next attempt starts fresh.
+    await rm(taskFile, { force: true });
   }
-  throw new Error(`kie.ai task ${taskId} timed out`);
 }
 
 /** kie.ai balance in credits (the same endpoint the app's credit badge uses). */
@@ -71,21 +84,29 @@ export async function kieBalance(apiKey: string): Promise<number | undefined> {
 
 /**
  * Generate (or, when the run already has a sheet and `regenerate` is false,
- * re-analyse for free) the turnaround sheet.
+ * re-analyse for free) the turnaround sheet. `regenerate` deletes the cached
+ * sheet first, so a resumed job (always regenerate: false) keeps what the
+ * interrupted attempt paid for.
  */
 export async function runTurnaround(opts: { runId: string; concept: string; apiKey: string; regenerate?: boolean }): Promise<TurnaroundSheet> {
   const t0 = Date.now();
   const dir = await runDir(opts.runId);
+  const sheet = join(dir, "sheet.png");
   const prompt = turnaroundPrompt(opts.concept);
-  let kieCredits: number | undefined = 0;
-  if (opts.regenerate || !existsSync(join(dir, "sheet.png"))) {
-    // Balance delta = what this sheet cost (exact unless other kie jobs run concurrently).
-    const before = await kieBalance(opts.apiKey);
-    await generateSheet(prompt, opts.apiKey, join(dir, "sheet.png"));
-    const after = await kieBalance(opts.apiKey);
-    kieCredits = before !== undefined && after !== undefined ? +(before - after).toFixed(2) : undefined;
+  if (opts.regenerate) {
+    await rm(sheet, { force: true });
+    await rm(`${sheet}.task`, { force: true });
   }
-  const analysis = await analyzeSheet(join(dir, "sheet.png"), dir);
+  let kieCredits: number | undefined = 0;
+  if (!existsSync(sheet)) {
+    // Balance delta = what this sheet cost (exact unless other kie jobs run
+    // concurrently); unknown when an earlier attempt submitted the task.
+    const before = await kieBalance(opts.apiKey);
+    const submitted = await generateSheet(prompt, opts.apiKey, sheet);
+    const after = await kieBalance(opts.apiKey);
+    kieCredits = submitted && before !== undefined && after !== undefined ? +(before - after).toFixed(2) : undefined;
+  }
+  const analysis = await analyzeSheet(sheet, dir);
   return {
     kind: "turnaround",
     runId: opts.runId,

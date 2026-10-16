@@ -26,6 +26,7 @@ import {
 import { fetchKieRecord, type KieRecord } from "./kieApi";
 import { mirrorToStorage } from "./storage";
 import { getKieToken } from "./getKieToken";
+import { resumeGameStepJob } from "./game/jobs";
 
 const CAP_MS: Record<JobKind, number> = { image: 30 * 60_000, video: 60 * 60_000, asset: 30 * 60_000 };
 /** How long kie.ai may report "no record" before we believe it. */
@@ -67,15 +68,15 @@ export function pollKieJob(
 
 /**
  * Make sure a pending job has something driving it to a terminal state:
- * resume the kie.ai poller, or mark it interrupted when nothing can finish it
- * (an in-process Azure/Codex job from a previous process, or a kie.ai job with
- * no API key to poll with).
+ * resume the kie.ai poller or a character-pipeline step, or mark it interrupted
+ * when nothing can finish it (an in-process Azure/Codex job from a previous
+ * process, or a kie.ai job with no API key to poll with).
  */
 async function watch(job: JobRecord): Promise<void> {
   if (job.result.status !== "pending") return;
 
   if (isLocalProvider(job.provider)) {
-    if (!isLocalJobRunning(job.taskId)) {
+    if (!isLocalJobRunning(job.taskId) && !(job.provider === "game" && resumeGameStepJob(job))) {
       settleJob(job.taskId, {
         status: "error",
         error: "This generation was interrupted when Buonarroti restarted. Retry it.",

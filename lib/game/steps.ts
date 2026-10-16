@@ -5,7 +5,7 @@
  */
 import { execFile } from "child_process";
 import { existsSync } from "fs";
-import { copyFile, readFile, writeFile } from "fs/promises";
+import { copyFile, readFile, rm, writeFile } from "fs/promises";
 import { join } from "path";
 import { promisify } from "util";
 import { Client } from "@gradio/client";
@@ -73,8 +73,11 @@ export async function runMesh(sheet: TurnaroundSheet, opts: { heightM?: number; 
   const id = sheet.runId;
   const views = Object.fromEntries(sheet.views.map((v) => [v.name, runPath(id, v.file)])) as Record<SheetViewName, string>;
   const raw = runPath(id, "mesh_raw.glb");
+  // regenerate deletes the cached raw mesh up front, so a resumed job (always
+  // regenerate: false) keeps a mesh the interrupted attempt already received.
+  if (opts.regenerate) await rm(raw, { force: true });
   let gpu: string | undefined;
-  if (opts.regenerate || !existsSync(raw)) {
+  if (!existsSync(raw)) {
     await hunyuanMultiview(views, raw, opts.hfToken);
     gpu = `${MESH_SPACE} (HF ZeroGPU)`;
   }

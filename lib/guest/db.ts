@@ -30,6 +30,8 @@ export interface Generation {
   client_request_id?: string;
   /** Character-pipeline artifact (lib/game/artifacts.ts) for generation_type "asset". */
   artifact_json?: string;
+  /** Character-pipeline step request (lib/game/jobs.ts), kept so an interrupted step can resume. */
+  request_json?: string;
   created_at: string;
   updated_at: string;
 }
@@ -90,6 +92,7 @@ function rowToGeneration(r: GenRow): Generation {
     provider: (r.provider as string) ?? undefined,
     client_request_id: (r.client_request_id as string) ?? undefined,
     artifact_json: (r.artifact_json as string) ?? undefined,
+    request_json: (r.request_json as string) ?? undefined,
     created_at: r.created_at as string,
     updated_at: r.updated_at as string,
   };
@@ -109,8 +112,8 @@ export function insertGeneration(data: Omit<Generation, "id" | "created_at" | "u
         (id, user_id, task_id, generation_type, status, prompt, model, aspect_ratio,
          quality, azure_resolution, duration, kling_mode, sound, reference_image_urls,
          image_url, image_urls, video_url, error_msg, error_code, provider, client_request_id,
-         created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         request_json, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT DO NOTHING
     `)
     .run(
@@ -121,7 +124,7 @@ export function insertGeneration(data: Omit<Generation, "id" | "created_at" | "u
       data.reference_image_urls ? JSON.stringify(data.reference_image_urls) : null,
       data.image_url ?? null, data.image_urls ? JSON.stringify(data.image_urls) : null,
       data.video_url ?? null, data.error_msg ?? null, data.error_code ?? null,
-      data.provider ?? null, data.client_request_id ?? null, ts, ts,
+      data.provider ?? null, data.client_request_id ?? null, data.request_json ?? null, ts, ts,
     );
 }
 

@@ -85,12 +85,14 @@ function createSchema(d: DatabaseSync): void {
  *   returns the existing task instead of paying for a second one.
  * - `error_code`: machine-readable failure class ("credits", "interrupted",
  *   "timeout", "failed", "rejected").
+ * - `artifact_json` / `request_json`: character-pipeline step output, and the
+ *   step request (minus keys) so a step interrupted by a restart can resume.
  */
 function addJobColumns(d: DatabaseSync): void {
   const cols = new Set(
     (d.prepare("PRAGMA table_info(generations)").all() as { name: string }[]).map((c) => c.name),
   );
-  for (const col of ["provider", "client_request_id", "error_code", "artifact_json"]) {
+  for (const col of ["provider", "client_request_id", "error_code", "artifact_json", "request_json"]) {
     if (!cols.has(col)) d.exec(`ALTER TABLE generations ADD COLUMN ${col} TEXT`);
   }
   d.exec(`
