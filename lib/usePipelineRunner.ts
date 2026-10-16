@@ -1,7 +1,7 @@
 import { useState, useEffect, useLayoutEffect, useCallback, useRef } from "react";
 import type { Node } from "@xyflow/react";
 import { useWorkflowStore, type NodeData } from "./store";
-import { buildPipelineWaves } from "./executor";
+import { buildPipelineWaves, RUNNABLE_NODE_TYPES } from "./executor";
 
 interface PipelineState {
   waves: string[][];
@@ -36,9 +36,7 @@ export function usePipelineRunner(scopeNodeIds?: string[]) {
     ? nodes.filter(n => scopeNodeIds.includes(n.id))
     : nodes;
 
-  const genNodeCount = scopedNodes.filter(
-    n => n.type === "generateNode" || n.type === "videoGeneratorNode"
-  ).length;
+  const genNodeCount = scopedNodes.filter(n => RUNNABLE_NODE_TYPES[n.type ?? ""]).length;
 
   const startWave = useCallback((ids: string[]) => {
     for (const id of ids) {

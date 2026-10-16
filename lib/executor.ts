@@ -1,6 +1,17 @@
 import { Node, Edge } from "@xyflow/react";
 import { NodeData } from "./store";
 
+/** Node types a pipeline Run triggers (via `pendingGenerate`). */
+export const RUNNABLE_NODE_TYPES: Record<string, true> = {
+  generateNode: true,
+  videoGeneratorNode: true,
+  gameTurnaroundNode: true,
+  gameMeshNode: true,
+  gameSkeletonNode: true,
+  gameAnimNode: true,
+  gameGltfNode: true,
+};
+
 /** Topological sort — returns node ids in execution order */
 export function topoSort(nodes: Node<NodeData>[], edges: Edge[]): string[] {
   const adj: Record<string, string[]> = {};
@@ -35,11 +46,7 @@ export function topoSort(nodes: Node<NodeData>[], edges: Edge[]): string[] {
  *  Nodes in the same wave have no inter-dependencies and run in parallel.
  *  Each wave must complete before the next starts. */
 export function buildPipelineWaves(nodes: Node<NodeData>[], edges: Edge[]): string[][] {
-  const genIds = new Set(
-    nodes
-      .filter(n => n.type === "generateNode" || n.type === "videoGeneratorNode")
-      .map(n => n.id)
-  );
+  const genIds = new Set(nodes.filter(n => RUNNABLE_NODE_TYPES[n.type ?? ""]).map(n => n.id));
   if (genIds.size === 0) return [];
 
   // Only edges between gen nodes affect ordering

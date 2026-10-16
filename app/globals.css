@@ -584,6 +584,11 @@ body {
   --handle-color: var(--handle-character);
 }
 
+/* Game-character pipeline: artifact handles, one chain turnaround → … → gltf. */
+.node-handle-icon-game {
+  --handle-color: var(--handle-character);
+}
+
 /* Assistant output also carries .node-handle-icon-out-text; this wins by order. */
 .node-handle-icon-out-assistant {
   --handle-color: var(--handle-assistant);
@@ -696,7 +701,11 @@ body {
 .react-flow[data-connecting-type="image"] .react-flow__handle-left.node-handle-icon-character,
 .react-flow[data-connecting-type="video"] .react-flow__handle-left.node-handle-icon-videoref,
 .react-flow[data-connecting-type="video"] .react-flow__handle-left.node-handle-icon-refvideo,
-.react-flow[data-connecting-type="audio"] .react-flow__handle-left.node-handle-icon-audioref {
+.react-flow[data-connecting-type="audio"] .react-flow__handle-left.node-handle-icon-audioref,
+.react-flow[data-connecting-type="game-turnaround"] .react-flow__handle-left.node-handle-icon-game-in-turnaround,
+.react-flow[data-connecting-type="game-mesh"] .react-flow__handle-left.node-handle-icon-game-in-mesh,
+.react-flow[data-connecting-type="game-skeleton"] .react-flow__handle-left.node-handle-icon-game-in-skeleton,
+.react-flow[data-connecting-type="game-animclip"] .react-flow__handle-left.node-handle-icon-game-in-animclip {
   transform: translate(-100%, -50%) !important;
   opacity: 1 !important;
   pointer-events: auto !important;

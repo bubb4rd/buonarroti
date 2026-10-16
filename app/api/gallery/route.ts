@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { GUEST_USER_ID } from "@/lib/guestMode";
 import * as guestDb from "@/lib/guest/db";
 import { ensureJobsRecovered } from "@/lib/kieJobPoller";
+import { blockingFailures, type Artifact } from "@/lib/game/artifacts";
 
 const LIMIT = 20;
 
@@ -27,6 +28,8 @@ export async function GET(req: NextRequest) {
     source: "generation" | "upload";
     created_at: string;
     referenceImageUrls?: string[];
+    /** Finished game character (.glb) behind this preview image. */
+    modelUrl?: string;
   };
 
   const genItems: Item[] = (!source || source === "generation")
@@ -45,6 +48,19 @@ export async function GET(req: NextRequest) {
         referenceImageUrls: g.reference_image_urls?.length ? g.reference_image_urls : undefined,
       }))
     : [];
+
+  // Character-pipeline steps are "asset" rows; only finished, accepted characters
+  // (the glTF step with no failing blocking check) surface, as their preview image.
+  if (mediaType === "image" && (!source || source === "generation")) {
+    for (const g of guestDb.getGenerations(GUEST_USER_ID, "asset")) {
+      const art = g.artifact_json ? (JSON.parse(g.artifact_json) as Artifact) : null;
+      if (!art || art.kind !== "gltf" || !g.image_url || blockingFailures(art).length) continue;
+      genItems.push({
+        id: g.id, url: g.image_url, mediaType: "image", prompt: g.prompt, model: "character pipeline",
+        source: "generation", created_at: g.created_at, modelUrl: art.glbUrl,
+      });
+    }
+  }
 
   const uploadItems: Item[] = (!source || source === "upload")
     ? guestDb.getUploads(GUEST_USER_ID, mediaType).map((u) => ({

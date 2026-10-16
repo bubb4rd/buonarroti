@@ -2,6 +2,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { NodeProps, Node, useReactFlow, NodeResizeControl, NodeToolbar, Position } from "@xyflow/react";
 import { useWorkflowStore, NodeData } from "@/lib/store";
+import { RUNNABLE_NODE_TYPES } from "@/lib/executor";
+import { NODE_LABELS, gameStepOf, gameSourceTypes } from "@/lib/nodeTypes";
+import { STEP_IO, accepts } from "@/lib/game/artifacts";
 import { useReadOnly } from "@/lib/readOnlyContext";
 import { arrangeNodes } from "@/lib/arrangeNodes";
 import { usePipelineRunner } from "@/lib/usePipelineRunner";
@@ -171,8 +174,7 @@ export default function GroupNode({ id, data, selected }: NodeProps<GroupNodeTyp
 
   const jobs = useMemo(() => {
     const genNodes = allNodes.filter(
-      (n) => memberIds.includes(n.id) &&
-        (n.type === "generateNode" || n.type === "videoGeneratorNode")
+      (n) => memberIds.includes(n.id) && RUNNABLE_NODE_TYPES[n.type ?? ""]
     );
     return genNodes.map((genNode) => {
       const incomingEdges = edges.filter((e) => e.target === genNode.id);
@@ -197,7 +199,18 @@ export default function GroupNode({ id, data, selected }: NodeProps<GroupNodeTyp
       // Compute missing required inputs
       const missingInputs: string[] = [];
       const promptConnected = incomingEdges.some((e) => e.targetHandle === "prompt");
-      if (genNode.type === "generateNode") {
+      const gameStep = gameStepOf(genNode.type);
+      if (gameStep) {
+        const need = STEP_IO[gameStep].input;
+        const src = allSources[0];
+        if (!src) {
+          missingInputs.push(need === "prompt" ? "A text node is required" : `Connect a ${NODE_LABELS[gameSourceTypes(gameStep)[0]]} node`);
+        } else if (need !== "prompt" && !memberIds.includes(src.id)) {
+          // Upstream outside the group won't run: its current artifact must already be usable.
+          const ok = accepts(src.data.artifact, need);
+          if (!ok.ok) missingInputs.push(ok.reason);
+        }
+      } else if (genNode.type === "generateNode") {
         if (!promptConnected) missingInputs.push("A text node is required");
       } else {
         const videoModelId = (genNode.data.videoModel as string) ?? "kling-3.0";
@@ -208,7 +221,7 @@ export default function GroupNode({ id, data, selected }: NodeProps<GroupNodeTyp
       return {
         genNodeId: genNode.id,
         isVideo: genNode.type === "videoGeneratorNode",
-        genLabel: (genNode.data.label as string) || (genNode.type === "videoGeneratorNode" ? "Video gen" : "Image gen"),
+        genLabel: (genNode.data.label as string) || NODE_LABELS[genNode.type ?? ""] || "Generator",
         sourceLabel,
         missingInputs,
         allAncestorIds: collectAncestors(genNode.id, allNodes, edges),

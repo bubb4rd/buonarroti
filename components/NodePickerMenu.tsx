@@ -3,7 +3,8 @@ import { useEffect, useRef } from "react";
 import { useReactFlow, Node, Edge } from "@xyflow/react";
 import { useWorkflowStore, NodeData } from "@/lib/store";
 import { edgeStyle } from "@/lib/edgeStyles";
-import { NODES, NODE_SIZE, FALLBACK_SIZE, NODE_META, TypeBadge, getLastNodeSettings, getDefaultNodeSize, nextNodeLabel } from "@/lib/nodeTypes";
+import { NODES, NODE_SIZE, FALLBACK_SIZE, NODE_META, TypeBadge, getLastNodeSettings, getDefaultNodeSize, nextNodeLabel, gameStepOf, gameNodeTypeFor, gameNextType, gameOutHandle } from "@/lib/nodeTypes";
+import { STEP_IO } from "@/lib/game/artifacts";
 import { floatingPanelClass } from "@/components/ui/floating-toolbar";
 import { cn } from "@/lib/utils";
 import { VIDEO_MODELS, IMAGE_MODELS } from "@/lib/modelConfig";
@@ -43,12 +44,19 @@ function sourceNodeTypesFor(targetHandle: string | null): string[] {
     case "resource":                       return ["imageInputNode", "generateNode"];
     case "videoRef":
     case "referenceVideo":                 return ["videoInputNode"];
+    // Game-character inputs: only the previous step's node
+    case "turnaround":
+    case "mesh":
+    case "skeleton":
+    case "animclip":                       return [gameNodeTypeFor(targetHandle)];
     default:                               return [];
   }
 }
 
 // The output handle ID to use on a newly-created source node for a given target handle
 function outputHandleForNewNode(newNodeType: string, targetHandle: string): string | undefined {
+  const step = gameStepOf(newNodeType);
+  if (step) return gameOutHandle(step);
   if (newNodeType === "videoInputNode") {
     if (targetHandle === "videoRef" || targetHandle === "referenceVideo") return "videoRefOut";
     if (targetHandle === "startFrame") return "startFrameOut";
@@ -79,6 +87,14 @@ function targetHandleFor(
   targetNodeType: string,
   sourceHandleId: string | null,
 ): string | null {
+  // Game nodes: a strict chain — prompt into turnaround, `${kind}Out` into the next step
+  const targetStep = gameStepOf(targetNodeType);
+  if (targetStep) {
+    const need = STEP_IO[targetStep].input;
+    if (need === "prompt") return sourceNodeType === "promptNode" || sourceNodeType === "assistantNode" ? "prompt" : null;
+    return sourceHandleId === `${need}Out` ? need : null;
+  }
+  if (gameStepOf(sourceNodeType)) return null;
   // Typed output handles take priority
   if (sourceHandleId) {
     switch (sourceHandleId) {
@@ -154,7 +170,7 @@ export default function NodePickerMenu({ dropState, onClose }: Props) {
     const nodesInStore = storeState.nodes;
     const label  = nextNodeLabel(type, nodesInStore);
 
-    const nodeStyle = ["imageInputNode", "videoInputNode", "generateNode", "videoGeneratorNode"].includes(type)
+    const nodeStyle = ["imageInputNode", "videoInputNode", "generateNode", "videoGeneratorNode"].includes(type) || gameStepOf(type)
       ? { width: size.w }
       : { width: size.w, height: size.h };
 
@@ -256,6 +272,13 @@ export default function NodePickerMenu({ dropState, onClose }: Props) {
 
   // ── Node list ────────────────────────────────────────────────────────────────
   const HANDLE_ONLY_VIDEO_GEN = new Set(["videoRefOut", "audioRefOut"]);
+  const sourceStep = gameStepOf(dropState.sourceNodeType);
+  // Game nodes appear only where the chain allows: after a text source (turnaround) or after the previous step.
+  const gameTargetType = sourceStep
+    ? gameNextType(sourceStep)
+    : dropState.sourceNodeType === "promptNode" || dropState.sourceNodeType === "assistantNode"
+      ? gameNodeTypeFor("turnaround")
+      : undefined;
   const linkable = isInput
     ? (() => {
         const allowed = new Set(sourceNodeTypesFor(dropState.sourceHandleId));
@@ -263,6 +286,7 @@ export default function NodePickerMenu({ dropState, onClose }: Props) {
       })()
     : NODES.filter((n) => {
         if (!n.canReceiveConnection) return false;
+        if (sourceStep || gameStepOf(n.type)) return n.type === gameTargetType;
         if (dropState.sourceHandleId && HANDLE_ONLY_VIDEO_GEN.has(dropState.sourceHandleId)) {
           return n.type === "videoGeneratorNode";
         }

@@ -27,7 +27,7 @@ import { fetchKieRecord, type KieRecord } from "./kieApi";
 import { mirrorToStorage } from "./storage";
 import { getKieToken } from "./getKieToken";
 
-const CAP_MS: Record<JobKind, number> = { image: 30 * 60_000, video: 60 * 60_000 };
+const CAP_MS: Record<JobKind, number> = { image: 30 * 60_000, video: 60 * 60_000, asset: 30 * 60_000 };
 /** How long kie.ai may report "no record" before we believe it. */
 const MISSING_GRACE_MS = 10 * 60_000;
 /** kie.ai keeps task records for 14 days. */

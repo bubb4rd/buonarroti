@@ -3,7 +3,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useReactFlow } from "@xyflow/react";
 import { useWorkflowStore, NodeData } from "@/lib/store";
-import { NODES, NODE_SIZE, FALLBACK_SIZE, NODE_META, TypeBadge, getLastNodeSettings, getDefaultNodeSize, nextNodeLabel } from "@/lib/nodeTypes";
+import { NODES, NODE_SIZE, FALLBACK_SIZE, NODE_META, TypeBadge, getLastNodeSettings, getDefaultNodeSize, nextNodeLabel, GAME_NODE_TYPES, gameStepOf } from "@/lib/nodeTypes";
 import { getToken } from "@/lib/galleryUtils";
 import { MediaPickerModal } from "@/components/MediaPickerModal";
 import { Kbd } from "@/components/ui/kbd";
@@ -28,6 +28,11 @@ const SECTIONS: Array<{ id: string; label: string; nodeTypes: string[] }> = [
     id: "resources",
     label: "Inputs",
     nodeTypes: ["promptNode"],
+  },
+  {
+    id: "game",
+    label: "Game character",
+    nodeTypes: GAME_NODE_TYPES,
   },
   {
     id: "annotate",
@@ -158,7 +163,7 @@ export default function AddNodeMenu({ anchorRect, onClose }: AddNodeMenuProps) {
         type,
         position: { x: nodeX, y: nodeY },
         style:
-          type === "imageInputNode" || type === "videoInputNode"
+          type === "imageInputNode" || type === "videoInputNode" || gameStepOf(type)
             ? { width: size.w }
             : { width: size.w, height: size.h },
         data: { label, status: "idle", ...getLastNodeSettings(type, nodesNow), ...extraData },

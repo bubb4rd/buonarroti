@@ -5,6 +5,7 @@ import { edgeStyle } from "./edgeStyles";
 import { VIDEO_MODELS } from "./modelConfig";
 import { requestWorkflowSync } from "./workflowSyncBus";
 import { NODE_LABELS } from "./nodeTypes";
+import type { Artifact } from "./game/artifacts";
 import {
   Node,
   Edge,
@@ -76,6 +77,13 @@ export interface NodeData extends Record<string, unknown> {
   // pipeline runner flags (never meaningful across reloads)
   pendingGenerate?: boolean;
   pipelineQueued?: boolean;
+  // game-character pipeline nodes (gameTurnaroundNode … gameGltfNode)
+  /** The step's typed output; cleared when the node re-runs so downstream sees it as missing. */
+  artifact?: Artifact;
+  /** glTF export file name (defaults to the node label). */
+  name?: string;
+  /** Mesh step: character height in meters (default 1.8). */
+  heightM?: number;
 }
 
 export const INTERRUPTED_MESSAGE = "This generation was interrupted. Retry?";

@@ -16,6 +16,8 @@ export interface JobDone {
   imageUrl?: string;
   imageUrls?: string[];
   videoUrl?: string;
+  /** Character-pipeline steps (POST /api/game/step): the typed artifact (lib/game/artifacts.ts). */
+  artifact?: unknown;
 }
 
 export interface JobFailure {
@@ -75,7 +77,7 @@ export function newClientRequestId(): string {
  * `warnings` as info, and throws `JobSubmitError` with calm copy on failure.
  */
 export async function submitGeneration(
-  endpoint: "/api/generate" | "/api/generate-video",
+  endpoint: "/api/generate" | "/api/generate-video" | "/api/game/step",
   body: Record<string, unknown>,
   clientRequestId: string,
 ): Promise<{ taskId: string }> {
