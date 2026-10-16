@@ -135,7 +135,7 @@ export function TextModelsPanel({
   onModelNameChange: (v: string) => void;
 }) {
   const azureReady = azureKeyStatus === "set" && !!azureBaseUrl.trim();
-  const kieGroups = MODEL_GROUPS.filter((g) => g.label !== "Azure");
+  const kieGroups = MODEL_GROUPS.filter((g) => g.provider === "kie");
 
   return (
     <SettingsSection

@@ -23,6 +23,7 @@ export interface ChatSession {
   draft?: string;
 }
 
+/** kie.ai fallback for new chats when the user has never picked a model and no subscription is ready. */
 export const DEFAULT_CHAT_MODEL = "claude-sonnet-4-6";
 
 const STORAGE_KEY = "buonarroti-chats";
@@ -47,7 +48,8 @@ const byRecent = (a: ChatSession, b: ChatSession) => b.updatedAt - a.updatedAt;
 
 interface ChatSessionState {
   sessions: ChatSession[];
-  preferredModel: string;
+  /** The model the user last picked; `null` until they pick one (see `useDefaultChatModel`). */
+  preferredModel: string | null;
   setPreferredModel: (model: string) => void;
   createSession: (model: string, opts?: { title?: string; draft?: string }) => string;
   /** Reuses an existing session with no messages and no draft, or creates one. Returns its id. */
@@ -113,7 +115,7 @@ const chatStorage: StateStorage = {
 
 interface PersistedChats {
   sessions?: ChatSession[];
-  preferredModel?: string;
+  preferredModel?: string | null;
 }
 
 /** v0 (HeliosGen) messages had no ids. */
@@ -125,6 +127,10 @@ function migrateChats(persisted: unknown, version: number): PersistedChats {
       messages: (s.messages ?? []).map((m) => ({ ...m, id: m.id ?? newMessageId() })),
     }));
   }
+  // Before v2 an untouched picker stored the default; treat it as "never chosen".
+  if (version < 2 && state.preferredModel === DEFAULT_CHAT_MODEL) {
+    state.preferredModel = null;
+  }
   return state;
 }
 
@@ -132,7 +138,7 @@ export const useChatSessionStore = create<ChatSessionState>()(
   persist(
     (set, get) => ({
       sessions: [],
-      preferredModel: DEFAULT_CHAT_MODEL,
+      preferredModel: null,
 
       setPreferredModel: (model) => set({ preferredModel: model }),
 
@@ -209,7 +215,7 @@ export const useChatSessionStore = create<ChatSessionState>()(
     }),
     {
       name: STORAGE_KEY,
-      version: 1,
+      version: 2,
       // Throwing here makes persist a no-op during server rendering.
       storage: createJSONStorage(() => {
         if (typeof window === "undefined") throw new Error("localStorage is unavailable on the server");

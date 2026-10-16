@@ -3,6 +3,7 @@ import { getToken } from "./galleryUtils";
 import { SYSTEM_PROMPT } from "./systemPrompt";
 import { useChatSessionStore, newMessageId, type StoredMessage } from "./chatSessionStore";
 import { useWorkflowStore } from "./store";
+import { keyProviderFor } from "./models";
 import { loadAzureBaseUrl, loadAzureTextDeployment, loadAzureTextModelName } from "@/components/SettingsModal";
 
 // ── Shared SSE client for /api/assistant ─────────────────────────────────────
@@ -18,12 +19,14 @@ class AssistantError extends Error {}
 async function streamAssistant(opts: {
   model: string;
   messages: { role: "user" | "assistant"; content: string }[];
+  /** Chat session id; lets subscription (ACP) agents keep one warm session per chat. */
+  conversationId: string;
   signal: AbortSignal;
   onDelta: (accumulated: string) => void;
 }): Promise<string> {
   const token = await getToken();
   const azureConfig =
-    opts.model === "azure-auto"
+    keyProviderFor(opts.model) === "azure"
       ? {
           azureEndpoint: loadAzureBaseUrl(),
           azureDeployment: loadAzureTextDeployment(),
@@ -42,6 +45,7 @@ async function streamAssistant(opts: {
       body: JSON.stringify({
         model: opts.model,
         messages: [{ role: "system", content: SYSTEM_PROMPT }, ...opts.messages],
+        conversationId: opts.conversationId,
         ...azureConfig,
       }),
       signal: opts.signal,
@@ -185,6 +189,7 @@ export const useChatStreamingStore = create<ChatStreamingState>()((set, get) => 
         messages: base
           .filter((m) => m.status !== "error")
           .map((m) => ({ role: m.role, content: m.content })),
+        conversationId: sessionId,
         signal: controller.signal,
         onDelta: (text) => {
           accumulated = text;

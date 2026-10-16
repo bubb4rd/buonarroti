@@ -5,7 +5,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { PenLine } from "lucide-react";
 import { useChatSessionStore, type StoredMessage } from "@/lib/chatSessionStore";
 import { useChatStreamingStore, watchSession } from "@/lib/chatStreamingStore";
-import { MODELS } from "@/lib/models";
+import { getDefaultChatModel, useDefaultChatModel } from "@/lib/useAgents";
+import { useModelLabel } from "@/components/chat/ModelPicker";
 import { Mark } from "@/components/brand/Mark";
 import { Button } from "@/components/ui/button";
 import { Composer } from "@/components/chat/Composer";
@@ -90,9 +91,10 @@ function ChatScreen({ urlId }: { urlId: string | null }) {
   const sessionId = urlId ?? created;
 
   const session = useChatSessionStore((s) => (sessionId ? s.sessions.find((x) => x.id === sessionId) : undefined));
-  const preferredModel = useChatSessionStore((s) => s.preferredModel);
+  const defaultModel = useDefaultChatModel();
   const stream = useChatStreamingStore((s) => (sessionId ? s.streams[sessionId] : undefined));
-  const model = session?.model ?? preferredModel;
+  const model = session?.model ?? defaultModel;
+  const { label, source, unavailable } = useModelLabel(model);
   const messages = session?.messages ?? NO_MESSAGES;
   const isLanding = messages.length === 0 && !stream;
 
@@ -123,7 +125,7 @@ function ChatScreen({ urlId }: { urlId: string | null }) {
       if (id && store.sessions.some((s) => s.id === id)) {
         store.setDraft(id, text);
       } else if (!targetId && text.trim()) {
-        markCreated(store.ensureDraftSession(store.preferredModel, text));
+        markCreated(store.ensureDraftSession(getDefaultChatModel(), text));
       }
     },
     [markCreated],
@@ -255,14 +257,20 @@ function ChatScreen({ urlId }: { urlId: string | null }) {
     );
   }
 
-  const modelLabel = MODELS.find((m) => m.id === model)?.label;
+  const modelLabel = (
+    <>
+      {label}
+      {source && ` · ${source}`}
+      {unavailable && <span className="text-ochre"> · unavailable</span>}
+    </>
+  );
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <header className="titlebar-drag flex h-14 shrink-0 items-end border-b border-rule px-6 pb-3">
         <div className="mx-auto flex w-full max-w-[680px] items-baseline gap-3">
           <h1 className="type-heading min-w-0 truncate text-ink">{session?.title || "Chat"}</h1>
-          {modelLabel && <span className="shrink-0 text-[12px] text-ink-3">{modelLabel}</span>}
+          <span className="shrink-0 text-[12px] text-ink-3">{modelLabel}</span>
         </div>
       </header>
       <div

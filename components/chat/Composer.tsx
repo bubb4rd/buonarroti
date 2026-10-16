@@ -5,9 +5,9 @@ import { ArrowUp, Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
 import { useWorkflowStore } from "@/lib/store";
-import type { ModelId } from "@/lib/models";
+import { keyProviderFor, type ModelId } from "@/lib/models";
 import { cn } from "@/lib/utils";
-import { ModelPicker, useModelReady } from "./ModelPicker";
+import { AGENT_STATUS_PHRASE, HintText, ModelPicker, useModelReady } from "./ModelPicker";
 
 /**
  * Prompt box (DESIGN.md § Composer). The textarea is never disabled: while a
@@ -41,7 +41,7 @@ export function Composer({
   pickerSide?: "top" | "bottom";
   autoFocus?: boolean;
 }) {
-  const { ready } = useModelReady(model);
+  const { ready, acp } = useModelReady(model);
   const setSettingsOpen = useWorkflowStore((s) => s.setSettingsOpen);
   const canSend = !streaming && !!value.trim() && ready !== false;
   const maxHeight = compact ? 120 : 220;
@@ -114,11 +114,32 @@ export function Composer({
       {ready === false && (
         <p className="px-1 text-[12px] text-ink-3">
           <span className="mr-1.5 inline-block size-1.5 rounded-full bg-ochre align-middle" />
-          {model === "azure-auto" ? "Add your Azure key" : "Add your kie.ai key"} in{" "}
-          <button type="button" className="text-lapis underline-offset-4 hover:underline" onClick={() => setSettingsOpen(true, "api-keys")}>
-            Settings
-          </button>{" "}
-          to send. Your message is kept.
+          {acp ? (
+            <>
+              {!acp.agent
+                ? `${acp.agentId} isn't available on this computer. `
+                : acp.agent.status === "ready"
+                  ? `${acp.agent.name} no longer offers “${acp.modelValue}”. Pick another model to send. `
+                  : `${acp.agent.name} · ${AGENT_STATUS_PHRASE[acp.agent.status]}. `}
+              {acp.agent && acp.agent.status !== "ready" && acp.agent.setupHint && (
+                <>
+                  <HintText text={acp.agent.setupHint} />{" "}
+                </>
+              )}
+              Your message is kept.{" "}
+              <button type="button" className="text-lapis underline-offset-4 hover:underline" onClick={() => setSettingsOpen(true, "subscriptions")}>
+                Manage subscriptions
+              </button>
+            </>
+          ) : (
+            <>
+              {keyProviderFor(model) === "azure" ? "Add your Azure key" : "Add your kie.ai key"} in{" "}
+              <button type="button" className="text-lapis underline-offset-4 hover:underline" onClick={() => setSettingsOpen(true, "api-keys")}>
+                Settings
+              </button>{" "}
+              to send. Your message is kept.
+            </>
+          )}
         </p>
       )}
     </div>

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Maximize2, PenLine, X } from "lucide-react";
 import { useChatSessionStore, type StoredMessage } from "@/lib/chatSessionStore";
 import { useChatStreamingStore, watchSession } from "@/lib/chatStreamingStore";
+import { useDefaultChatModel } from "@/lib/useAgents";
 import { Mark } from "@/components/brand/Mark";
 import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
@@ -23,9 +24,9 @@ export function QuickAssist() {
   const session = useChatSessionStore((s) => (pickedId ? s.sessions.find((x) => x.id === pickedId) : undefined));
   // A session deleted from the sidebar while open reads as no session: the next send starts fresh.
   const sessionId = session ? pickedId : null;
-  const preferredModel = useChatSessionStore((s) => s.preferredModel);
+  const defaultModel = useDefaultChatModel();
   const stream = useChatStreamingStore((s) => (sessionId ? s.streams[sessionId] : undefined));
-  const model = session?.model ?? preferredModel;
+  const model = session?.model ?? defaultModel;
   const messages = session?.messages ?? NO_MESSAGES;
   const isEmpty = messages.length === 0 && !stream;
 

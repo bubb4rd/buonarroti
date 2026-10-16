@@ -18,7 +18,8 @@ each step feed the next.
 - **Workflows** — an infinite canvas of nodes: prompts, reference images,
   models and outputs, wired together and run in sequence or in parallel.
 - **Assistant** — a chat partner that helps you shape and refine prompts
-  before you spend credits on them.
+  before you spend credits on them. It can use the models from subscriptions
+  you already have (Claude Code, Codex, Gemini CLI) as well as kie.ai models.
 - **Gallery** — everything you make and upload, organised in folders and kept
   on your own disk.
 - **Local by design** — no account and no cloud storage. Your work stays on
@@ -93,6 +94,30 @@ yourself once you are happy everything came across.
 - Seedance 2.0 / Fast / Mini (Bytedance)
 - Grok Imagine, Grok Imagine 1.5 preview (X)
 - HappyHorse (Alibaba)
+
+## Use your own subscriptions
+
+The prompt assistant (chat, Quick Assist, the Assistant node) can run on the AI
+subscriptions you already pay for, alongside the kie.ai / Azure models. Buonarroti
+talks to each one through the [Agent Client Protocol](https://agentclientprotocol.com)
+and lists whatever models your plan offers — nothing is hardcoded.
+
+| Agent | How it signs in |
+| --- | --- |
+| **Claude** (Claude Code) | Uses your existing Claude Code login. Never used it? Run `claude` once in Terminal and sign in (or set `ANTHROPIC_API_KEY`). The adapter ships with Buonarroti. |
+| **Codex** (ChatGPT) | Uses your Codex login. Install the CLI (`npm i -g @openai/codex`), then run `codex login` (or set `OPENAI_API_KEY`). The adapter ships with Buonarroti. |
+| **Gemini** (Gemini CLI) | Install it with `npm i -g @google/gemini-cli`, then run `gemini` once to sign in. Buonarroti finds it on your shell `PATH`. |
+
+**Settings → Subscriptions** shows each one as ready, needing sign-in, or not
+installed, with the exact command to fix it; **Check again** re-tests after you
+sign in. Ready agents' models appear in the model picker.
+
+These are coding agents, so Buonarroti locks them down: every tool, MCP server,
+hook, plugin and your personal instructions (`CLAUDE.md`, `AGENTS.md`, settings)
+are switched off, any permission request is refused, and each one runs in an
+empty folder under your data directory. They only write text. Your messages go
+from your computer straight to that provider — nothing passes through anyone
+else.
 
 ## Codex CLI (optional)
 

@@ -85,7 +85,7 @@ export function StatusChip({
   tone,
   children,
 }: {
-  tone: "done" | "queued" | "failed" | "running";
+  tone: "done" | "queued" | "failed" | "running" | "idle";
   children: React.ReactNode;
 }) {
   return (
@@ -95,7 +95,8 @@ export function StatusChip({
         tone === "done" && "bg-verdigris/10 text-verdigris",
         tone === "queued" && "bg-ochre/12 text-ochre",
         tone === "failed" && "bg-sanguine/10 text-sanguine",
-        tone === "running" && "bg-wash text-ink-2"
+        tone === "running" && "bg-wash text-ink-2",
+        tone === "idle" && "bg-wash text-ink-3"
       )}
     >
       <span

@@ -3,16 +3,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import GenerateButton from "@/components/nodes/GenerateButton";
 import { Handle, Position, NodeProps, Node } from "@xyflow/react";
 import { useWorkflowStore, NodeData } from "@/lib/store";
-import { useAnimatedPopup } from "@/lib/useAnimatedPopup";
+import { keyProviderFor } from "@/lib/models";
+import { useDefaultChatModel } from "@/lib/useAgents";
+import { AGENT_STATUS_PHRASE, ModelPicker, useModelReady } from "@/components/chat/ModelPicker";
+import { loadAzureBaseUrl, loadAzureTextDeployment, loadAzureTextModelName } from "@/components/SettingsModal";
 import CornerResizer from "./CornerResizer";
 import { useReadOnly } from "@/lib/readOnlyContext";
 
 type AssistantNodeType = Node<NodeData, "assistantNode">;
-
-const MODELS = [
-  { id: "claude-sonnet-4-6", label: "Claude Sonnet 4.6" },
-  { id: "claude-haiku-4-5", label: "Claude Haiku 4.5" },
-];
 
 export default function AssistantNode({ id, data, selected }: NodeProps<AssistantNodeType>) {
   const readOnly = useReadOnly();
@@ -21,15 +19,12 @@ export default function AssistantNode({ id, data, selected }: NodeProps<Assistan
   const addNode = useWorkflowStore((s) => s.addNode);
   const insertEdge = useWorkflowStore((s) => s.insertEdge);
   const edges = useWorkflowStore((s) => s.edges);
-  const kieKeySet = useWorkflowStore((s) => s.kieKeySet);
 
   const cardRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const outputRef = useRef<HTMLDivElement>(null);
   const prevSelectedRef = useRef(selected);
   const abortRef = useRef<AbortController | null>(null);
-  const selectedRef = useRef(selected);
-  selectedRef.current = selected;
 
   // Instant handle hide on deselect
   useEffect(() => {
@@ -46,49 +41,37 @@ export default function AssistantNode({ id, data, selected }: NodeProps<Assistan
   const status = (data.status as string) ?? "idle";
   const outputText = (data.outputText as string) ?? "";
   const localPrompt = (data.localPrompt as string) ?? "";
-  const model = (data.model as string) ?? "claude-sonnet-4-6";
+  const defaultModel = useDefaultChatModel();
+  const model = (data.model as string | undefined) ?? defaultModel;
+  const { ready: modelReady, acp } = useModelReady(model);
+  const modelWarning =
+    modelReady !== false
+      ? undefined
+      : acp
+        ? !acp.agent
+          ? `${acp.agentId} isn't available`
+          : acp.agent.status === "ready"
+            ? `${acp.agent.name} no longer offers “${acp.modelValue}”`
+            : `${acp.agent.name} · ${AGENT_STATUS_PHRASE[acp.agent.status]}`
+        : keyProviderFor(model) === "azure"
+          ? "Add your Azure key in Settings"
+          : "Add your kie.ai key in Settings";
 
-  const [viewMode, setViewMode] = useState<"input" | "output">("input");
+  // Show the output as soon as generation starts (or finishes with text).
+  const outputPhase = status === "running" ? "running" : status === "done" && outputText ? "done" : null;
+  const [viewMode, setViewMode] = useState<"input" | "output">(outputPhase ? "output" : "input");
+  const [seenPhase, setSeenPhase] = useState(outputPhase);
+  if (seenPhase !== outputPhase) {
+    setSeenPhase(outputPhase);
+    if (outputPhase) setViewMode("output");
+  }
   const [loading, setLoading] = useState(false);
-  const [modelOpen, setModelOpen] = useState(false);
-  const modelPopup = useAnimatedPopup(modelOpen);
-  const modelBarRef = useRef<HTMLDivElement>(null);
-
-  // ── Elevate the RF node z-index while the menu is open ───────────────────
-  useEffect(() => {
-    const rfNode = cardRef.current?.closest<HTMLElement>(".react-flow__node");
-    if (!rfNode) return;
-    if (modelOpen) {
-      rfNode.style.zIndex = "10000";
-    } else {
-      rfNode.style.zIndex = "";
-    }
-    return () => { rfNode.style.zIndex = ""; };
-  }, [modelOpen]);
-
-  useEffect(() => {
-    if (!modelOpen) return;
-    const handler = (e: MouseEvent) => {
-      if (modelBarRef.current && !modelBarRef.current.contains(e.target as unknown as globalThis.Node)) {
-        setModelOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [modelOpen]);
 
   const busy = loading || status === "running";
 
   const hasOutput = !!outputText;
   const hasPrompt = !!localPrompt.trim();
   const sourceConnected = edges.some((e) => e.source === id);
-
-  // Auto-switch to output as soon as generation starts (or finishes)
-  useEffect(() => {
-    if (status === "running" || (status === "done" && outputText)) {
-      setViewMode("output");
-    }
-  }, [status, outputText]);
 
   // Keep textarea in sync with store
   useEffect(() => {
@@ -136,14 +119,24 @@ export default function AssistantNode({ id, data, selected }: NodeProps<Assistan
 
     try {
       const assistantHeaders: Record<string, string> = { "Content-Type": "application/json" };
+      const azureConfig =
+        keyProviderFor(model) === "azure"
+          ? {
+              azureEndpoint: loadAzureBaseUrl(),
+              azureDeployment: loadAzureTextDeployment(),
+              azureModelName: loadAzureTextModelName(),
+            }
+          : {};
       const res = await fetch("/api/assistant", {
         method: "POST",
         headers: assistantHeaders,
         body: JSON.stringify({
           prompt: localPrompt,
           model,
+          conversationId: id,
           systemPrompt:
             "You are a senior prompt engineer specializing in optimizing prompts for clarity, precision, and effectiveness. Your task is to take an existing user prompt and rewrite it to improve its structure, specificity, and performance for an AI model. Preserve the original intent while enhancing wording, removing ambiguity, and adding useful detail where appropriate. Do not change the task itself. Output only the improved prompt. Do not include any explanations, comments, formatting markers, or quotation marks.",
+          ...azureConfig,
         }),
         signal: controller.signal,
       });
@@ -156,28 +149,35 @@ export default function AssistantNode({ id, data, selected }: NodeProps<Assistan
       const reader = res.body!.getReader();
       const decoder = new TextDecoder();
       let accumulated = "";
+      let buf = "";
 
       outer: while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-        for (const line of decoder.decode(value, { stream: true }).split("\n")) {
-          if (!line.startsWith("data: ")) continue;
-          const payload = line.slice(6).trim();
+        buf += decoder.decode(value, { stream: true });
+        const lines = buf.split("\n");
+        buf = lines.pop() ?? "";
+        for (const line of lines) {
+          if (!line.startsWith("data:")) continue;
+          const payload = line.slice(5).trim();
           if (payload === "[DONE]") break outer;
           try {
             const parsed = JSON.parse(payload);
-            // Anthropic streaming: content_block_delta with text_delta type
-            if (
-              parsed.type === "content_block_delta" &&
-              parsed.delta?.type === "text_delta"
-            ) {
-              const delta = parsed.delta.text ?? "";
-              if (delta) {
-                accumulated += delta;
-                updateNodeData(id, { outputText: accumulated });
-              }
+            if (parsed.type === "error" || parsed.error) {
+              throw new Error("The model stopped with an error partway through. Retry to try again.");
             }
-          } catch { /* skip malformed SSE lines */ }
+            // Anthropic (`content_block_delta`) or OpenAI-style (`choices[0].delta.content`, also subscriptions).
+            const delta: string | undefined =
+              (parsed.type === "content_block_delta" ? parsed.delta?.text : undefined) ??
+              parsed.choices?.[0]?.delta?.content;
+            if (delta) {
+              accumulated += delta;
+              updateNodeData(id, { outputText: accumulated });
+            }
+          } catch (err) {
+            if (err instanceof SyntaxError) continue; // partial or keep-alive line
+            throw err;
+          }
         }
       }
 
@@ -193,7 +193,7 @@ export default function AssistantNode({ id, data, selected }: NodeProps<Assistan
       setLoading(false);
       abortRef.current = null;
     }
-  }, [busy, hasPrompt, localPrompt, id, updateNodeData]);
+  }, [busy, hasPrompt, localPrompt, id, model, updateNodeData]);
 
   const handleCancel = useCallback(() => {
     abortRef.current?.abort();
@@ -343,37 +343,17 @@ export default function AssistantNode({ id, data, selected }: NodeProps<Assistan
 
           {/* ── Bottom controls ────────────────────────────────────────── */}
           <div
-            ref={modelBarRef}
-            className="absolute bottom-0 inset-x-0 px-2.5 pb-1.5 pt-1 flex items-center justify-between z-[1001]"
+            className="absolute bottom-0 inset-x-0 px-2.5 pb-1.5 pt-1 flex items-center justify-between gap-2 z-[1001]"
             onMouseDown={(e) => e.stopPropagation()}
           >
             {/* Model dropdown */}
-            <div className="relative">
-              <button
-                onMouseDown={(e) => e.stopPropagation()}
-                onClick={(e) => { e.stopPropagation(); if (!busy) setModelOpen((o) => !o); }}
-                className="flex items-center gap-1"
-              >
-                <span className="text-[11px] text-ink-2 hover:text-ink transition-colors">
-                  {MODELS.find((m) => m.id === model)?.label ?? model}
-                </span>
-                <ChevronIcon open={modelOpen} />
-              </button>
-
-              {modelPopup.visible && (
-                <div className={`absolute bottom-full left-0 mb-2 w-44 p-1 bg-surface-raised rounded-[var(--radius)] overflow-hidden z-[1002] shadow-[var(--shadow-lg)] ${modelPopup.className}`}>
-                  {MODELS.map((m) => (
-                    <button
-                      key={m.id}
-                      onMouseDown={(e) => e.stopPropagation()}
-                      onClick={(e) => { e.stopPropagation(); updateNodeData(id, { model: m.id }); setModelOpen(false); }}
-                      className={`w-full text-left px-2.5 py-[7px] rounded-[var(--radius-sm)] text-[11px] transition-colors ${model === m.id ? "bg-lapis-soft text-lapis" : "text-ink-2 hover:bg-wash hover:text-ink"}`}
-                    >
-                      {m.label}
-                    </button>
-                  ))}
-                </div>
-              )}
+            <div className="relative min-w-0">
+              <ModelPicker
+                model={model}
+                onChange={(m) => updateNodeData(id, { model: m })}
+                variant="node"
+                disabled={busy || readOnly}
+              />
             </div>
 
             {/* Generate / Stop */}
@@ -386,7 +366,11 @@ export default function AssistantNode({ id, data, selected }: NodeProps<Assistan
                 Stop
               </button>
             ) : (
-              <GenerateButton onClick={handleGenerate} disabled={!hasPrompt || kieKeySet === false} />
+              <GenerateButton
+                onClick={handleGenerate}
+                disabled={!hasPrompt || modelReady === false}
+                warningMessages={modelWarning ? [modelWarning] : undefined}
+              />
             ))}
           </div>
         </div>
@@ -404,17 +388,6 @@ export default function AssistantNode({ id, data, selected }: NodeProps<Assistan
         <BrainIcon />
       </Handle>
     </div>
-  );
-}
-
-function ChevronIcon({ open }: { open: boolean }) {
-  return (
-    <svg width="8" height="8" viewBox="0 0 8 8" fill="none"
-      stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"
-      className={`shrink-0 text-ink-3 transition-transform duration-100 ${open ? "rotate-180" : ""}`}
-    >
-      <path d="M1 2.5 4 5.5 7 2.5" />
-    </svg>
   );
 }
 

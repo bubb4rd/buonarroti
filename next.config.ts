@@ -15,7 +15,12 @@ const nextConfig: NextConfig = {
   experimental: {
     proxyClientMaxBodySize: '30mb',
   },
-  serverExternalPackages: ["undici"],
+  // ACP agents (lib/acp) run as child processes from node_modules: the SDK is
+  // loaded at runtime, and the adapter packages (@agentclientprotocol/
+  // claude-agent-acp, @zed-industries/codex-acp + their native binaries) are
+  // only spawned, so the tracer can't see them. The desktop sidecar gets them
+  // from the clean `npm install` in scripts/desktop/build-server.mjs.
+  serverExternalPackages: ["undici", "@agentclientprotocol/sdk"],
   // `sharp` is a native module; the file tracer misses its platform binaries
   // unless we point at them explicitly for the standalone bundle.
   outputFileTracingIncludes: {

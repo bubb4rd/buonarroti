@@ -18,6 +18,7 @@ import {
   readdirSync,
 } from "node:fs";
 import { join, dirname, sep } from "node:path";
+import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -162,6 +163,51 @@ for (const probe of ["next/package.json", "@next/env/package.json", "react/packa
   }
 }
 
+// ACP agent adapters (lib/acp) are spawned, never imported, so nothing above
+// proves they're complete. Each ships its agent as a platform-specific native
+// binary via optionalDependencies — npm installs only this platform's. Resolve
+// them the same way the adapters do and fail the build if one is missing.
+const EXE_SUFFIX = process.platform === "win32" ? ".exe" : "";
+/** Resolve `chain[last]` as seen from each previous package in turn (nested installs included). */
+function resolveChain(...chain) {
+  let req = createRequire(join(STAGE, "package.json"));
+  let resolved = "";
+  for (const request of chain) {
+    resolved = req.resolve(request);
+    req = createRequire(resolved);
+  }
+  return resolved;
+}
+const acpBinaries = [];
+try {
+  const claudeBin = join(
+    dirname(
+      resolveChain(
+        "@agentclientprotocol/claude-agent-acp/dist/index.js",
+        "@anthropic-ai/claude-agent-sdk",
+        `@anthropic-ai/claude-agent-sdk-${process.platform}-${process.arch}/package.json`,
+      ),
+    ),
+    `claude${EXE_SUFFIX}`,
+  );
+  const codexBin = join(
+    dirname(
+      resolveChain(
+        "@zed-industries/codex-acp/package.json",
+        `@zed-industries/codex-acp-${process.platform}-${process.arch}/package.json`,
+      ),
+    ),
+    "bin",
+    `codex-acp${EXE_SUFFIX}`,
+  );
+  for (const bin of [claudeBin, codexBin]) {
+    if (!existsSync(bin)) throw new Error(`missing ${bin}`);
+    acpBinaries.push(bin);
+  }
+} catch (err) {
+  throw new Error(`staged install is missing an ACP agent adapter: ${err.message}`);
+}
+
 // Prune what a prebuilt standalone server never loads at runtime:
 //  - @next/swc-* : the SWC compiler, build-time only (~95 MB)
 //  - sharp/@img native packages for other platforms (~15 MB)
@@ -238,7 +284,7 @@ if (process.platform === "darwin" && process.env.APPLE_SIGNING_IDENTITY) {
   )
     .split("\n")
     .filter(Boolean);
-  macho.push(nodeDest); // the bundled Node runtime
+  macho.push(nodeDest, ...acpBinaries); // the bundled Node runtime + ACP agent binaries (JIT: same entitlements)
   console.log(`[desktop] codesigning ${macho.length} Mach-O files…`);
   for (const f of macho) {
     run("codesign", [

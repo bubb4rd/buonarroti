@@ -1,6 +1,6 @@
 "use client";
 import React, { useCallback, useEffect, useState } from "react";
-import { KeyRound, Image as ImageIcon, Clapperboard, MessageSquare, Palette, TerminalSquare, Bug } from "lucide-react";
+import { KeyRound, Image as ImageIcon, Clapperboard, MessageSquare, Palette, Plug, TerminalSquare, Bug } from "lucide-react";
 import { useWorkflowStore, type SettingsSectionId } from "@/lib/store";
 import { ProviderId, loadModelProviders, saveModelProviders } from "@/lib/providers";
 import { cn } from "@/lib/utils";
@@ -10,6 +10,7 @@ import { ProvidersPanel } from "@/components/settings/ProvidersPanel";
 import { CodexPanel, type CodexStatus } from "@/components/settings/CodexPanel";
 import { ImageModelsPanel, TextModelsPanel, VideoModelsPanel } from "@/components/settings/ModelsPanels";
 import { AppearancePanel, DebugPanel } from "@/components/settings/AppearancePanel";
+import { SubscriptionsPanel } from "@/components/settings/SubscriptionsPanel";
 
 /* ─── Persistence ───────────────────────────────────────────────────────────── */
 
@@ -94,6 +95,7 @@ type NavId = SettingsSectionId;
 const NAV: { id: NavId; label: string; icon: React.ComponentType<{ className?: string; strokeWidth?: number }> }[] = [
   { id: "appearance", label: "Appearance", icon: Palette },
   { id: "api-keys", label: "API keys", icon: KeyRound },
+  { id: "subscriptions", label: "Subscriptions", icon: Plug },
   { id: "codex", label: "Codex", icon: TerminalSquare },
   { id: "image-models", label: "Image models", icon: ImageIcon },
   { id: "video-models", label: "Video models", icon: Clapperboard },
@@ -265,6 +267,7 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
               onBaseUrlChange={handleBaseUrlChange}
             />
           )}
+          {activeNav === "subscriptions" && <SubscriptionsPanel />}
           {activeNav === "codex" && (
             <CodexPanel codexStatus={codexStatus} onCodexLoginSuccess={refreshCodexStatus} />
           )}

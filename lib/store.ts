@@ -232,7 +232,7 @@ export interface Toast {
 
 /** Sections of the Settings window (components/SettingsModal.tsx). */
 export type SettingsSectionId =
-  | "appearance" | "api-keys" | "codex" | "image-models" | "video-models" | "text-models" | "debug";
+  | "appearance" | "api-keys" | "subscriptions" | "codex" | "image-models" | "video-models" | "text-models" | "debug";
 
 interface WorkflowStore {
   // ── Toasts

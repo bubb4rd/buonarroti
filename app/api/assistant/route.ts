@@ -3,6 +3,8 @@ export const dynamic = "force-dynamic";
 import { NextRequest } from "next/server";
 import { getKieToken } from "@/lib/getKieToken";
 import { getAzureToken } from "@/lib/getAzureKey";
+import { parseAcpModelId } from "@/lib/agentModels";
+import { runAcpChat, type ChatMessage } from "@/lib/acp/chat";
 
 interface Message {
   role: "user" | "assistant" | "system";
@@ -91,7 +93,10 @@ export async function POST(req: NextRequest) {
     messages?: Message[];
     prompt?: string;
     systemPrompt?: string;
+    system?: string;
     model?: string;
+    /** Chat session / node id: lets ACP agents keep one warm session per conversation. */
+    conversationId?: string;
     azureEndpoint?: string;
     azureDeployment?: string;
     azureModelName?: string;
@@ -103,6 +108,27 @@ export async function POST(req: NextRequest) {
   }
 
   const model = body.model ?? "claude-sonnet-4-6";
+
+  // ── ACP agents (the user's own Claude Code / Codex / Gemini CLI) ───────────
+  const acpModel = parseAcpModelId(model);
+  if (acpModel) {
+    const all = Array.isArray(body.messages) ? body.messages.filter((m) => typeof m?.content === "string") : [];
+    const system = [body.system, body.systemPrompt, ...all.filter((m) => m.role === "system").map((m) => m.content)]
+      .map((s) => s?.trim())
+      .filter(Boolean)
+      .join("\n\n");
+    const turns = all.filter((m): m is ChatMessage => m.role === "user" || m.role === "assistant");
+    if (turns.length === 0 && body.prompt?.trim()) turns.push({ role: "user", content: body.prompt.trim() });
+    const result = await runAcpChat({
+      ...acpModel,
+      conversationId: typeof body.conversationId === "string" ? body.conversationId : undefined,
+      system: system || undefined,
+      messages: turns,
+      signal: req.signal,
+    });
+    if (!result.ok) return jsonError(result.status, result.error, result.code);
+    return new Response(result.body, { headers: SSE_HEADERS });
+  }
 
   let messages: Message[];
 
