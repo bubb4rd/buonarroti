@@ -48,7 +48,25 @@ type InputCheck =
   | { ok: true; body: { concept: string } | { input: Artifact } }
   | { ok: false; reason: string; edgeId?: string };
 
-/** Resolve the step's single input from the graph: prompt text (turnaround) or the upstream node's artifact. */
+/**
+ * Whether a game node's artifact still follows from its input: the upstream
+ * node's artifact is itself current, belongs to the same run, and is not newer
+ * than this one. A turnaround re-run starts a new run, so everything after it
+ * goes out of date; a mesh re-run in the same run is newer than the old rig.
+ * An out-of-date artifact is shown as such and is never handed downstream.
+ */
+function artifactIsCurrent(id: string, nodes: Node<NodeData>[], edges: Edge[], depth = 0): boolean {
+  const self = nodes.find((n) => n.id === id);
+  const own = self?.data.artifact;
+  if (!own || depth > 8) return false;
+  if (STEP_IO[own.kind].input === "prompt") return true;
+  const edge = edges.find((e) => e.target === id);
+  const up = edge ? nodes.find((n) => n.id === edge.source)?.data.artifact : undefined;
+  return !!up && up.runId === own.runId && Date.parse(up.createdAt) <= Date.parse(own.createdAt) &&
+    artifactIsCurrent(edge!.source, nodes, edges, depth + 1);
+}
+
+/** Resolve the step's single input from the graph: prompt text (turnaround) or the upstream node's current artifact. */
 function checkInput(id: string, step: ArtifactKind, nodes: Node<NodeData>[], edges: Edge[]): InputCheck {
   const need = STEP_IO[step].input;
   const edge = edges.find((e) => e.target === id);
@@ -65,6 +83,9 @@ function checkInput(id: string, step: ArtifactKind, nodes: Node<NodeData>[], edg
     return concept ? { ok: true, body: { concept } } : { ok: false, reason: "The connected text node is empty", edgeId: edge.id };
   }
   const input = nodes.find((n) => n.id === edge.source)?.data.artifact;
+  if (input && !artifactIsCurrent(edge.source, nodes, edges)) {
+    return { ok: false, reason: `The ${NODE_LABELS[gameNodeTypeFor(need)]} is out of date: run it again first`, edgeId: edge.id };
+  }
   const verdict = accepts(input, need);
   return verdict.ok && input ? { ok: true, body: { input } } : { ok: false, reason: verdict.ok ? "" : verdict.reason, edgeId: edge.id };
 }
@@ -163,6 +184,8 @@ export default function GameStepNode({ id, type, data, selected }: NodeProps<Gam
     !!upstream.data.pendingGenerate || !!upstream.data.pipelineQueued
   );
   const showInputProblem = !inputCheck.ok && !jobRunning && !isQueued && !upstreamBusy;
+  /** The artifact shown no longer follows from the input (upstream re-ran, failed or is running). */
+  const outOfDate = !!artifact && !jobRunning && !artifactIsCurrent(id, nodes, edges);
   const targetConnected = !!inputEdge;
   const sourceConnected = edges.some((e) => e.source === id);
 
@@ -385,7 +408,7 @@ export default function GameStepNode({ id, type, data, selected }: NodeProps<Gam
           <GeneratingSlot startedAt={data.jobStartedAt} label="Running" model={NODE_LABELS[type]} />
         ) : artifact?.previewUrl ? (
           // eslint-disable-next-line @next/next/no-img-element -- local /generated files
-          <img src={artifact.previewUrl} alt={`${KIND_NOUN[step]} preview`} className="absolute inset-0 size-full object-contain" draggable={false} />
+          <img src={artifact.previewUrl} alt={`${KIND_NOUN[step]} preview`} className={`absolute inset-0 size-full object-contain${outOfDate ? " opacity-40" : ""}`} draggable={false} />
         ) : status === "error" && !artifact ? (
           <JobErrorSlot
             message={data.errorMsg ?? jobErrorCopy(undefined)}
@@ -401,9 +424,11 @@ export default function GameStepNode({ id, type, data, selected }: NodeProps<Gam
           <div className="absolute top-2 left-2 z-30">
             {isQueued
               ? <StatusChip tone="queued">Queued</StatusChip>
-              : failed.length > 0
-                ? <StatusChip tone="failed">Rejected</StatusChip>
-                : <StatusChip tone="done">Passed</StatusChip>}
+              : outOfDate
+                ? <StatusChip tone="queued">Out of date</StatusChip>
+                : failed.length > 0
+                  ? <StatusChip tone="failed">Rejected</StatusChip>
+                  : <StatusChip tone="done">Passed</StatusChip>}
           </div>
         )}
       </div>
@@ -411,7 +436,7 @@ export default function GameStepNode({ id, type, data, selected }: NodeProps<Gam
       {/* ── Results + controls ── */}
       <div className="flex flex-col gap-2 p-3">
         {artifact && (
-          <>
+          <div className={`flex flex-col gap-2${outOfDate ? " opacity-50" : ""}`}>
             {artifact.kind === "gltf" && <GltfSummary artifact={artifact} />}
             {artifact.checks.length > 0 && (
               <ul className="nowheel max-h-[168px] overflow-y-auto">
@@ -438,9 +463,14 @@ export default function GameStepNode({ id, type, data, selected }: NodeProps<Gam
                 {isSaving ? "Saving…" : glbName}
               </a>
             )}
-          </>
+          </div>
         )}
 
+        {outOfDate && upstream && artifactIsCurrent(upstream.id, nodes, edges) && (
+          <p className="text-[11.5px] leading-snug text-ochre">
+            Out of date: the {upstream.data.label ?? NODE_LABELS[upstream.type as GameNodeType]} changed since this ran. Run again to update it.
+          </p>
+        )}
         {status === "error" && artifact && data.errorMsg && (
           <p className="text-[11.5px] leading-snug text-sanguine">{data.errorMsg}</p>
         )}
