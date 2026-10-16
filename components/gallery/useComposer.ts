@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { IMAGE_MODELS, VIDEO_MODELS, type ImageModel, type VideoModel } from "@/lib/modelConfig";
+import { IMAGE_MODELS, VIDEO_MODELS, type ImageModel, type VideoHandle, type VideoModel } from "@/lib/modelConfig";
 import { getModelProvider, type ProviderId } from "@/lib/providers";
 import { useWorkflowStore } from "@/lib/store";
 import { getToken } from "@/lib/galleryUtils";
@@ -41,6 +41,34 @@ const HANDLE_LABELS: Record<string, string> = {
 
 const urlToRef = (url: string): RefImage => ({ id: url, objectUrl: url, cdnUrl: url, uploading: false, error: false });
 const isReady = (r: RefImage | null | undefined): r is RefImage => !!r && !!r.cdnUrl && !r.uploading && !r.error;
+
+type MediaKind = "image" | "video" | "audio";
+const mediaKindOf = (f: File): MediaKind | null =>
+  f.type.startsWith("image/") ? "image" : f.type.startsWith("video/") ? "video" : f.type.startsWith("audio/") ? "audio" : null;
+const VID_TARGET_KIND: Record<VidTarget, MediaKind> = {
+  startFrame: "image", endFrame: "image", resource: "image", videoRef: "video", referenceVideo: "video", audioRef: "audio",
+};
+
+/** The video reference slots the composer offers, given what's already attached (some models make slots exclusive). */
+export function visibleVidHandles(
+  handles: readonly VideoHandle[],
+  s: { modelId: string; isVeo: boolean; veoMode: "frames" | "references"; hasStartFrame: boolean; hasResources: boolean; hasFrame: boolean; hasRef: boolean },
+): VidTarget[] {
+  const xor = FRAMES_XOR_REFS_MODELS.includes(s.modelId);
+  return handles.filter((h): h is VidTarget => {
+    if (h === "prompt") return false;
+    if (s.isVeo) {
+      if (s.veoMode === "references" && (h === "startFrame" || h === "endFrame")) return false;
+      if (s.veoMode === "frames" && h === "resource") return false;
+      if (h === "videoRef" || h === "referenceVideo" || h === "audioRef") return false;
+    }
+    if (s.modelId === "happyhorse" && h === "startFrame" && s.hasResources) return false;
+    if (s.modelId === "happyhorse" && h === "resource" && s.hasStartFrame) return false;
+    if (xor && s.hasFrame && (h === "resource" || h === "referenceVideo" || h === "audioRef")) return false;
+    if (xor && s.hasRef && (h === "startFrame" || h === "endFrame")) return false;
+    return true;
+  });
+}
 
 function readAzureConfig(modelId: string): { provider: string; base: string; deployment: string } {
   try {
@@ -228,8 +256,17 @@ export function useComposer({ tab, folderId }: { tab: Tab; folderId: string | nu
   const supportsQuality = !isVideo && !!imgModel?.supportsQuality;
   const qualityOpts = isAzureProvider ? imgModel?.azureQualityOptions ?? [] : imgModel?.apiInput.qualityOptions ?? ["2k", "4k"];
   const azureResolutionOpts = isAzureProvider ? imgModel?.azureResolutionOptions ?? [] : [];
-  const vidRefHandles = (vidModel?.handles ?? []).filter(h => h !== "prompt");
   const isVeo = VEO_MODELS.includes(modelId);
+  /** Slots the reference strip offers right now. */
+  const visibleVidTargets = visibleVidHandles(vidModel?.handles ?? [], {
+    modelId,
+    isVeo,
+    veoMode,
+    hasStartFrame: !!vidStartFrame,
+    hasResources: vidResources.length > 0,
+    hasFrame: !!(vidStartFrame || vidEndFrame),
+    hasRef: vidResources.length > 0 || vidRefVideos.length > 0 || vidRefAudios.length > 0,
+  });
   const vidRequiresPrompt = isVideo && !!vidModel?.apiInput.promptMaxLength;
   const canGenerate = kieKeySet !== false && !promptOverLimit && (vidRequiresPrompt || !isVideo ? prompt.trim().length > 0 : true);
   const hasContent = !!prompt || refImages.length > 0 || explicitTags.length > 0 || vidElements.length > 0
@@ -416,6 +453,69 @@ export function useComposer({ tab, folderId }: { tab: Tab; folderId: string | nu
         addToast(`${file.name} couldn't be uploaded. ${e instanceof Error ? e.message : ""}`.trim(), "error");
       }
     }));
+  };
+
+  /**
+   * Pasted or dropped files. Each goes to the first free slot the current model
+   * accepts for its kind (frames before references on video); anything that
+   * doesn't fit is reported rather than dropped silently.
+   */
+  const addFiles = (files: FileList | File[]) => {
+    const all = Array.from(files);
+    const name = activeModel.name;
+    const usable = all.filter(f => (isVideo ? mediaKindOf(f) !== null : mediaKindOf(f) === "image"));
+    if (usable.length === 0) {
+      if (all.length) addToast(isVideo ? "Only images, video and audio can be references." : "Only images can be references.", "info");
+      return;
+    }
+
+    if (!isVideo) {
+      if (!imgModel?.supportsImages) { addToast(`${name} doesn't take reference images.`, "info"); return; }
+      const room = maxImgs - refImages.length;
+      if (usable.length > room) {
+        addToast(room > 0
+          ? `${name} takes up to ${maxImgs} reference images. Added ${room} of ${usable.length}.`
+          : `${name} takes up to ${maxImgs} reference images. Remove one to add another.`, "info");
+      }
+      void handleFilePick(usable);
+      return;
+    }
+
+    const handles = vidModel?.handles ?? [];
+    const useElements = !!vidModel?.apiInput.useKlingElements;
+    // Kling elements are built in their own picker, so files never land there.
+    const accepts = (t: VidTarget, kind: MediaKind) => VID_TARGET_KIND[t] === kind && !(t === "resource" && useElements);
+    const counts = new Map((Object.keys(VID_TARGET_KIND) as VidTarget[]).map(t => [t, vidSlotItems(t).length]));
+    const n = (t: VidTarget) => counts.get(t) ?? 0;
+    const plan = new Map<VidTarget, File[]>();
+    const skipped: File[] = [];
+    for (const file of usable) {
+      const kind = mediaKindOf(file)!;
+      // Re-evaluate per file: filling a frame can hide reference slots and vice versa.
+      const open = visibleVidHandles(handles, {
+        modelId, isVeo, veoMode,
+        hasStartFrame: n("startFrame") > 0,
+        hasResources: n("resource") > 0,
+        hasFrame: n("startFrame") + n("endFrame") > 0,
+        hasRef: n("resource") + n("referenceVideo") + n("audioRef") > 0,
+      });
+      const target = open.find(t => accepts(t, kind) && n(t) < vidSlotLimit(t));
+      if (!target) { skipped.push(file); continue; }
+      counts.set(target, n(target) + 1);
+      plan.set(target, [...(plan.get(target) ?? []), file]);
+    }
+
+    if (skipped.length) {
+      const unsupported = skipped.filter(f => !handles.some(h => h !== "prompt" && accepts(h, mediaKindOf(f)!)));
+      const kinds = [...new Set(skipped.map(mediaKindOf))];
+      const noun = kinds.length === 1 ? `reference ${kinds[0] === "audio" ? "audio" : `${kinds[0]}s`}` : "these references";
+      addToast(unsupported.length === skipped.length
+        ? `${name} doesn't take ${noun}.`
+        : plan.size
+          ? `Added ${usable.length - skipped.length} of ${usable.length}. ${name}'s reference slots are full.`
+          : `${name}'s reference slots are full. Remove one to add another.`, "info");
+    }
+    for (const [target, group] of plan) void handleVidFilePick(group, target);
   };
 
   /** Attaches an existing URL (media picker, gallery drag) to a video slot. */
@@ -667,9 +767,9 @@ export function useComposer({ tab, folderId }: { tab: Tab; folderId: string | nu
     vidStartFrame, vidEndFrame, vidResources, vidVideoRef, vidRefVideos, vidRefAudios, vidElements, setVidElements,
     providerId, isAzureProvider,
     maxImgs, canAddImgs, promptMaxLength, promptOverLimit, ratios, supportsQuality, qualityOpts, azureResolutionOpts,
-    vidRefHandles, canGenerate, hasContent, mentionableAssets, maxImageCount: MAX_IMAGE_COUNT,
-    addReference, handleFilePick, removeRefImage, handleVidFilePick, addVidRefUrl, removeVidRef, removeByUrl,
-    vidSlotLimit, reorder, clearAll, reuse, generate,
+    canGenerate, hasContent, mentionableAssets, maxImageCount: MAX_IMAGE_COUNT,
+    addReference, handleFilePick, addFiles, removeRefImage, handleVidFilePick, addVidRefUrl, removeVidRef, removeByUrl,
+    vidSlotLimit, visibleVidTargets, reorder, clearAll, reuse, generate,
   };
 }
 

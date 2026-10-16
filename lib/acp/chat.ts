@@ -7,7 +7,7 @@
 // seen, a fresh session is seeded with the whole transcript.
 
 import { createHash } from "node:crypto";
-import type { StopReason } from "@agentclientprotocol/sdk";
+import type { ContentBlock, StopReason } from "@agentclientprotocol/sdk";
 import type { AgentId } from "@/lib/agentModels";
 import { AgentUnavailableError, getAgent, isAuthError, type AgentProcess } from "./pool";
 import { AGENT_SPECS } from "./registry";
@@ -17,10 +17,22 @@ const MAX_SESSIONS = 50;
 const SESSION_TTL_MS = 30 * 60_000;
 const INACTIVITY_MS = 120_000;
 
+/** An attached image, already read from local storage. */
+export interface ChatImage {
+  /** Stored `/generated/...` URL; identifies the image in history hashes. */
+  url: string;
+  mimeType: string;
+  /** Base64 bytes. */
+  data: string;
+}
+
 export interface ChatMessage {
   role: "user" | "assistant";
   content: string;
+  images?: ChatImage[];
 }
+
+const IMAGES_DROPPED_NOTE = "\n\n_(This model can't see images, so they weren't sent.)_";
 
 export interface AcpChatRequest {
   agentId: AgentId;
@@ -56,7 +68,7 @@ function hashOf(parts: string[]): string {
 }
 
 function historyHash(messages: ChatMessage[]): string {
-  return hashOf(messages.flatMap((m) => [m.role, m.content.trim()]));
+  return hashOf(messages.flatMap((m) => [m.role, m.content.trim(), ...(m.images ?? []).map((i) => i.url)]));
 }
 
 function forget(key: string, entry: MappedSession) {
@@ -76,23 +88,50 @@ function sweep() {
   }
 }
 
-/** First-turn prompt: instructions (when the agent can't take them natively) + transcript. */
-function seedPrompt(system: string | undefined, messages: ChatMessage[]): string {
-  const latest = messages[messages.length - 1].content;
+/** "[image]" stand-ins for an agent that can't see images. */
+const imagePlaceholders = (m: ChatMessage) => (m.images ?? []).map(() => " [image]").join("");
+
+const imageBlocks = (m: ChatMessage): ContentBlock[] =>
+  (m.images ?? []).map((img) => ({ type: "image", mimeType: img.mimeType, data: img.data }));
+
+/**
+ * First-turn prompt: instructions (when the agent can't take them natively) + transcript.
+ * Each turn's images follow its text when the agent can see them; otherwise "[image]" marks them.
+ */
+function seedPrompt(system: string | undefined, messages: ChatMessage[], withImages: boolean): ContentBlock[] {
+  const blocks: ContentBlock[] = [];
+  let text = system ? `<instructions>\n${system}\n</instructions>\n\n` : "";
+  const attach = (m: ChatMessage) => {
+    if (!m.images?.length) return;
+    if (!withImages) {
+      text += imagePlaceholders(m);
+      return;
+    }
+    if (text) blocks.push({ type: "text", text });
+    text = "";
+    blocks.push(...imageBlocks(m));
+  };
+  const latest = messages[messages.length - 1];
   const history = messages.slice(0, -1);
-  const parts: string[] = [];
-  if (system) parts.push(`<instructions>\n${system}\n</instructions>`);
   if (history.length > 0) {
-    parts.push(
-      `Conversation so far:\n\n${history
-        .map((m) => `${m.role === "user" ? "User" : "Assistant"}: ${m.content.trim()}`)
-        .join("\n\n")}`,
-    );
-    parts.push(`Now reply to the user's latest message.\n\nUser: ${latest}`);
+    text += "Conversation so far:";
+    for (const m of history) {
+      text += `\n\n${m.role === "user" ? "User" : "Assistant"}: ${m.content.trim()}`;
+      attach(m);
+    }
+    text += `\n\nNow reply to the user's latest message.\n\nUser: ${latest.content.trim()}`;
   } else {
-    parts.push(latest);
+    text += latest.content.trim();
   }
-  return parts.join("\n\n");
+  attach(latest);
+  if (text.trim()) blocks.push({ type: "text", text });
+  return blocks;
+}
+
+/** A later turn on a session that has seen the rest: just this message, images first. */
+function turnPrompt(message: ChatMessage, withImages: boolean): ContentBlock[] {
+  const text = withImages ? message.content.trim() : `${message.content.trim()}${imagePlaceholders(message)}`.trim();
+  return [...(withImages ? imageBlocks(message) : []), ...(text ? [{ type: "text" as const, text }] : [])];
 }
 
 const encoder = new TextEncoder();
@@ -105,7 +144,7 @@ const SSE_DONE = encoder.encode("data: [DONE]\n\n");
 export async function runAcpChat(req: AcpChatRequest): Promise<AcpChatResult> {
   const { agentId, modelValue, conversationId, signal } = req;
   const spec = AGENT_SPECS[agentId];
-  const messages = req.messages.filter((m) => m.content.trim());
+  const messages = req.messages.filter((m) => m.content.trim() || m.images?.length);
   if (messages.length === 0 || messages[messages.length - 1].role !== "user") {
     return { ok: false, status: 400, error: "Write a message first.", code: "invalid" };
   }
@@ -152,17 +191,20 @@ export async function runAcpChat(req: AcpChatRequest): Promise<AcpChatResult> {
     entry.systemHash === systemHash &&
     entry.historyHash === historyHash(messages.slice(0, -1));
 
-  let promptText: string;
+  // Images go only to agents that advertised them; others get "[image]" and a note in the reply.
+  const withImages = agent.acceptsImages;
+  const droppedImages = !withImages && !!messages[messages.length - 1].images?.length;
+  let prompt: ContentBlock[];
   const startedAt = Date.now();
   try {
     if (reusable && entry) {
-      promptText = messages[messages.length - 1].content;
+      prompt = turnPrompt(messages[messages.length - 1], withImages);
     } else {
       if (key && entry && !entry.busy) forget(key, entry);
       const session = await agent.newSession(system);
       entry = { agent, sessionId: session.sessionId, systemHash, historyHash: "", lastUsed: Date.now(), busy: false };
       if (key) sessions.set(key, entry);
-      promptText = seedPrompt(spec.nativeSystemPrompt ? undefined : system, messages);
+      prompt = seedPrompt(spec.nativeSystemPrompt ? undefined : system, messages, withImages);
     }
     await agent.setModel(entry.sessionId, modelValue);
   } catch (err) {
@@ -259,6 +301,10 @@ export async function runAcpChat(req: AcpChatRequest): Promise<AcpChatResult> {
           text += note;
           send(sseChunk(note));
         }
+        if (ok && droppedImages) {
+          text += IMAGES_DROPPED_NOTE;
+          send(sseChunk(IMAGES_DROPPED_NOTE));
+        }
         if (ok && ownedKey) {
           active.historyHash = historyHash([...messages, { role: "assistant", content: text }]);
         } else if (ownedKey) {
@@ -308,7 +354,7 @@ export async function runAcpChat(req: AcpChatRequest): Promise<AcpChatResult> {
       if (signal.aborted) cancelTurn();
       else signal.addEventListener("abort", cancelTurn, { once: true });
       armInactivity();
-      agent.conn.prompt({ sessionId: active.sessionId, prompt: [{ type: "text", text: promptText }] }).then(
+      agent.conn.prompt({ sessionId: active.sessionId, prompt }).then(
         (res) => {
           console.log(`[assistant] ${agentId} turn ${res.stopReason} in ${Date.now() - startedAt}ms`);
           finish(res.stopReason);

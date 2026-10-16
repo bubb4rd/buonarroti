@@ -245,9 +245,6 @@ function buildSlots(c: ComposerState, dragging: { id: string } | null, overId: s
 
   const vm = c.vidModel;
   const id = vm?.id;
-  const framesXorRefs = id === "seedance-2" || id === "seedance-2-fast" || id === "minimax-h3";
-  const hasFrame = !!(c.vidStartFrame || c.vidEndFrame);
-  const hasRef = c.vidResources.length > 0 || c.vidRefVideos.length > 0 || c.vidRefAudios.length > 0;
 
   const single = (target: VidTarget, ref: RefImage | null, mediaKind: MediaKind, label: string) =>
     slots.push(ref ? { kind: "filled", target, mediaKind, label, ref, reorderable: false } : { kind: "add", target, mediaKind, label, left: 1 });
@@ -257,17 +254,7 @@ function buildSlots(c: ComposerState, dragging: { id: string } | null, overId: s
     if (list.length < max) slots.push({ kind: "add", target, mediaKind, label, left: max - list.length });
   };
 
-  for (const h of c.vidRefHandles) {
-    if (c.isVeo) {
-      if (c.veoMode === "references" && (h === "startFrame" || h === "endFrame")) continue;
-      if (c.veoMode === "frames" && h === "resource") continue;
-      if (h === "videoRef" || h === "referenceVideo" || h === "audioRef") continue;
-    }
-    if (id === "happyhorse" && h === "startFrame" && c.vidResources.length > 0) continue;
-    if (id === "happyhorse" && h === "resource" && c.vidStartFrame) continue;
-    if (framesXorRefs && hasFrame && (h === "resource" || h === "referenceVideo" || h === "audioRef")) continue;
-    if (framesXorRefs && hasRef && (h === "startFrame" || h === "endFrame")) continue;
-
+  for (const h of c.visibleVidTargets) {
     if (h === "startFrame") single(h, c.vidStartFrame, "image", "Start frame");
     else if (h === "endFrame") single(h, c.vidEndFrame, "image", "End frame");
     else if (h === "videoRef") single(h, c.vidVideoRef, "video", "Video");

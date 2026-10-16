@@ -1,14 +1,79 @@
 export const dynamic = "force-dynamic";
 
+import { readFile, stat } from "node:fs/promises";
+import { extname, resolve, sep } from "node:path";
 import { NextRequest } from "next/server";
 import { getKieToken } from "@/lib/getKieToken";
 import { getAzureToken } from "@/lib/getAzureKey";
 import { parseAcpModelId } from "@/lib/agentModels";
-import { runAcpChat, type ChatMessage } from "@/lib/acp/chat";
+import { MEDIA_DIR } from "@/lib/guest/paths";
+import { runAcpChat, type ChatImage } from "@/lib/acp/chat";
 
 interface Message {
   role: "user" | "assistant" | "system";
   content: string;
+  /** Stored `/generated/...` image URLs attached to a user turn. */
+  images?: string[];
+}
+
+/** A message whose image URLs have been read from disk. */
+interface ResolvedMessage {
+  role: Message["role"];
+  content: string;
+  images: ChatImage[];
+}
+
+const MAX_IMAGES_PER_MESSAGE = 4;
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+const IMAGE_TYPES: Record<string, string> = {
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".webp": "image/webp",
+};
+
+/**
+ * Read a stored `/generated/<folder>/<file>` image from MEDIA_DIR (the same
+ * mapping `app/generated/[...path]/route.ts` serves). Anything else (remote
+ * URLs, traversal, non-images, oversized files) is skipped.
+ */
+async function loadImage(url: unknown): Promise<ChatImage | null> {
+  if (typeof url !== "string" || !url.startsWith("/generated/")) return null;
+  let rel: string;
+  try {
+    rel = decodeURIComponent(url.slice("/generated/".length).split(/[?#]/)[0]);
+  } catch {
+    return null;
+  }
+  const root = resolve(MEDIA_DIR);
+  const file = resolve(root, rel);
+  const mimeType = IMAGE_TYPES[extname(file).toLowerCase()];
+  if (!mimeType || rel.includes("\0") || !file.startsWith(root + sep)) return null;
+  try {
+    if ((await stat(file)).size > MAX_IMAGE_BYTES) return null;
+    return { url, mimeType, data: (await readFile(file)).toString("base64") };
+  } catch {
+    return null;
+  }
+}
+
+function resolveMessages(messages: Message[]): Promise<ResolvedMessage[]> {
+  return Promise.all(
+    messages.map(async (m) => {
+      const urls = m.role === "user" && Array.isArray(m.images) ? m.images.slice(0, MAX_IMAGES_PER_MESSAGE) : [];
+      const images = (await Promise.all(urls.map(loadImage))).filter((i): i is ChatImage => i !== null);
+      return { role: m.role, content: m.content, images };
+    }),
+  );
+}
+
+/** OpenAI chat/completions content parts; images as base64 data URLs. */
+function openAiParts(m: ResolvedMessage) {
+  return [
+    ...(m.content.trim() || m.images.length === 0 ? [{ type: "text", text: m.content }] : []),
+    ...m.images.map((i) => ({ type: "image_url", image_url: { url: `data:${i.mimeType};base64,${i.data}` } })),
+  ];
 }
 
 type ErrorCode = "credits" | "auth" | "invalid" | "upstream" | "rate_limited";
@@ -117,8 +182,10 @@ export async function POST(req: NextRequest) {
       .map((s) => s?.trim())
       .filter(Boolean)
       .join("\n\n");
-    const turns = all.filter((m): m is ChatMessage => m.role === "user" || m.role === "assistant");
-    if (turns.length === 0 && body.prompt?.trim()) turns.push({ role: "user", content: body.prompt.trim() });
+    const turns = (await resolveMessages(all.filter((m) => m.role === "user" || m.role === "assistant"))).map(
+      (m) => ({ role: m.role as "user" | "assistant", content: m.content, images: m.images }),
+    );
+    if (turns.length === 0 && body.prompt?.trim()) turns.push({ role: "user", content: body.prompt.trim(), images: [] });
     const result = await runAcpChat({
       ...acpModel,
       conversationId: typeof body.conversationId === "string" ? body.conversationId : undefined,
@@ -144,6 +211,7 @@ export async function POST(req: NextRequest) {
   } else {
     return jsonError(400, "Write a message first.", "invalid");
   }
+  const resolved = await resolveMessages(messages);
 
   // ── Azure Auto (model-router) ──────────────────────────────────────────────
   if (model === "azure-auto") {
@@ -166,7 +234,10 @@ export async function POST(req: NextRequest) {
       headers: { "api-key": azureKey, "Content-Type": "application/json" },
       body: JSON.stringify({
         model: modelName,
-        messages,
+        // Plain string content unless the turn carries images.
+        messages: resolved.map((m) =>
+          m.images.length ? { role: m.role, content: openAiParts(m) } : { role: m.role, content: m.content },
+        ),
         stream: true,
         max_tokens: 8192,
         temperature: 0.7,
@@ -190,10 +261,7 @@ export async function POST(req: NextRequest) {
     return forward("kie.ai", req, openaiEndpoint, {
       headers,
       body: JSON.stringify({
-        messages: messages.map(m => ({
-          role: m.role,
-          content: [{ type: "text", text: m.content }],
-        })),
+        messages: resolved.map((m) => ({ role: m.role, content: openAiParts(m) })),
         stream: true,
       }),
     });
@@ -203,7 +271,20 @@ export async function POST(req: NextRequest) {
     headers,
     body: JSON.stringify({
       model,
-      messages,
+      messages: resolved.map((m) =>
+        m.images.length
+          ? {
+              role: m.role,
+              content: [
+                ...m.images.map((i) => ({
+                  type: "image",
+                  source: { type: "base64", media_type: i.mimeType, data: i.data },
+                })),
+                ...(m.content.trim() ? [{ type: "text", text: m.content }] : []),
+              ],
+            }
+          : { role: m.role, content: m.content },
+      ),
       stream: true,
       thinkingFlag: true,
       max_tokens: 4096,

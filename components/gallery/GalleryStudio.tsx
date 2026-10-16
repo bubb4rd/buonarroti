@@ -6,6 +6,7 @@ import { QuickAssist } from "@/components/QuickAssist";
 import { useFolderStore } from "@/lib/folderStore";
 import { galleryCache, getToken, thumbSrc } from "@/lib/galleryUtils";
 import { useWorkflowStore } from "@/lib/store";
+import { useUiPref } from "@/lib/uiPrefs";
 import { cn } from "@/lib/utils";
 import { Composer } from "./Composer";
 import { DownloadToast } from "./DownloadToast";
@@ -48,6 +49,7 @@ function Studio() {
   const allPending = usePendingGenerations(s => s.pending);
 
   const composer = useComposer({ tab, folderId: selectedFolderId });
+  const composerCollapsed = useUiPref("composerCollapsed", false);
 
   const setParam = (key: string, value: string) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -353,7 +355,7 @@ function Studio() {
         {isEmpty ? (
           <EmptyState tab={tab} source={source} inFolder={!!selectedFolderId} />
         ) : (
-          <div className="px-8 pt-2 pb-[280px]">
+          <div className={cn("px-8 pt-2", composerCollapsed ? "pb-[104px]" : "pb-[280px]")}>
             {loading && visibleItems.length === 0 ? (
               <SkeletonGrid columns={zoom} />
             ) : (

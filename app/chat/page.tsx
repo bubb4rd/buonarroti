@@ -11,6 +11,7 @@ import { Mark } from "@/components/brand/Mark";
 import { Button } from "@/components/ui/button";
 import { Composer } from "@/components/chat/Composer";
 import { ChatThread } from "@/components/chat/ChatThread";
+import { useImageAttachments } from "@/components/chat/useImageAttachments";
 
 const DRAFT_DEBOUNCE_MS = 300;
 const NO_MESSAGES: StoredMessage[] = [];
@@ -76,7 +77,7 @@ function ChatScreen({ urlId }: { urlId: string | null }) {
   // State drives rendering; the ref mirrors it for debounced callbacks that outlive a render.
   const [createdId, setCreatedId] = useState<string | null>(null);
   const createdRef = useRef<string | null>(null);
-  const pending = useRef<{ timer: number; sessionId: string | null; text: string } | null>(null);
+  const pending = useRef<{ timer: number; sessionId: string | null; text: string; images: string[] } | null>(null);
 
   // The URL moved somewhere other than the session we created (e.g. "New chat"): forget it.
   let created = createdId;
@@ -99,6 +100,7 @@ function ChatScreen({ urlId }: { urlId: string | null }) {
   const isLanding = messages.length === 0 && !stream;
 
   const [input, setInput] = useState(() => session?.draft ?? "");
+  const attachments = useImageAttachments(session?.draftImages, onImagesChange);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
@@ -119,13 +121,13 @@ function ChatScreen({ urlId }: { urlId: string | null }) {
   }, []);
 
   const commitDraft = useCallback(
-    (targetId: string | null, text: string) => {
+    (targetId: string | null, text: string, images: string[]) => {
       const store = useChatSessionStore.getState();
       const id = targetId ?? createdRef.current;
       if (id && store.sessions.some((s) => s.id === id)) {
-        store.setDraft(id, text);
-      } else if (!targetId && text.trim()) {
-        markCreated(store.ensureDraftSession(getDefaultChatModel(), text));
+        store.setDraft(id, text, images);
+      } else if (!targetId && (text.trim() || images.length > 0)) {
+        markCreated(store.ensureDraftSession(getDefaultChatModel(), text, images));
       }
     },
     [markCreated],
@@ -136,8 +138,16 @@ function ChatScreen({ urlId }: { urlId: string | null }) {
     if (!p) return;
     clearTimeout(p.timer);
     pending.current = null;
-    commitDraft(p.sessionId, p.text);
+    commitDraft(p.sessionId, p.text, p.images);
   }, [commitDraft]);
+
+  // Switching sessions: show that session's saved images too (the text follows above, during render).
+  const { reset: resetAttachments } = attachments;
+  useEffect(() => {
+    if (sessionId !== null && sessionId === createdRef.current) return;
+    const saved = sessionId ? useChatSessionStore.getState().sessions.find((s) => s.id === sessionId) : undefined;
+    resetAttachments(saved?.draftImages ?? []);
+  }, [sessionId, resetAttachments]);
 
   // Save the draft before switching away, unmounting, or the window closing.
   useEffect(() => {
@@ -151,19 +161,29 @@ function ChatScreen({ urlId }: { urlId: string | null }) {
 
   useEffect(() => (sessionId ? watchSession(sessionId) : undefined), [sessionId]);
 
-  function onChange(text: string) {
-    setInput(text);
+  function scheduleDraft(text: string, images: string[]) {
     if (pending.current) clearTimeout(pending.current.timer);
     pending.current = {
       sessionId,
       text,
+      images,
       timer: window.setTimeout(flushDraft, DRAFT_DEBOUNCE_MS),
     };
   }
 
+  function onChange(text: string) {
+    setInput(text);
+    scheduleDraft(text, attachments.urls);
+  }
+
+  function onImagesChange(images: string[]) {
+    scheduleDraft(input, images);
+  }
+
   function submit() {
     const text = input.trim();
-    if (!text) return;
+    const images = attachments.urls;
+    if (!text && images.length === 0) return;
     if (pending.current) clearTimeout(pending.current.timer);
     pending.current = null;
     const store = useChatSessionStore.getState();
@@ -172,10 +192,11 @@ function ChatScreen({ urlId }: { urlId: string | null }) {
       id = store.ensureDraftSession(model, "");
       markCreated(id);
     }
-    store.setDraft(id, "");
+    store.setDraft(id, "", []);
     setInput("");
+    attachments.reset([]);
     stickToBottom.current = true;
-    useChatStreamingStore.getState().send(id, text);
+    useChatStreamingStore.getState().send(id, text, images);
   }
 
   function changeModel(id: string) {
@@ -221,6 +242,7 @@ function ChatScreen({ urlId }: { urlId: string | null }) {
       pickerSide={isLanding ? "bottom" : "top"}
       placeholder={isLanding ? placeholder : "Reply, or ask for another take…"}
       autoFocus
+      attachments={attachments}
     />
   );
 

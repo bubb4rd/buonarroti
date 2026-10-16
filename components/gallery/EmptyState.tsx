@@ -1,3 +1,5 @@
+import { useUiPref } from "@/lib/uiPrefs";
+import { cn } from "@/lib/utils";
 import type { SourceFilter, Tab } from "./types";
 
 /**
@@ -5,6 +7,7 @@ import type { SourceFilter, Tab } from "./types";
  * framed like a proof on the press bed, and one quiet invitation.
  */
 export function EmptyState({ tab, source, inFolder }: { tab: Tab; source: SourceFilter; inFolder: boolean }) {
+  const composerCollapsed = useUiPref("composerCollapsed", false);
   const { title, body } =
     source === "uploaded"
       ? { title: "Nothing uploaded yet", body: "Images and videos you add as references will be kept here." }
@@ -15,7 +18,7 @@ export function EmptyState({ tab, source, inFolder }: { tab: Tab; source: Source
           : { title: "What shall we make?", body: "Describe an image below. Your first piece will appear here." };
 
   return (
-    <div className="relative flex min-h-full flex-1 items-center justify-center overflow-hidden px-8 pt-6 pb-[240px]">
+    <div className={cn("relative flex min-h-full flex-1 items-center justify-center overflow-hidden px-8 pt-6", composerCollapsed ? "pb-[96px]" : "pb-[240px]")}>
       <div className="flex max-w-[520px] flex-col items-center text-center">
         <div className="crop-marks mb-9 [--crop-gap:10px] [--crop:16px]">
           {/* eslint-disable-next-line @next/next/no-img-element */}

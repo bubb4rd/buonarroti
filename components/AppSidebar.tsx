@@ -4,7 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useWorkflowStore } from "@/lib/store";
-import { useChatSessionStore, type ChatSession } from "@/lib/chatSessionStore";
+import { isEmptySession, useChatSessionStore, type ChatSession } from "@/lib/chatSessionStore";
 import { useFolderStore, type Folder as FolderT } from "@/lib/folderStore";
 import {
   Workflow,
@@ -667,7 +667,7 @@ export function AppSidebar() {
   const recent = React.useMemo(
     () =>
       sessions
-        .filter((s: ChatSession) => s.messages.length > 0 || !!s.draft?.trim())
+        .filter((s: ChatSession) => !isEmptySession(s))
         .sort((a, b) => b.updatedAt - a.updatedAt),
     [sessions],
   );

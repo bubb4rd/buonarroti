@@ -6,6 +6,7 @@ import { Handle, Position, NodeProps, Node, useUpdateNodeInternals } from "@xyfl
 import CornerResizer from "./CornerResizer";
 import { useWorkflowStore, NodeData } from "@/lib/store";
 import { sha256Hex } from "@/lib/assetHash";
+import { imageFilesFromClipboard } from "@/lib/clipboardImages";
 
 
 type ImageInputNodeType = Node<NodeData, "imageInputNode">;
@@ -148,12 +149,15 @@ export default function ImageInputNode({ id, data, selected }: NodeProps<ImageIn
           ...authHeaders,
         };
         const res     = await fetch("/api/upload-asset", { method: "POST", headers: uploadHeaders, body: bytes });
-        const { cdnUrl } = await res.json() as { cdnUrl?: string };
-        if (cdnUrl) {
-          updateNodeData(id, { r2Url: cdnUrl, inputImage: cdnUrl });
-        }
-      } catch {
-        // R2 unavailable — blob URL stays as fallback until page reload
+        const { cdnUrl, error } = await res.json().catch(() => ({})) as { cdnUrl?: string; error?: string };
+        if (!res.ok || !cdnUrl) throw new Error(error ?? "Upload failed");
+        updateNodeData(id, { r2Url: cdnUrl, inputImage: cdnUrl });
+      } catch (err) {
+        // Blob URL stays as fallback until page reload
+        useWorkflowStore.getState().addToast(
+          `${file.name} couldn't be uploaded. ${err instanceof Error ? err.message : ""}`.trim(),
+          "error",
+        );
       }
     },
     [id, updateNodeData]
@@ -500,6 +504,12 @@ export default function ImageInputNode({ id, data, selected }: NodeProps<ImageIn
           onBlur={(e) => {
             const v = e.target.value.trim();
             if (v) setImage(v);
+          }}
+          onPaste={(e) => {
+            const [file] = imageFilesFromClipboard(e.clipboardData);
+            if (!file) return;
+            e.preventDefault();
+            void loadFile(file);
           }}
         />
       </div>

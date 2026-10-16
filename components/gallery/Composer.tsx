@@ -2,12 +2,16 @@
 
 import React, { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Braces, Layers, Maximize2, Minimize2, Minus, Plus, Sparkles, Volume2, X } from "lucide-react";
+import { Braces, ChevronDown, ChevronUp, Layers, Maximize2, Minimize2, Minus, Plus, Sparkles, Volume2, X } from "lucide-react";
 import { MediaPickerModal } from "@/components/MediaPickerModal";
 import { Button } from "@/components/ui/button";
 import { Kbd, KbdGroup } from "@/components/ui/kbd";
 import { Segmented } from "@/components/ui/segmented";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { imageFilesFromClipboard } from "@/lib/clipboardImages";
+import { thumbSrc } from "@/lib/galleryUtils";
 import { PROVIDERS, modelHasProviderChoice, setModelProvider, type ProviderId } from "@/lib/providers";
+import { setUiPref, useUiPref } from "@/lib/uiPrefs";
 import { cn } from "@/lib/utils";
 import { AspectRatioPicker } from "./AspectRatioPicker";
 import { DurationPicker } from "./DurationPicker";
@@ -23,7 +27,8 @@ import type { ComposerState, PickerTarget, VidTarget } from "./useComposer";
  * The prompt box: a raised paper sheet floating over the bottom of the grid.
  * References on top, the prompt in the middle, a row of quiet pickers and the
  * one primary action (Generate, ⌘↵) at the bottom. Typing is never blocked —
- * generations run in the background (see generationStore).
+ * generations run in the background (see generationStore). It can be folded
+ * into a one-line pill (⌘.) that remembers the choice; the draft is untouched.
  */
 export function Composer({ c, hidden }: { c: ComposerState; hidden: boolean }) {
   const rootRef = useRef<HTMLDivElement>(null);
@@ -36,6 +41,27 @@ export function Composer({ c, hidden }: { c: ComposerState; hidden: boolean }) {
   const vidVideoInput = useRef<HTMLInputElement>(null);
   const vidAudioInput = useRef<HTMLInputElement>(null);
   const vidTarget = useRef<VidTarget | null>(null);
+  const collapsed = useUiPref("composerCollapsed", false);
+  // Opened from the pill: Esc on a still-empty composer folds it back.
+  const reopenedFromPill = useRef(false);
+
+  const setCollapsed = (next: boolean) => {
+    setUiPref("composerCollapsed", next);
+    reopenedFromPill.current = !next;
+    if (next) { setExpanded(false); return; }
+    requestAnimationFrame(() => rootRef.current?.querySelector("textarea")?.focus());
+  };
+
+  useEffect(() => {
+    if (hidden) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "." || !(e.metaKey || e.ctrlKey) || e.shiftKey || e.altKey) return;
+      e.preventDefault();
+      setCollapsed(!collapsed);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [collapsed, hidden]);
 
   // Collapse the expanded sheet on an outside click (popups and overlays don't count).
   useEffect(() => {
@@ -79,22 +105,39 @@ export function Composer({ c, hidden }: { c: ComposerState; hidden: boolean }) {
           if (Array.from(e.dataTransfer.types).includes("Files")) { e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = "copy"; }
         }}
         onDrop={e => {
-          if (e.dataTransfer.files?.length) { e.preventDefault(); e.stopPropagation(); c.handleFilePick(e.dataTransfer.files); }
+          if (e.dataTransfer.files?.length) { e.preventDefault(); e.stopPropagation(); c.addFiles(e.dataTransfer.files); }
+        }}
+        onPaste={e => {
+          const files = imageFilesFromClipboard(e.clipboardData);
+          if (files.length === 0) return;
+          e.preventDefault();
+          c.addFiles(files);
+        }}
+        onKeyDown={e => {
+          // Only keys from the composer itself, not from popups portalled out of it.
+          if (e.key !== "Escape" || !reopenedFromPill.current || c.hasContent || expanded) return;
+          if (!rootRef.current?.contains(e.target as Node)) return;
+          setCollapsed(true);
         }}
         aria-hidden={hidden || undefined}
         className={cn(
           "absolute left-1/2 z-[200] flex -translate-x-1/2 flex-col transition-[transform,opacity,width,height,bottom] duration-300 ease-[var(--ease-out)]",
-          expanded ? "bottom-6 h-[calc(100%-48px)] w-[min(1100px,calc(100%-48px))]" : "bottom-6 w-[min(860px,calc(100%-32px))]",
+          expanded ? "bottom-6 h-[calc(100%-48px)] w-[min(1100px,calc(100%-48px))]"
+            : collapsed ? "bottom-6 w-[min(560px,calc(100%-32px))]"
+            : "bottom-6 w-[min(860px,calc(100%-32px))]",
           hidden && !expanded && "pointer-events-none translate-y-[calc(100%+40px)] opacity-0",
         )}
       >
+        {collapsed ? (
+          <ComposerPill c={c} onExpand={() => setCollapsed(false)} />
+        ) : (
         <div
           className={cn(
-            "relative flex flex-col rounded-[var(--radius-xl)] bg-surface-raised shadow-[var(--shadow-md)]",
+            "animate-in fade-in-0 slide-in-from-bottom-1 relative flex flex-col rounded-[var(--radius-xl)] bg-surface-raised shadow-[var(--shadow-md)] duration-200",
             expanded && "h-full",
           )}
         >
-          {/* Top-right: clear + expand */}
+          {/* Top-right: clear, expand, minimize */}
           <div className="absolute top-2.5 right-2.5 z-10 flex items-center gap-0.5">
             {c.hasContent && (
               <Button variant="ghost" size="icon-sm" aria-label="Clear prompt and references" title="Clear prompt and references" onClick={c.clearAll}>
@@ -110,9 +153,21 @@ export function Composer({ c, hidden }: { c: ComposerState; hidden: boolean }) {
             >
               {expanded ? <Minimize2 /> : <Maximize2 />}
             </Button>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button variant="ghost" size="icon-sm" aria-label="Minimize composer" onClick={() => setCollapsed(true)}>
+                    <ChevronDown />
+                  </Button>
+                }
+              />
+              <TooltipContent>
+                Minimize <Kbd>⌘.</Kbd>
+              </TooltipContent>
+            </Tooltip>
           </div>
 
-          <div className="max-h-[200px] shrink-0 overflow-y-auto pr-16">
+          <div className="max-h-[200px] shrink-0 overflow-y-auto pr-[84px]">
             <ReferenceStrip
               c={c}
               onOpenPicker={(target, kind) => setPicker({ target, kind })}
@@ -130,8 +185,8 @@ export function Composer({ c, hidden }: { c: ComposerState; hidden: boolean }) {
                 <span className="text-ink-4">· a blank line starts the next one</span>
               </div>
             )}
-            <div className={cn("pr-14", expanded && "flex min-h-0 flex-1 flex-col")}>
-              <PromptEditor c={c} expanded={expanded} anchorRef={rootRef} onFiles={c.handleFilePick} />
+            <div className={cn("pr-[68px]", expanded && "flex min-h-0 flex-1 flex-col")}>
+              <PromptEditor c={c} expanded={expanded} anchorRef={rootRef} onFiles={c.addFiles} />
             </div>
 
             {/* Controls */}
@@ -283,6 +338,7 @@ export function Composer({ c, hidden }: { c: ComposerState; hidden: boolean }) {
             </div>
           </div>
         </div>
+        )}
       </div>
 
       <input ref={imageInput} type="file" accept="image/*" multiple hidden
@@ -383,5 +439,61 @@ function ToggleChip({
       {icon}
       {children}
     </Button>
+  );
+}
+
+/**
+ * The minimized composer: one line of raised paper with the draft's opening
+ * words, any attached references and the model. Clicking it (or ⌘.) opens the
+ * full composer; Generate stays reachable when there's a draft.
+ */
+function ComposerPill({ c, onExpand }: { c: ComposerState; onExpand: () => void }) {
+  const draft = c.prompt.replace(/\s+/g, " ").trim().slice(0, 140);
+  const refs = (c.isVideo ? [c.vidStartFrame, c.vidEndFrame, ...c.vidResources] : c.refImages).filter(r => r !== null);
+  return (
+    <div className="animate-in fade-in-0 slide-in-from-bottom-1 flex h-12 items-center gap-1 rounded-[var(--radius-xl)] bg-surface-raised p-1.5 shadow-[var(--shadow-md)] duration-200">
+      <button
+        type="button"
+        onClick={onExpand}
+        aria-label="Open composer"
+        className="flex h-9 min-w-0 flex-1 items-center gap-2.5 rounded-[var(--radius-lg)] pr-2 pl-3 text-left outline-none transition-colors duration-150 hover:bg-wash focus-visible:shadow-[var(--focus-ring)]"
+      >
+        {refs.length > 0 && (
+          <span aria-hidden className="flex shrink-0 -space-x-2">
+            {refs.slice(0, 3).map(r => (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                key={r.id}
+                src={thumbSrc(r.objectUrl, 48)}
+                alt=""
+                className={cn("size-6 rounded-[var(--radius-xs)] object-cover shadow-[0_0_0_1.5px_var(--surface-raised)]", r.uploading && "opacity-60")}
+              />
+            ))}
+          </span>
+        )}
+        <span className={cn("min-w-0 flex-1 truncate text-[13.5px]", draft ? "text-ink" : "text-ink-4")}>
+          {draft || "Describe what to make…"}
+        </span>
+        <span className="shrink-0 text-[12px] text-ink-3">{c.activeModel.name}</span>
+      </button>
+      {c.hasContent && (
+        <Button variant="primary" size="sm" onClick={c.generate} disabled={!c.canGenerate}>
+          <Sparkles />
+          Generate
+        </Button>
+      )}
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Button variant="ghost" size="icon-sm" aria-label="Expand composer" onClick={onExpand}>
+              <ChevronUp />
+            </Button>
+          }
+        />
+        <TooltipContent>
+          Expand <Kbd>⌘.</Kbd>
+        </TooltipContent>
+      </Tooltip>
+    </div>
   );
 }

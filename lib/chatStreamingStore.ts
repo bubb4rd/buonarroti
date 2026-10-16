@@ -18,7 +18,7 @@ class AssistantError extends Error {}
  */
 async function streamAssistant(opts: {
   model: string;
-  messages: { role: "user" | "assistant"; content: string }[];
+  messages: { role: "user" | "assistant"; content: string; images?: string[] }[];
   /** Chat session id; lets subscription (ACP) agents keep one warm session per chat. */
   conversationId: string;
   signal: AbortSignal;
@@ -141,8 +141,8 @@ export interface LiveStream {
 interface ChatStreamingState {
   /** Present only while a reply is streaming. */
   streams: Record<string, LiveStream>;
-  /** Append a user turn to the session and stream the reply. */
-  send: (sessionId: string, text: string) => void;
+  /** Append a user turn (text and/or stored image URLs) to the session and stream the reply. */
+  send: (sessionId: string, text: string, images?: string[]) => void;
   /** Re-run the last user turn, replacing a failed or stopped reply (never duplicates the user turn). */
   retry: (sessionId: string) => void;
   stop: (sessionId: string) => void;
@@ -188,7 +188,7 @@ export const useChatStreamingStore = create<ChatStreamingState>()((set, get) => 
         model,
         messages: base
           .filter((m) => m.status !== "error")
-          .map((m) => ({ role: m.role, content: m.content })),
+          .map((m) => ({ role: m.role, content: m.content, ...(m.images?.length ? { images: m.images } : {}) })),
         conversationId: sessionId,
         signal: controller.signal,
         onDelta: (text) => {
@@ -236,11 +236,14 @@ export const useChatStreamingStore = create<ChatStreamingState>()((set, get) => 
   return {
     streams: {},
 
-    send: (sessionId, text) => {
+    send: (sessionId, text, images = []) => {
       const trimmed = text.trim();
       const session = findSession(sessionId);
-      if (!trimmed || !session || get().streams[sessionId]) return;
-      void run(sessionId, [...session.messages, { id: newMessageId(), role: "user", content: trimmed }]);
+      if ((!trimmed && images.length === 0) || !session || get().streams[sessionId]) return;
+      void run(sessionId, [
+        ...session.messages,
+        { id: newMessageId(), role: "user", content: trimmed, ...(images.length ? { images } : {}) },
+      ]);
     },
 
     retry: (sessionId) => {

@@ -1,13 +1,69 @@
 "use client";
 
-import { useLayoutEffect, type RefObject } from "react";
-import { ArrowUp, Square } from "lucide-react";
+import { useLayoutEffect, useRef, useState, type RefObject } from "react";
+import { AlertCircle, ArrowUp, Paperclip, Square, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useWorkflowStore } from "@/lib/store";
+import { imageFilesFromClipboard } from "@/lib/clipboardImages";
 import { keyProviderFor, type ModelId } from "@/lib/models";
 import { cn } from "@/lib/utils";
 import { AGENT_STATUS_PHRASE, HintText, ModelPicker, useModelReady } from "./ModelPicker";
+import type { ImageAttachment, ImageAttachments } from "./useImageAttachments";
+
+/** Removable thumbnails of the images riding along with the draft. */
+function AttachmentChips({
+  items,
+  onRemove,
+  compact,
+}: {
+  items: ImageAttachment[];
+  onRemove: (id: string) => void;
+  compact: boolean;
+}) {
+  return (
+    <div className={cn("flex flex-wrap gap-2", compact ? "px-2.5 pt-2.5" : "px-3.5 pt-3.5")}>
+      {items.map((item) => (
+        <div
+          key={item.id}
+          className={cn(
+            "group/chip relative shrink-0 overflow-hidden rounded-[var(--radius-sm)] bg-mat duration-150 ease-[var(--ease-out)] animate-in fade-in-0 zoom-in-95",
+            compact ? "size-12" : "size-14",
+            item.status === "failed" && "shadow-[inset_0_0_0_1.5px_var(--sanguine)]",
+          )}
+          title={item.status === "failed" ? "Couldn't attach this image" : undefined}
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element -- object URLs and local files */}
+          <img
+            src={item.src}
+            alt="Attached image"
+            className={cn(
+              "size-full object-cover transition-opacity duration-200",
+              item.status === "uploading" && "animate-pulse opacity-55",
+              item.status === "failed" && "opacity-40",
+            )}
+          />
+          {item.status === "failed" && (
+            <AlertCircle className="absolute top-1/2 left-1/2 size-4 -translate-x-1/2 -translate-y-1/2 text-sanguine" />
+          )}
+          {item.status === "uploading" && <span className="sr-only">Uploading</span>}
+          <button
+            type="button"
+            onClick={() => onRemove(item.id)}
+            aria-label="Remove image"
+            className={cn(
+              "absolute top-1 right-1 inline-flex size-[18px] items-center justify-center rounded-full bg-black/45 text-white backdrop-blur-md transition-opacity duration-150 focus-visible:opacity-100 focus-visible:shadow-[var(--focus-ring)] group-hover/chip:opacity-100",
+              item.status === "failed" ? "opacity-100" : "opacity-0",
+            )}
+          >
+            <X className="size-3" />
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 /**
  * Prompt box (DESIGN.md § Composer). The textarea is never disabled: while a
@@ -27,6 +83,7 @@ export function Composer({
   compact = false,
   pickerSide = "top",
   autoFocus = false,
+  attachments,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -40,10 +97,15 @@ export function Composer({
   compact?: boolean;
   pickerSide?: "top" | "bottom";
   autoFocus?: boolean;
+  /** Images riding along with the message: paste, drop, or the paperclip add them. */
+  attachments?: ImageAttachments;
 }) {
   const { ready, acp } = useModelReady(model);
   const setSettingsOpen = useWorkflowStore((s) => s.setSettingsOpen);
-  const canSend = !streaming && !!value.trim() && ready !== false;
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [dragging, setDragging] = useState(false);
+  const hasContent = !!value.trim() || !!attachments?.urls.length;
+  const canSend = !streaming && hasContent && !attachments?.uploading && ready !== false;
   const maxHeight = compact ? 120 : 220;
 
   // Grow with content, including when the value is restored programmatically.
@@ -66,19 +128,50 @@ export function Composer({
     if (canSend) onSubmit();
   }
 
+  function onPaste(e: React.ClipboardEvent<HTMLTextAreaElement>) {
+    if (!attachments) return;
+    const files = imageFilesFromClipboard(e.clipboardData);
+    if (files.length === 0) return; // plain text: let the browser paste it
+    e.preventDefault();
+    attachments.add(files);
+  }
+
+  const carriesFiles = (e: React.DragEvent) => !!attachments && e.dataTransfer.types.includes("Files");
+
   return (
     <div className="flex flex-col gap-1.5">
       <div
         className={cn(
           "flex flex-col bg-surface-raised shadow-[var(--shadow-md)] transition-shadow duration-150 focus-within:shadow-[var(--shadow-md),var(--focus-ring)]",
           compact ? "rounded-[var(--radius-lg)]" : "rounded-[var(--radius-xl)]",
+          dragging && "shadow-[var(--shadow-md),var(--focus-ring)]",
         )}
+        onDragOver={(e) => {
+          if (!carriesFiles(e)) return;
+          e.preventDefault();
+          e.dataTransfer.dropEffect = "copy";
+          setDragging(true);
+        }}
+        onDragLeave={(e) => {
+          if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragging(false);
+        }}
+        onDrop={(e) => {
+          if (!carriesFiles(e)) return;
+          e.preventDefault();
+          setDragging(false);
+          attachments?.add(Array.from(e.dataTransfer.files));
+          textareaRef.current?.focus();
+        }}
       >
+        {attachments && attachments.items.length > 0 && (
+          <AttachmentChips items={attachments.items} onRemove={attachments.remove} compact={compact} />
+        )}
         <textarea
           ref={textareaRef}
           value={value}
           onChange={(e) => onChange(e.target.value)}
           onKeyDown={onKeyDown}
+          onPaste={onPaste}
           placeholder={placeholder}
           rows={1}
           autoFocus={autoFocus}
@@ -91,6 +184,41 @@ export function Composer({
         />
         <div className={cn("flex items-center gap-2", compact ? "px-2 pb-2" : "px-2.5 pb-2.5")}>
           <ModelPicker model={model} onChange={onModelChange} side={pickerSide} />
+          {attachments && (
+            <>
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      className="text-ink-3"
+                      aria-label="Attach images"
+                      onClick={() => fileInputRef.current?.click()}
+                    />
+                  }
+                >
+                  <Paperclip />
+                </TooltipTrigger>
+                <TooltipContent>
+                  Attach images
+                  <Kbd>⌘V</Kbd>
+                </TooltipContent>
+              </Tooltip>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/gif,image/webp"
+                multiple
+                hidden
+                onChange={(e) => {
+                  attachments.add(Array.from(e.target.files ?? []));
+                  e.target.value = "";
+                  textareaRef.current?.focus();
+                }}
+              />
+            </>
+          )}
           <div className="ml-auto flex items-center gap-2">
             {!compact && !streaming && (
               <span className="hidden text-[11.5px] text-ink-4 sm:inline">⇧↵ new line</span>

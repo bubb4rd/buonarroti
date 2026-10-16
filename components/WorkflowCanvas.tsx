@@ -19,11 +19,12 @@ import "@xyflow/react/dist/style.css";
 
 import { useWorkflowStore, NodeData } from "@/lib/store";
 import { requestWorkflowSync } from "@/lib/workflowSyncBus";
-import { VIDEO_MODELS } from "@/lib/modelConfig";
+import { IMAGE_MODELS, VIDEO_MODELS } from "@/lib/modelConfig";
 import CuttableEdge from "@/components/edges/CuttableEdge";
 import { NODE_SIZE, FALLBACK_SIZE, NODE_META, TypeBadge, getLastNodeSettings, getDefaultNodeSize, nextNodeLabel } from "@/lib/nodeTypes";
 import { edgeStyle } from "@/lib/edgeStyles";
 import { sha256Hex } from "@/lib/assetHash";
+import { imageFilesFromClipboard } from "@/lib/clipboardImages";
 import { detectTextMode } from "@/lib/textFormat";
 
 import { motion } from "motion/react";
@@ -148,6 +149,23 @@ function nodeAcceptsPromptInput(node: Node<NodeData>, edges: Edge[]): boolean {
   }
 
   return false;
+}
+
+/** The first image input on a generator that can take one more image (same limits as isValidConnection), or null. */
+function freeImageHandle(node: Node<NodeData>, edges: Edge[]): string | null {
+  const into = (handle: string) => edges.filter((e) => e.target === node.id && e.targetHandle === handle).length;
+  if (node.type === "generateNode") {
+    const model = IMAGE_MODELS.find((m) => m.id === ((node.data?.model as string | undefined) ?? "nano-banana-2"));
+    return model?.supportsImages && into("image") < Math.min(model.maxImages, 14) ? "image" : null;
+  }
+  if (node.type === "videoGeneratorNode") {
+    const cfg = VIDEO_MODELS.find((m) => m.id === ((node.data?.videoModel as string | undefined) ?? "kling-3.0"));
+    if (!cfg) return null;
+    if (cfg.handles.includes("startFrame") && into("startFrame") === 0) return "startFrame";
+    if (cfg.handles.includes("endFrame") && into("endFrame") === 0) return "endFrame";
+    if (cfg.handles.includes("resource") && !cfg.apiInput.useMotionControl && into("resource") < 3) return "resource";
+  }
+  return null;
 }
 
 export default function WorkflowCanvas() {
@@ -451,6 +469,55 @@ export default function WorkflowCanvas() {
   const wrapperRef = useRef<HTMLDivElement>(null);
   const viewportRef = useRef<Viewport>({ x: 0, y: 0, zoom: 1 });
 
+  /**
+   * Adds an Image Input node that shows `file` at once (blob URL), then swaps in
+   * the stored URL — reusing an existing upload when the same bytes were seen before.
+   */
+  const addImageNode = useCallback((file: File, position: { x: number; y: number }, width: number) => {
+    const type = "imageInputNode";
+    const nodeId = `${type}-${uid()}`;
+    const blobUrl = URL.createObjectURL(file);
+    addNode({
+      id: nodeId, type, position,
+      style: { width },
+      data: { label: nextNodeLabel(type, useWorkflowStore.getState().nodes), status: "idle", inputImage: blobUrl },
+    });
+
+    const img = new window.Image();
+    img.onload = () =>
+      updateNodeDataRef.current(nodeId, { imageNaturalRatio: `${img.naturalWidth} / ${img.naturalHeight}` });
+    img.src = blobUrl;
+
+    (async () => {
+      try {
+        const bytes = await file.arrayBuffer();
+        const hash = await sha256Hex(bytes);
+
+        try {
+          const lk = await fetch(`/api/lookup-asset?hash=${hash}`);
+          const { cdnUrl } = await lk.json() as { cdnUrl: string | null };
+          if (cdnUrl) { updateNodeDataRef.current(nodeId, { inputImage: cdnUrl, r2Url: cdnUrl }); return; }
+        } catch { /* fall through */ }
+
+        const res = await fetch("/api/upload-asset", {
+          method: "POST",
+          headers: { "Content-Type": file.type || "image/jpeg" },
+          body: bytes,
+        });
+        const { cdnUrl, error } = await res.json().catch(() => ({})) as { cdnUrl?: string; error?: string };
+        if (!res.ok || !cdnUrl) throw new Error(error ?? "Upload failed");
+        updateNodeDataRef.current(nodeId, { inputImage: cdnUrl, r2Url: cdnUrl });
+      } catch (err) {
+        // The blob URL keeps the node usable for this session.
+        useWorkflowStore.getState().addToast(
+          `${file.name} couldn't be uploaded. ${err instanceof Error ? err.message : ""}`.trim(),
+          "error",
+        );
+      }
+    })();
+    return nodeId;
+  }, [addNode]);
+
   const onDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     const hasFiles = e.dataTransfer.types.includes("Files");
@@ -490,53 +557,16 @@ export default function WorkflowCanvas() {
       let cursorX = dropX - totalWidth / 2;
 
       for (const { file, type, size } of fileMeta) {
-        const nodeId = `${type}-${uid()}`;
-        const current = useWorkflowStore.getState().nodes;
-        const blobUrl = URL.createObjectURL(file);
         const posX = cursorX;
         const posY = dropY - size.h / 2;
         cursorX += size.w + GAP;
 
         if (type === "imageInputNode") {
-          // Add node immediately with blob URL so the image shows at once
-          addNode({
-            id: nodeId, type,
-            position: { x: posX, y: posY },
-            style: { width: size.w },
-            data: { label: nextNodeLabel(type, current), status: "idle", inputImage: blobUrl },
-          });
-
-          // Measure natural dimensions
-          const img = new window.Image();
-          img.onload = () =>
-            updateNodeDataRef.current(nodeId, {
-              imageNaturalRatio: `${img.naturalWidth} / ${img.naturalHeight}`,
-            });
-          img.src = blobUrl;
-
-          // Hash + lookup + upload in background
-          (async () => {
-            try {
-              const bytes = await file.arrayBuffer();
-              const hash = await sha256Hex(bytes);
-
-              try {
-                const lk = await fetch(`/api/lookup-asset?hash=${hash}`);
-                const { cdnUrl } = await lk.json() as { cdnUrl: string | null };
-                if (cdnUrl) { updateNodeDataRef.current(nodeId, { inputImage: cdnUrl, r2Url: cdnUrl }); return; }
-              } catch { /* fall through */ }
-
-              const res = await fetch("/api/upload-asset", {
-                method: "POST",
-                headers: { "Content-Type": file.type || "image/jpeg" },
-                body: bytes,
-              });
-              const { cdnUrl } = await res.json() as { cdnUrl?: string };
-              if (cdnUrl) updateNodeDataRef.current(nodeId, { inputImage: cdnUrl, r2Url: cdnUrl });
-            } catch { /* blob URL stays as fallback */ }
-          })();
-
+          addImageNode(file, { x: posX, y: posY }, size.w);
         } else {
+          const nodeId = `${type}-${uid()}`;
+          const current = useWorkflowStore.getState().nodes;
+          const blobUrl = URL.createObjectURL(file);
           // videoInputNode
           addNode({
             id: nodeId, type,
@@ -591,7 +621,7 @@ export default function WorkflowCanvas() {
       style: type === "imageInputNode" || type === "videoInputNode" ? { width: size.w } : { width: size.w, height: size.h },
       data: { label, status: "idle" },
     });
-  }, [addNode, insertEdge]);
+  }, [addNode, addImageNode]);
 
   // ── Copy / Paste ─────────────────────────────────────────────────────────────
   const clipboardRef = useRef<{ nodes: Node<NodeData>[]; edges: Edge[] } | null>(null);
@@ -709,9 +739,72 @@ export default function WorkflowCanvas() {
   // off the event is treated as a direct user gesture, so it pastes immediately
   // instead of popping the browser's "Paste" permission button.
   useEffect(() => {
+    /** Pasted images land as Image Input nodes in a row at the cursor (or the viewport centre). */
+    const addImageNodesAtCursor = (images: File[]) => {
+      const rect = wrapperRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const { x: panX, y: panY, zoom } = viewportRef.current;
+      const m = mousePosRef.current;
+      const inside = m.x >= rect.left && m.x <= rect.right && m.y >= rect.top && m.y <= rect.bottom;
+      const cx = ((inside ? m.x : rect.left + rect.width / 2) - rect.left - panX) / zoom;
+      const cy = ((inside ? m.y : rect.top + rect.height / 2) - rect.top - panY) / zoom;
+      const size = getDefaultNodeSize("imageInputNode", useWorkflowStore.getState().lastNodeSize);
+      const GAP = 24;
+      const startX = cx - (images.length * size.w + (images.length - 1) * GAP) / 2;
+      images.forEach((file, i) => addImageNode(file, { x: startX + i * (size.w + GAP), y: cy - size.h / 2 }, size.w));
+    };
+
+    /**
+     * Images pasted while writing a prompt become Image Input nodes above it,
+     * wired into the generator that prompt feeds while it has room.
+     */
+    const attachImagesToPrompt = (promptNode: Node<NodeData>, images: File[]) => {
+      const state = useWorkflowStore.getState();
+      const size = getDefaultNodeSize("imageInputNode", state.lastNodeSize);
+      const GAP = 24;
+      const ids = images.map((file, i) =>
+        addImageNode(file, { x: promptNode.position.x + i * (size.w + GAP), y: promptNode.position.y - size.h - 60 }, size.w));
+
+      const fed = state.edges.filter((e) => e.source === promptNode.id && e.targetHandle === "prompt").map((e) => e.target);
+      const generator = state.nodes.find((n) => fed.includes(n.id) && (n.type === "generateNode" || n.type === "videoGeneratorNode"));
+      if (!generator) return;
+      let wired = 0;
+      for (const id of ids) {
+        const handle = freeImageHandle(generator, useWorkflowStore.getState().edges);
+        if (!handle) break;
+        insertEdge({ id: `edge-${uid()}`, source: id, target: generator.id, targetHandle: handle, animated: false, style: edgeStyle(handle) });
+        wired++;
+      }
+      if (wired < ids.length) {
+        const left = ids.length - wired;
+        state.addToast(`${generator.data.label as string} has no free image input, so ${left} image${left === 1 ? " was" : "s were"} left unconnected.`, "info");
+      }
+    };
+
     const onPasteEvent = (e: ClipboardEvent) => {
-      const tag = (e.target as HTMLElement)?.tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA") return;
+      const el = e.target as HTMLElement;
+      const inField = el?.tagName === "INPUT" || el?.tagName === "TEXTAREA";
+
+      const images = imageFilesFromClipboard(e.clipboardData);
+      if (images.length > 0) {
+        // A field's own handler (e.g. an Image Input node's URL box) already took it.
+        if (e.defaultPrevented) return;
+        if (!inField) {
+          e.preventDefault();
+          addImageNodesAtCursor(images);
+          return;
+        }
+        const nodeId = el.closest<HTMLElement>(".react-flow__node")?.dataset.id;
+        const promptNode = (el as HTMLTextAreaElement).readOnly
+          ? undefined
+          : useWorkflowStore.getState().nodes.find((n) => n.id === nodeId && n.type === "promptNode");
+        if (promptNode) {
+          e.preventDefault();
+          attachImagesToPrompt(promptNode, images);
+        }
+        return;
+      }
+      if (inField) return;
 
       const raw = e.clipboardData?.getData("text/plain") ?? "";
       const text = raw.trim();
@@ -797,7 +890,7 @@ export default function WorkflowCanvas() {
     };
     document.addEventListener("paste", onPasteEvent);
     return () => document.removeEventListener("paste", onPasteEvent);
-  }, [handlePaste, addNode, insertEdge]);
+  }, [handlePaste, addNode, insertEdge, addImageNode]);
 
   // ── Auto-trim + frame-extract on new connections ─────────────────────────────
   const handleConnect = useCallback((connection: Connection) => {

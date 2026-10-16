@@ -274,6 +274,11 @@ export class AgentProcess {
     if (this.dead || !this.init.agentCapabilities?.sessionCapabilities?.close) return;
     await this.conn.closeSession({ sessionId }).catch(() => {});
   }
+
+  /** Whether `initialize` advertised image content blocks in prompts. */
+  get acceptsImages(): boolean {
+    return !!this.init?.agentCapabilities?.promptCapabilities?.image;
+  }
 }
 
 interface PoolState {
