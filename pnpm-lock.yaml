@@ -10,19 +10,16 @@ importers:
     dependencies:
       '@agentclientprotocol/claude-agent-acp':
         specifier: 0.91.0
-        version: 0.91.0(@anthropic-ai/sdk@0.135.0(zod@3.25.76))(@modelcontextprotocol/sdk@1.30.0(zod@3.25.76))
+        version: 0.91.0(@anthropic-ai/sdk@0.135.0(zod@4.6.7))(@modelcontextprotocol/sdk@1.30.0(zod@4.6.7))
       '@agentclientprotocol/sdk':
         specifier: 1.8.0
-        version: 1.8.0(zod@3.25.76)
+        version: 1.8.0(zod@4.6.7)
       '@base-ui/react':
         specifier: ^1.4.1
         version: 1.6.0(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@xyflow/react':
         specifier: ^12.10.2
         version: 12.11.2(@types/react-dom@19.2.4(@types/react@19.2.18))(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
-      '@zed-industries/codex-acp':
-        specifier: 0.16.0
-        version: 0.16.0
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1
@@ -1075,53 +1072,6 @@ packages:
 
   '@xyflow/system@0.0.79':
     resolution: {integrity: sha512-czLyOh91NF0hIzbNzwi8I6GlqG23BHh2435OddfI6uiaLH3xdrdygO93gqgH1Bv9mhy8XPFQJOBn1FTq4LvEWA==}
-
-  '@zed-industries/codex-acp-darwin-arm64@0.16.0':
-    resolution: {integrity: sha512-2AmbWsc/+Mpn6U8UOIlPLvgwGsGOr/LFpgcvrnjcCT9V1yY92MLrqzjMX82+VjTrRLRuXvc25SB5Z1++4Pw29g==}
-    cpu: [arm64]
-    os: [darwin]
-    deprecated: This package has been replaced by @agentclientprotocol/codex-acp. Please migrate to continue receiving updates.
-    hasBin: true
-
-  '@zed-industries/codex-acp-darwin-x64@0.16.0':
-    resolution: {integrity: sha512-QCWggk0s4GTPLCR7eznyx29Dls4gzUKvp4MjZ4nzPX5gDL/02PGY+oCV1WsQOsnzWRK0RxM+GlK19rG1qzqplw==}
-    cpu: [x64]
-    os: [darwin]
-    deprecated: This package has been replaced by @agentclientprotocol/codex-acp. Please migrate to continue receiving updates.
-    hasBin: true
-
-  '@zed-industries/codex-acp-linux-arm64@0.16.0':
-    resolution: {integrity: sha512-8HaZGWVPVs1N6yqImLCKlnlcYTYc9BMCEhaVJk0ON9lyofhK9mOBBAHQndKC4Scqq5JLUHQIOyb8+jwHUe3hSQ==}
-    cpu: [arm64]
-    os: [linux]
-    deprecated: This package has been replaced by @agentclientprotocol/codex-acp. Please migrate to continue receiving updates.
-    hasBin: true
-
-  '@zed-industries/codex-acp-linux-x64@0.16.0':
-    resolution: {integrity: sha512-xs5zZBLpJuciEbZNx6ZSNL0qCa9h3i/zWpj40sp6QtF+L4Ow/7qzHdBzboGhHdcz1jrLedfZeRFDA2Elj8TLMA==}
-    cpu: [x64]
-    os: [linux]
-    deprecated: This package has been replaced by @agentclientprotocol/codex-acp. Please migrate to continue receiving updates.
-    hasBin: true
-
-  '@zed-industries/codex-acp-win32-arm64@0.16.0':
-    resolution: {integrity: sha512-4V3pDJvEyNkgVqWqlm0bLYEZ8liGXXp8InuHzCy5cgr+SFur6BuasA29tisN8NUrLus/ZvMhXCrOsNKurYAWQw==}
-    cpu: [arm64]
-    os: [win32]
-    deprecated: This package has been replaced by @agentclientprotocol/codex-acp. Please migrate to continue receiving updates.
-    hasBin: true
-
-  '@zed-industries/codex-acp-win32-x64@0.16.0':
-    resolution: {integrity: sha512-ZriI/ay5E3DCg8s22LZykIRI2XzQL6sZg/t81K+6qc86ldscaSWQSOT6KSnRcv31QJCMfBlFxMj22pZiGSVjQA==}
-    cpu: [x64]
-    os: [win32]
-    deprecated: This package has been replaced by @agentclientprotocol/codex-acp. Please migrate to continue receiving updates.
-    hasBin: true
-
-  '@zed-industries/codex-acp@0.16.0':
-    resolution: {integrity: sha512-XKzqztT5R8Wg1BVFnk6/U4JVx5GNUaZgxpf9gP2Cw6BsknvJWh3aefcAGZQljgdMivRqczjNKYL4F6H65dc5vA==}
-    deprecated: This package has been replaced by @agentclientprotocol/codex-acp. Please migrate to continue receiving updates.
-    hasBin: true
 
   accepts@2.0.0:
     resolution: {integrity: sha512-5cvg6CtKwfgdmVqY1WIiXKc3Q1bkRqGLi+2W/6ao+6Y7gu/RCwRuAhGEzh5B4KlszSuTLgZYuqFqo5bImjNKng==}
@@ -3272,19 +3222,15 @@ packages:
 
 snapshots:
 
-  '@agentclientprotocol/claude-agent-acp@0.91.0(@anthropic-ai/sdk@0.135.0(zod@3.25.76))(@modelcontextprotocol/sdk@1.30.0(zod@3.25.76))':
+  '@agentclientprotocol/claude-agent-acp@0.91.0(@anthropic-ai/sdk@0.135.0(zod@4.6.7))(@modelcontextprotocol/sdk@1.30.0(zod@4.6.7))':
     dependencies:
       '@agentclientprotocol/sdk': 1.8.0(zod@4.6.7)
-      '@anthropic-ai/claude-agent-sdk': 0.3.300(@anthropic-ai/sdk@0.135.0(zod@3.25.76))(@modelcontextprotocol/sdk@1.30.0(zod@3.25.76))(zod@4.6.7)
+      '@anthropic-ai/claude-agent-sdk': 0.3.300(@anthropic-ai/sdk@0.135.0(zod@4.6.7))(@modelcontextprotocol/sdk@1.30.0(zod@4.6.7))(zod@4.6.7)
       diff: 9.0.0
       zod: 4.6.7
     transitivePeerDependencies:
       - '@anthropic-ai/sdk'
       - '@modelcontextprotocol/sdk'
-
-  '@agentclientprotocol/sdk@1.8.0(zod@3.25.76)':
-    dependencies:
-      zod: 3.25.76
 
   '@agentclientprotocol/sdk@1.8.0(zod@4.6.7)':
     dependencies:
@@ -3316,10 +3262,10 @@ snapshots:
   '@anthropic-ai/claude-agent-sdk-win32-x64@0.3.300':
     optional: true
 
-  '@anthropic-ai/claude-agent-sdk@0.3.300(@anthropic-ai/sdk@0.135.0(zod@3.25.76))(@modelcontextprotocol/sdk@1.30.0(zod@3.25.76))(zod@4.6.7)':
+  '@anthropic-ai/claude-agent-sdk@0.3.300(@anthropic-ai/sdk@0.135.0(zod@4.6.7))(@modelcontextprotocol/sdk@1.30.0(zod@4.6.7))(zod@4.6.7)':
     dependencies:
-      '@anthropic-ai/sdk': 0.135.0(zod@3.25.76)
-      '@modelcontextprotocol/sdk': 1.30.0(zod@3.25.76)
+      '@anthropic-ai/sdk': 0.135.0(zod@4.6.7)
+      '@modelcontextprotocol/sdk': 1.30.0(zod@4.6.7)
       zod: 4.6.7
     optionalDependencies:
       '@anthropic-ai/claude-agent-sdk-darwin-arm64': 0.3.300
@@ -3331,13 +3277,13 @@ snapshots:
       '@anthropic-ai/claude-agent-sdk-win32-arm64': 0.3.300
       '@anthropic-ai/claude-agent-sdk-win32-x64': 0.3.300
 
-  '@anthropic-ai/sdk@0.135.0(zod@3.25.76)':
+  '@anthropic-ai/sdk@0.135.0(zod@4.6.7)':
     dependencies:
       '@opentelemetry/api': 1.9.1
       json-schema-to-ts: 3.1.1
       standardwebhooks: 1.1.1
     optionalDependencies:
-      zod: 3.25.76
+      zod: 4.6.7
 
   '@babel/code-frame@7.29.7':
     dependencies:
@@ -3812,6 +3758,28 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
+  '@modelcontextprotocol/sdk@1.30.0(zod@4.6.7)':
+    dependencies:
+      '@hono/node-server': 2.0.12(hono@4.12.33)
+      ajv: 8.20.0
+      ajv-formats: 3.0.1(ajv@8.20.0)
+      content-type: 1.0.5
+      cors: 2.8.6
+      cross-spawn: 7.0.6
+      eventsource: 3.0.7
+      eventsource-parser: 3.1.0
+      express: 5.2.1
+      express-rate-limit: 8.6.1(express@5.2.1)
+      hono: 4.12.33
+      jose: 6.2.7
+      json-schema-typed: 8.0.2
+      pkce-challenge: 5.0.1
+      raw-body: 3.0.2
+      zod: 4.6.7
+      zod-to-json-schema: 3.25.2(zod@4.6.7)
+    transitivePeerDependencies:
+      - supports-color
+
   '@napi-rs/wasm-runtime@1.2.2(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0)':
     dependencies:
       '@emnapi/core': 1.10.0
@@ -4230,33 +4198,6 @@ snapshots:
       d3-interpolate: 3.0.1
       d3-selection: 3.0.0
       d3-zoom: 3.0.0
-
-  '@zed-industries/codex-acp-darwin-arm64@0.16.0':
-    optional: true
-
-  '@zed-industries/codex-acp-darwin-x64@0.16.0':
-    optional: true
-
-  '@zed-industries/codex-acp-linux-arm64@0.16.0':
-    optional: true
-
-  '@zed-industries/codex-acp-linux-x64@0.16.0':
-    optional: true
-
-  '@zed-industries/codex-acp-win32-arm64@0.16.0':
-    optional: true
-
-  '@zed-industries/codex-acp-win32-x64@0.16.0':
-    optional: true
-
-  '@zed-industries/codex-acp@0.16.0':
-    optionalDependencies:
-      '@zed-industries/codex-acp-darwin-arm64': 0.16.0
-      '@zed-industries/codex-acp-darwin-x64': 0.16.0
-      '@zed-industries/codex-acp-linux-arm64': 0.16.0
-      '@zed-industries/codex-acp-linux-x64': 0.16.0
-      '@zed-industries/codex-acp-win32-arm64': 0.16.0
-      '@zed-industries/codex-acp-win32-x64': 0.16.0
 
   accepts@2.0.0:
     dependencies:
@@ -6613,6 +6554,10 @@ snapshots:
   zod-to-json-schema@3.25.2(zod@3.25.76):
     dependencies:
       zod: 3.25.76
+
+  zod-to-json-schema@3.25.2(zod@4.6.7):
+    dependencies:
+      zod: 4.6.7
 
   zod-validation-error@4.0.2(zod@4.4.3):
     dependencies:

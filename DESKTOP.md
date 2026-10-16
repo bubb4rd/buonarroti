@@ -44,14 +44,13 @@ hosted/web deployment.
 - The webview's first URL carries `?desktop=1` (dev and packaged), and Tauri
   injects `window.__TAURI_INTERNALS__`; the web UI uses either as its desktop
   signal.
-- **ACP agents** (`lib/acp/`, see README "Use your own subscriptions"): the
-  Claude and Codex adapters (`@agentclientprotocol/claude-agent-acp`,
-  `@zed-industries/codex-acp`) are prod deps, so the clean `npm install` above
-  stages them — including their per-platform native binaries
-  (`@anthropic-ai/claude-agent-sdk-<platform>/claude`,
-  `@zed-industries/codex-acp-<platform>/bin/codex-acp`), which `build-server.mjs`
-  checks for and codesigns. They are spawned with the bundled Node
-  (`process.execPath`), never via `npx`. Because a Finder-launched app gets a bare
+- **ACP agents** (`lib/acp/`, see README "Use your own subscriptions"): only the
+  small Claude adapter (`@agentclientprotocol/claude-agent-acp`) ships; the
+  agents are the user's own installs — `claude` (passed to the adapter as
+  `CLAUDE_CODE_EXECUTABLE`), `codex-acp`, `gemini`. `build-server.mjs` checks the
+  adapter is staged and prunes the Agent SDK's bundled Claude Code binary
+  (`@anthropic-ai/claude-agent-sdk-<platform>`, ~240 MB). The adapter runs on the
+  bundled Node (`process.execPath`), never via `npx`. Because a Finder-launched app gets a bare
   `PATH`, `lib/acp/shellEnv.ts` reads the login shell's `PATH` (plus agent API-key
   vars) once at startup, falling back to Homebrew / `~/.local/bin` / nvm dirs,
   so a user-installed `gemini` is found. Agent processes are killed when the
@@ -142,8 +141,7 @@ login keychain + notarization credentials.
    ```
 
 With `APPLE_SIGNING_IDENTITY` set, `build-server.mjs` codesigns the Mach-O in
-the staged server — the bundled `node` runtime, the `claude` / `codex-acp` agent
-binaries, and sharp's `.node`/`.dylib` —
+the staged server — the bundled `node` runtime and sharp's `.node`/`.dylib` —
 with hardened runtime + entitlements; Tauri then signs the app shell + the
 `buonarroti-node` sidecar shim, notarizes, and staples. Entitlements are in
 `src-tauri/entitlements.plist` (JIT + unsigned-exec-memory +

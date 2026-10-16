@@ -18,7 +18,6 @@ import {
   readdirSync,
 } from "node:fs";
 import { join, dirname, sep } from "node:path";
-import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -163,49 +162,22 @@ for (const probe of ["next/package.json", "@next/env/package.json", "react/packa
   }
 }
 
-// ACP agent adapters (lib/acp) are spawned, never imported, so nothing above
-// proves they're complete. Each ships its agent as a platform-specific native
-// binary via optionalDependencies — npm installs only this platform's. Resolve
-// them the same way the adapters do and fail the build if one is missing.
-const EXE_SUFFIX = process.platform === "win32" ? ".exe" : "";
-/** Resolve `chain[last]` as seen from each previous package in turn (nested installs included). */
-function resolveChain(...chain) {
-  let req = createRequire(join(STAGE, "package.json"));
-  let resolved = "";
-  for (const request of chain) {
-    resolved = req.resolve(request);
-    req = createRequire(resolved);
-  }
-  return resolved;
+// ACP: only the small Claude adapter ships (lib/acp spawns it, so the tracer
+// can't prove it's present). The agents themselves — Claude Code, codex-acp,
+// Gemini CLI — are the user's own installs, found on their shell PATH.
+const claudeAdapter = join(STAGE, "node_modules", "@agentclientprotocol", "claude-agent-acp", "dist", "index.js");
+if (!existsSync(claudeAdapter)) {
+  throw new Error(`staged install is missing the Claude ACP adapter: ${claudeAdapter}`);
 }
-const acpBinaries = [];
-try {
-  const claudeBin = join(
-    dirname(
-      resolveChain(
-        "@agentclientprotocol/claude-agent-acp/dist/index.js",
-        "@anthropic-ai/claude-agent-sdk",
-        `@anthropic-ai/claude-agent-sdk-${process.platform}-${process.arch}/package.json`,
-      ),
-    ),
-    `claude${EXE_SUFFIX}`,
-  );
-  const codexBin = join(
-    dirname(
-      resolveChain(
-        "@zed-industries/codex-acp/package.json",
-        `@zed-industries/codex-acp-${process.platform}-${process.arch}/package.json`,
-      ),
-    ),
-    "bin",
-    `codex-acp${EXE_SUFFIX}`,
-  );
-  for (const bin of [claudeBin, codexBin]) {
-    if (!existsSync(bin)) throw new Error(`missing ${bin}`);
-    acpBinaries.push(bin);
-  }
-} catch (err) {
-  throw new Error(`staged install is missing an ACP agent adapter: ${err.message}`);
+// The Agent SDK pulls in its own ~240 MB Claude Code binary as an optional
+// platform package; the adapter is pointed at the user's `claude` instead
+// (CLAUDE_CODE_EXECUTABLE), so drop every copy wherever npm nested it.
+for (const dir of execFileSync(
+  "find",
+  [join(STAGE, "node_modules"), "-type", "d", "-path", "*/@anthropic-ai/claude-agent-sdk-*", "-prune"],
+  { encoding: "utf8" },
+).split("\n").filter(Boolean)) {
+  rmSync(dir, { recursive: true, force: true });
 }
 
 // Prune what a prebuilt standalone server never loads at runtime:
@@ -284,7 +256,7 @@ if (process.platform === "darwin" && process.env.APPLE_SIGNING_IDENTITY) {
   )
     .split("\n")
     .filter(Boolean);
-  macho.push(nodeDest, ...acpBinaries); // the bundled Node runtime + ACP agent binaries (JIT: same entitlements)
+  macho.push(nodeDest); // the bundled Node runtime (JIT: same entitlements)
   console.log(`[desktop] codesigning ${macho.length} Mach-O files…`);
   for (const f of macho) {
     run("codesign", [

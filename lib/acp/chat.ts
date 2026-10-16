@@ -169,7 +169,7 @@ export async function runAcpChat(req: AcpChatRequest): Promise<AcpChatResult> {
     release();
     if (entry && key) forget(key, entry);
     if (isAuthError(err) || isAuthError(agent.stderr)) {
-      const info = await needsLoginInfo(agentId);
+      const info = needsLoginInfo(agentId);
       setAgentStatus(info);
       return { ok: false, status: 401, error: `${info.detail} ${info.setupHint}`, code: "auth" };
     }
@@ -285,7 +285,7 @@ export async function runAcpChat(req: AcpChatRequest): Promise<AcpChatResult> {
             if (isAuthError(err) || isAuthError(agent.stderr)) {
               code = "auth";
               message = `${spec.name} isn't signed in. ${spec.loginHint}`;
-              void needsLoginInfo(agentId).then(setAgentStatus);
+              setAgentStatus(needsLoginInfo(agentId));
             } else {
               message = `${spec.name} had a problem answering. Try again in a moment.`;
               console.error(`[assistant] ${agentId} prompt failed`, err instanceof Error ? err.message : err);

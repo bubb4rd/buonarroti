@@ -308,7 +308,7 @@ async function startAgent(id: AgentId): Promise<AgentProcess> {
 
   const child = spawn(launch.command, launch.args, {
     cwd: sandboxDir(id),
-    env,
+    env: launch.env ? { ...env, ...launch.env } : env,
     stdio: ["pipe", "pipe", "pipe"],
     windowsHide: true,
   });

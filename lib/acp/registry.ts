@@ -1,15 +1,14 @@
 // Server-only. How to find, launch and isolate each ACP agent.
 
 import { execFile } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import { createRequire } from "node:module";
-import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import type { AgentId } from "@/lib/agentModels";
 import { findExecutable } from "./shellEnv";
 
 export type Launch =
-  | { ok: true; command: string; args: string[] }
+  | { ok: true; command: string; args: string[]; env?: Record<string, string> }
   | { ok: false; status: "not_installed" | "needs_login" | "error"; detail: string; setupHint?: string };
 
 export interface AgentSpec {
@@ -46,12 +45,26 @@ const EXE = process.platform === "win32" ? ".exe" : "";
 const NEUTRAL_SYSTEM_PROMPT =
   "You are a helpful writing assistant. Answer in plain text. You have no tools and cannot read or change files.";
 
+const CLAUDE_INSTALL_HINT =
+  "Install Claude Code (`npm i -g @anthropic-ai/claude-code`), then run `claude` once in Terminal to sign in.";
+
 const claude: AgentSpec = {
   id: "claude",
   name: "Claude",
   via: "Claude Code subscription",
   loginHint: "Run `claude` once in Terminal to sign in.",
-  async resolveLaunch() {
+  async resolveLaunch(env) {
+    // The agent itself is the user's own Claude Code install; we only ship
+    // the small ACP adapter that talks to it.
+    const cli = findExecutable("claude", env);
+    if (!cli) {
+      return {
+        ok: false,
+        status: "not_installed",
+        detail: "Claude Code isn't installed on this computer.",
+        setupHint: CLAUDE_INSTALL_HINT,
+      };
+    }
     const dir = packageDir("@agentclientprotocol/claude-agent-acp");
     const bin = dir && join(dir, "dist", "index.js");
     if (!bin || !existsSync(bin)) {
@@ -64,7 +77,7 @@ const claude: AgentSpec = {
     }
     // Run the adapter with the very Node running this server (the bundled
     // runtime in the desktop app) — no npx, no reliance on the user's Node.
-    return { ok: true, command: process.execPath, args: [bin] };
+    return { ok: true, command: process.execPath, args: [bin], env: { CLAUDE_CODE_EXECUTABLE: cli } };
   },
   sessionMeta(systemPrompt) {
     return {
@@ -91,38 +104,29 @@ const claude: AgentSpec = {
   nativeSystemPrompt: true,
 };
 
+const CODEX_INSTALL_HINT =
+  "Install Codex and its ACP adapter (`npm i -g @openai/codex @zed-industries/codex-acp`), then run `codex login` in Terminal.";
+
 const codex: AgentSpec = {
   id: "codex",
   name: "Codex",
   via: "ChatGPT / Codex",
   loginHint: "Run `codex login` in Terminal.",
-  async resolveLaunch() {
-    const dir = packageDir("@zed-industries/codex-acp");
-    if (!dir) {
-      return {
-        ok: false,
-        status: "error",
-        detail: "The bundled Codex adapter is missing from this install.",
-        setupHint: "Reinstall Buonarroti, then retry.",
-      };
-    }
-    // Spawn the platform binary directly (the package's JS shim would add a
-    // second process that doesn't forward kill signals).
-    const platformDir = packageDir(
-      `@zed-industries/codex-acp-${process.platform}-${process.arch}`,
-      createRequire(join(dir, "package.json")),
-    );
-    const native = platformDir && join(platformDir, "bin", `codex-acp${EXE}`);
-    if (!native || !existsSync(native)) {
+  async resolveLaunch(env) {
+    // codex-acp is Codex itself behind ACP; the user installs it.
+    const native = findExecutable("codex-acp", env);
+    if (!native) {
       return {
         ok: false,
         status: "not_installed",
-        detail: `Codex isn't available for ${process.platform}-${process.arch}.`,
+        detail: "The Codex ACP adapter isn't installed on this computer.",
+        setupHint: CODEX_INSTALL_HINT,
       };
     }
+    const command = nativeCodexAcp(native) ?? native;
     return {
       ok: true,
-      command: native,
+      command,
       // `-c` overrides beat ~/.codex/config.toml: no MCP servers, no AGENTS.md,
       // no web search, read-only sandbox, and every action needs approval
       // (which this client always rejects).
@@ -139,6 +143,25 @@ const codex: AgentSpec = {
   sessionMeta: () => undefined,
   nativeSystemPrompt: false,
 };
+
+/**
+ * `npm i -g @zed-industries/codex-acp` puts a JS shim on PATH that spawns the
+ * platform binary and doesn't forward kill signals. Find that binary next to
+ * the shim so stopping a chat really stops Codex; null → use the shim.
+ */
+function nativeCodexAcp(shim: string): string | null {
+  try {
+    const pkgDir = dirname(dirname(realpathSync(shim))); // <pkg>/bin/codex-acp.js → <pkg>
+    const platformDir = packageDir(
+      `@zed-industries/codex-acp-${process.platform}-${process.arch}`,
+      createRequire(join(pkgDir, "package.json")),
+    );
+    const bin = platformDir && join(platformDir, "bin", `codex-acp${EXE}`);
+    return bin && existsSync(bin) ? bin : null;
+  } catch {
+    return null;
+  }
+}
 
 /** `gemini --help` text, cached per binary path. */
 const geminiHelp = new Map<string, Promise<string>>();
@@ -197,8 +220,3 @@ const gemini: AgentSpec = {
 };
 
 export const AGENT_SPECS: Record<AgentId, AgentSpec> = { claude, codex, gemini };
-
-/** Whether the user has any Codex credentials at all (used to pick the hint). */
-export function hasCodexCli(env: NodeJS.ProcessEnv): boolean {
-  return findExecutable("codex", env) !== null || existsSync(join(env.CODEX_HOME || join(homedir(), ".codex"), "auth.json"));
-}

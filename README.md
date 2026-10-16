@@ -104,9 +104,12 @@ and lists whatever models your plan offers — nothing is hardcoded.
 
 | Agent | How it signs in |
 | --- | --- |
-| **Claude** (Claude Code) | Uses your existing Claude Code login. Never used it? Run `claude` once in Terminal and sign in (or set `ANTHROPIC_API_KEY`). The adapter ships with Buonarroti. |
-| **Codex** (ChatGPT) | Uses your Codex login. Install the CLI (`npm i -g @openai/codex`), then run `codex login` (or set `OPENAI_API_KEY`). The adapter ships with Buonarroti. |
-| **Gemini** (Gemini CLI) | Install it with `npm i -g @google/gemini-cli`, then run `gemini` once to sign in. Buonarroti finds it on your shell `PATH`. |
+| **Claude** (Claude Code) | Install Claude Code (`npm i -g @anthropic-ai/claude-code`), then run `claude` once in Terminal and sign in (or set `ANTHROPIC_API_KEY`). |
+| **Codex** (ChatGPT) | Install Codex and its ACP adapter (`npm i -g @openai/codex @zed-industries/codex-acp`), then run `codex login` (or set `OPENAI_API_KEY`). |
+| **Gemini** (Gemini CLI) | Install it with `npm i -g @google/gemini-cli`, then run `gemini` once to sign in. |
+
+Buonarroti doesn't bundle any of these: it finds them on your shell `PATH` and
+uses whichever you have.
 
 **Settings → Subscriptions** shows each one as ready, needing sign-in, or not
 installed, with the exact command to fix it; **Check again** re-tests after you

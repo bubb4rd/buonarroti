@@ -7,8 +7,7 @@ import { join } from "node:path";
 import { AGENT_IDS, isAgentId, type AgentId, type AgentInfo } from "@/lib/agentModels";
 import { DATA_DIR } from "@/lib/guest/paths";
 import { AgentUnavailableError, getAgent, isAuthError, stopAgent } from "./pool";
-import { AGENT_SPECS, hasCodexCli } from "./registry";
-import { getShellEnv } from "./shellEnv";
+import { AGENT_SPECS } from "./registry";
 
 const CACHE_FILE = join(DATA_DIR, "agents-cache.json");
 const STALE_MS = 10 * 60_000;
@@ -67,17 +66,13 @@ export function setAgentStatus(info: AgentInfo) {
   saveInfos();
 }
 
-export async function needsLoginInfo(id: AgentId, detail?: string): Promise<AgentInfo> {
+export function needsLoginInfo(id: AgentId, detail?: string): AgentInfo {
   const spec = AGENT_SPECS[id];
-  let setupHint = spec.loginHint;
-  if (id === "codex" && !hasCodexCli(await getShellEnv())) {
-    setupHint = "Install Codex CLI (`npm i -g @openai/codex`), then run `codex login` in Terminal.";
-  }
   return {
     ...base(id),
     status: "needs_login",
     detail: detail ?? `${spec.name} isn't signed in on this computer.`,
-    setupHint,
+    setupHint: spec.loginHint,
     models: [],
     checkedAt: Date.now(),
   };
