@@ -8,6 +8,7 @@
  * is used instead.
  */
 import { readFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { MEDIA_DIR } from "./guest/paths";
 
@@ -55,15 +56,20 @@ async function toDataUrl(input: string): Promise<string> {
   return `data:${mime};base64,${buf.toString("base64")}`;
 }
 
-// Cache so the same reference used in several input fields uploads once.
-const uploadCache = new Map<string, Promise<string>>();
+// The same reference used in several input fields (or several runs) uploads
+// once. Failed uploads are dropped so the next attempt retries; successes
+// expire well before kie.ai purges its temp files (3 days).
+const CACHE_TTL_MS = 12 * 60 * 60_000;
+const CACHE_MAX_ENTRIES = 200;
+const uploadCache = new Map<string, { url: Promise<string>; at: number }>();
 
 async function doUpload(input: string, apiKey: string): Promise<string> {
   const base64Data = await toDataUrl(input);
   const res = await fetch(UPLOAD_URL, {
     method: "POST",
     headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ base64Data, uploadPath: "heliosgen" }),
+    body: JSON.stringify({ base64Data, uploadPath: "buonarroti" }),
+    signal: AbortSignal.timeout(120_000),
   });
   const json = await res.json().catch(() => null);
   const url = json?.data?.downloadUrl;
@@ -74,21 +80,33 @@ async function doUpload(input: string, apiKey: string): Promise<string> {
 }
 
 function uploadOne(input: string, apiKey: string): Promise<string> {
-  let p = uploadCache.get(input);
-  if (!p) {
-    p = doUpload(input, apiKey);
-    uploadCache.set(input, p);
+  // data: URLs can be megabytes — key them by digest instead of holding the string twice.
+  const key = input.startsWith("data:") ? `sha256:${createHash("sha256").update(input).digest("hex")}` : input;
+  const hit = uploadCache.get(key);
+  if (hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.url;
+  uploadCache.delete(key);
+
+  const url = doUpload(input, apiKey);
+  uploadCache.set(key, { url, at: Date.now() });
+  url.catch(() => {
+    if (uploadCache.get(key)?.url === url) uploadCache.delete(key);
+  });
+  // Map iterates in insertion order, so the first key is the oldest.
+  while (uploadCache.size > CACHE_MAX_ENTRIES) {
+    const oldest = uploadCache.keys().next().value;
+    if (oldest === undefined) break;
+    uploadCache.delete(oldest);
   }
-  return p;
+  return url;
 }
 
 /**
- * Return the input list with any locally-hosted image swapped for a kie.ai
- * temporary URL. Already-public URLs pass through untouched. Throws if an upload
- * fails (the caller surfaces it — a silently dropped reference image is worse).
+ * Return a URL kie.ai can fetch for this image: already-public URLs pass
+ * through, local / data-URL images are pushed to kie.ai's temp store. Throws if
+ * the upload fails — the caller must surface it, never drop it silently.
  */
-export async function ensureKieReachableImages(urls: string[], apiKey: string): Promise<string[]> {
-  return Promise.all(urls.map((u) => (isRemotelyReachable(u) ? Promise.resolve(u) : uploadOne(u, apiKey))));
+export function ensureKieReachable(url: string, apiKey: string): Promise<string> {
+  return isRemotelyReachable(url) ? Promise.resolve(url) : uploadOne(url, apiKey);
 }
 
 /**

@@ -1,13 +1,82 @@
 export const dynamic = "force-dynamic";
 
+import { readFile, stat } from "node:fs/promises";
+import { extname, resolve, sep } from "node:path";
 import { NextRequest } from "next/server";
 import { getKieToken } from "@/lib/getKieToken";
 import { getAzureToken } from "@/lib/getAzureKey";
+import { parseAcpModelId } from "@/lib/agentModels";
+import { MEDIA_DIR } from "@/lib/guest/paths";
+import { runAcpChat, type ChatImage } from "@/lib/acp/chat";
 
 interface Message {
   role: "user" | "assistant" | "system";
   content: string;
+  /** Stored `/generated/...` image URLs attached to a user turn. */
+  images?: string[];
 }
+
+/** A message whose image URLs have been read from disk. */
+interface ResolvedMessage {
+  role: Message["role"];
+  content: string;
+  images: ChatImage[];
+}
+
+const MAX_IMAGES_PER_MESSAGE = 4;
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+const IMAGE_TYPES: Record<string, string> = {
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".webp": "image/webp",
+};
+
+/**
+ * Read a stored `/generated/<folder>/<file>` image from MEDIA_DIR (the same
+ * mapping `app/generated/[...path]/route.ts` serves). Anything else (remote
+ * URLs, traversal, non-images, oversized files) is skipped.
+ */
+async function loadImage(url: unknown): Promise<ChatImage | null> {
+  if (typeof url !== "string" || !url.startsWith("/generated/")) return null;
+  let rel: string;
+  try {
+    rel = decodeURIComponent(url.slice("/generated/".length).split(/[?#]/)[0]);
+  } catch {
+    return null;
+  }
+  const root = resolve(MEDIA_DIR);
+  const file = resolve(root, rel);
+  const mimeType = IMAGE_TYPES[extname(file).toLowerCase()];
+  if (!mimeType || rel.includes("\0") || !file.startsWith(root + sep)) return null;
+  try {
+    if ((await stat(file)).size > MAX_IMAGE_BYTES) return null;
+    return { url, mimeType, data: (await readFile(file)).toString("base64") };
+  } catch {
+    return null;
+  }
+}
+
+function resolveMessages(messages: Message[]): Promise<ResolvedMessage[]> {
+  return Promise.all(
+    messages.map(async (m) => {
+      const urls = m.role === "user" && Array.isArray(m.images) ? m.images.slice(0, MAX_IMAGES_PER_MESSAGE) : [];
+      const images = (await Promise.all(urls.map(loadImage))).filter((i): i is ChatImage => i !== null);
+      return { role: m.role, content: m.content, images };
+    }),
+  );
+}
+
+/** OpenAI chat/completions content parts; images as base64 data URLs. */
+function openAiParts(m: ResolvedMessage) {
+  return [
+    ...(m.content.trim() || m.images.length === 0 ? [{ type: "text", text: m.content }] : []),
+    ...m.images.map((i) => ({ type: "image_url", image_url: { url: `data:${i.mimeType};base64,${i.data}` } })),
+  ];
+}
+
+type ErrorCode = "credits" | "auth" | "invalid" | "upstream" | "rate_limited";
 
 // Models that use OpenAI-compatible chat/completions endpoint
 const OPENAI_COMPAT_ENDPOINTS: Record<string, string> = {
@@ -18,22 +87,119 @@ const OPENAI_COMPAT_ENDPOINTS: Record<string, string> = {
 
 const AZURE_API_VERSION = "2024-04-01-preview";
 
+const SSE_HEADERS = {
+  "Content-Type":      "text/event-stream",
+  "Cache-Control":     "no-cache, no-transform",
+  "Connection":        "keep-alive",
+  "X-Accel-Buffering": "no",
+};
+
+function jsonError(status: number, error: string, code?: ErrorCode) {
+  return new Response(JSON.stringify(code ? { error, code } : { error }), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+/** Map an upstream failure to a calm, actionable message. Raw bodies are logged, never returned. */
+function upstreamError(provider: "kie.ai" | "Azure", status: number) {
+  if (status === 401 || status === 403) {
+    return jsonError(401, `${provider} did not accept your API key. Check it in Settings, then retry.`, "auth");
+  }
+  if (status === 402) {
+    return jsonError(402, `${provider} is out of credits. Top up, then retry. Your message is saved.`, "credits");
+  }
+  if (status === 429) {
+    return jsonError(429, `${provider} is busy right now. Wait a moment, then retry.`, "rate_limited");
+  }
+  if (status === 400 || status === 404 || status === 422) {
+    return jsonError(400, `${provider} could not handle this request. Try another model, then retry.`, "invalid");
+  }
+  return jsonError(502, `${provider} had a problem answering. Try again in a moment.`, "upstream");
+}
+
+async function failFromUpstream(provider: "kie.ai" | "Azure", res: Response) {
+  const body = await res.text().catch(() => "");
+  console.error(`[assistant] ${provider} upstream error`, res.status, body.slice(0, 500));
+  let status = res.status;
+  // kie.ai sometimes answers HTTP 200 with a JSON envelope carrying the real status.
+  if (res.ok) {
+    status = 502;
+    try {
+      const parsed: unknown = JSON.parse(body);
+      if (parsed && typeof parsed === "object" && "code" in parsed) {
+        const code = Number(parsed.code);
+        if (Number.isFinite(code) && code >= 400) status = code;
+      }
+    } catch {
+      // not JSON: generic upstream failure
+    }
+  }
+  return upstreamError(provider, status);
+}
+
+async function forward(provider: "kie.ai" | "Azure", req: NextRequest, url: string, init: RequestInit) {
+  let upstream: Response;
+  try {
+    upstream = await fetch(url, { ...init, method: "POST", cache: "no-store", signal: req.signal });
+  } catch (err) {
+    if (err instanceof Error && err.name === "AbortError") return new Response(null, { status: 499 });
+    console.error(`[assistant] ${provider} unreachable`, err instanceof Error ? err.message : err);
+    return jsonError(502, `Could not reach ${provider}. Check your connection, then retry.`, "upstream");
+  }
+  // A JSON body on a "successful" response is an error envelope, not a stream.
+  const isJson = upstream.headers.get("content-type")?.includes("application/json");
+  if (!upstream.ok || !upstream.body || isJson) return failFromUpstream(provider, upstream);
+  return new Response(upstream.body, { headers: SSE_HEADERS });
+}
+
 export async function POST(req: NextRequest) {
-  const body = (await req.json()) as {
+  let body: {
     messages?: Message[];
     prompt?: string;
     systemPrompt?: string;
+    system?: string;
     model?: string;
+    /** Chat session / node id: lets ACP agents keep one warm session per conversation. */
+    conversationId?: string;
     azureEndpoint?: string;
     azureDeployment?: string;
     azureModelName?: string;
   };
+  try {
+    body = await req.json();
+  } catch {
+    return jsonError(400, "The request was not valid JSON.", "invalid");
+  }
 
   const model = body.model ?? "claude-sonnet-4-6";
 
+  // ── ACP agents (the user's own Claude Code / Codex / Gemini CLI) ───────────
+  const acpModel = parseAcpModelId(model);
+  if (acpModel) {
+    const all = Array.isArray(body.messages) ? body.messages.filter((m) => typeof m?.content === "string") : [];
+    const system = [body.system, body.systemPrompt, ...all.filter((m) => m.role === "system").map((m) => m.content)]
+      .map((s) => s?.trim())
+      .filter(Boolean)
+      .join("\n\n");
+    const turns = (await resolveMessages(all.filter((m) => m.role === "user" || m.role === "assistant"))).map(
+      (m) => ({ role: m.role as "user" | "assistant", content: m.content, images: m.images }),
+    );
+    if (turns.length === 0 && body.prompt?.trim()) turns.push({ role: "user", content: body.prompt.trim(), images: [] });
+    const result = await runAcpChat({
+      ...acpModel,
+      conversationId: typeof body.conversationId === "string" ? body.conversationId : undefined,
+      system: system || undefined,
+      messages: turns,
+      signal: req.signal,
+    });
+    if (!result.ok) return jsonError(result.status, result.error, result.code);
+    return new Response(result.body, { headers: SSE_HEADERS });
+  }
+
   let messages: Message[];
 
-  if (body.messages && body.messages.length > 0) {
+  if (Array.isArray(body.messages) && body.messages.length > 0) {
     messages = body.messages;
   } else if (body.prompt?.trim()) {
     messages = [];
@@ -43,20 +209,15 @@ export async function POST(req: NextRequest) {
     }
     messages.push({ role: "user", content: body.prompt.trim() });
   } else {
-    return new Response(JSON.stringify({ error: "messages or prompt is required" }), {
-      status: 400,
-      headers: { "Content-Type": "application/json" },
-    });
+    return jsonError(400, "Write a message first.", "invalid");
   }
+  const resolved = await resolveMessages(messages);
 
   // ── Azure Auto (model-router) ──────────────────────────────────────────────
   if (model === "azure-auto") {
     const azureKey = await getAzureToken(req);
     if (!azureKey) {
-      return new Response(
-        JSON.stringify({ error: "No Azure API key configured. Add one in Settings." }),
-        { status: 401, headers: { "Content-Type": "application/json" } }
-      );
+      return jsonError(401, "No Azure API key yet. Add one in Settings, then retry.", "auth");
     }
     // Normalise: strip trailing slashes and any /openai suffix users may have pasted
     const endpoint = (body.azureEndpoint ?? "")
@@ -66,20 +227,17 @@ export async function POST(req: NextRequest) {
     const deployment  = (body.azureDeployment || "auto-model").trim();
     const modelName   = (body.azureModelName  || "model-router").trim();
     if (!endpoint) {
-      return new Response(
-        JSON.stringify({ error: "Azure base URL not configured. Add it in Settings → API Keys." }),
-        { status: 400, headers: { "Content-Type": "application/json" } }
-      );
+      return jsonError(400, "Azure base URL is not set. Add it in Settings → API keys, then retry.", "invalid");
     }
     const url = `${endpoint}/openai/deployments/${deployment}/chat/completions?api-version=${AZURE_API_VERSION}`;
-    console.log("[azure-auto] POST", url.replace(/api-version=.*/, "api-version=…"));
-    const upstream = await fetch(url, {
-      method: "POST",
-      cache: "no-store",
+    return forward("Azure", req, url, {
       headers: { "api-key": azureKey, "Content-Type": "application/json" },
       body: JSON.stringify({
         model: modelName,
-        messages,
+        // Plain string content unless the turn carries images.
+        messages: resolved.map((m) =>
+          m.images.length ? { role: m.role, content: openAiParts(m) } : { role: m.role, content: m.content },
+        ),
         stream: true,
         max_tokens: 8192,
         temperature: 0.7,
@@ -88,87 +246,48 @@ export async function POST(req: NextRequest) {
         presence_penalty: 0,
       }),
     });
-    if (!upstream.ok) {
-      const errText = await upstream.text();
-      // Extract human-readable message from Azure error envelope
-      let errorMsg = errText;
-      try {
-        const parsed = JSON.parse(errText);
-        errorMsg = parsed?.error?.message ?? parsed?.message ?? errText;
-      } catch { /* use raw text */ }
-      console.error("[azure-auto] upstream error", upstream.status, errorMsg);
-      return new Response(
-        JSON.stringify({ error: `Azure ${upstream.status}: ${errorMsg}` }),
-        { status: upstream.status, headers: { "Content-Type": "application/json" } }
-      );
-    }
-    return new Response(upstream.body, {
-      headers: {
-        "Content-Type":      "text/event-stream",
-        "Cache-Control":     "no-cache, no-transform",
-        "Connection":        "keep-alive",
-        "X-Accel-Buffering": "no",
-      },
-    });
   }
 
   // ── Kie.ai models ─────────────────────────────────────────────────────────
   const apiKey = await getKieToken(req);
   if (!apiKey) {
-    return new Response(
-      JSON.stringify({ error: "No Kie.ai API key configured. Add one in Settings." }),
-      { status: 401, headers: { "Content-Type": "application/json" } }
-    );
+    return jsonError(401, "No kie.ai API key yet. Add one in Settings, then retry.", "auth");
   }
 
+  const headers = { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" };
   const openaiEndpoint = OPENAI_COMPAT_ENDPOINTS[model];
 
-  const upstream = openaiEndpoint
-    ? await fetch(openaiEndpoint, {
-        method: "POST",
-        cache: "no-store",
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          messages: messages.map(m => ({
-            role: m.role,
-            content: [{ type: "text", text: m.content }],
-          })),
-          stream: true,
-        }),
-      })
-    : await fetch("https://api.kie.ai/claude/v1/messages", {
-        method: "POST",
-        cache: "no-store",
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model,
-          messages,
-          stream: true,
-          thinkingFlag: true,
-          max_tokens: 4096,
-        }),
-      });
-
-  if (!upstream.ok) {
-    const errText = await upstream.text();
-    return new Response(JSON.stringify({ error: errText }), {
-      status: upstream.status,
-      headers: { "Content-Type": "application/json" },
+  if (openaiEndpoint) {
+    return forward("kie.ai", req, openaiEndpoint, {
+      headers,
+      body: JSON.stringify({
+        messages: resolved.map((m) => ({ role: m.role, content: openAiParts(m) })),
+        stream: true,
+      }),
     });
   }
 
-  return new Response(upstream.body, {
-    headers: {
-      "Content-Type":       "text/event-stream",
-      "Cache-Control":      "no-cache, no-transform",
-      "Connection":         "keep-alive",
-      "X-Accel-Buffering":  "no",
-    },
+  return forward("kie.ai", req, "https://api.kie.ai/claude/v1/messages", {
+    headers,
+    body: JSON.stringify({
+      model,
+      messages: resolved.map((m) =>
+        m.images.length
+          ? {
+              role: m.role,
+              content: [
+                ...m.images.map((i) => ({
+                  type: "image",
+                  source: { type: "base64", media_type: i.mimeType, data: i.data },
+                })),
+                ...(m.content.trim() ? [{ type: "text", text: m.content }] : []),
+              ],
+            }
+          : { role: m.role, content: m.content },
+      ),
+      stream: true,
+      thinkingFlag: true,
+      max_tokens: 4096,
+    }),
   });
 }

@@ -1,7 +1,7 @@
 /**
  * Desktop update check. Asks the GitHub Releases API whether a newer tag than
  * the running build exists and hands the frontend (`components/UpdateBanner.tsx`)
- * everything it needs to show the "Update available" bar + changelog modal.
+ * everything it needs to show the "update ready" notice + release-notes dialog.
  *
  * No self-install — the banner just links to the release page. The running
  * version is `NEXT_PUBLIC_APP_VERSION`, baked from `src-tauri/tauri.conf.json`
@@ -12,7 +12,7 @@ import { NextResponse } from "next/server";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const REPO = "SegFault42/HeliosGen";
+const REPO = "bubb4rd/buonarroti";
 const RELEASES_API = `https://api.github.com/repos/${REPO}/releases/latest`;
 const RELEASES_PAGE = `https://github.com/${REPO}/releases/latest`;
 const CACHE_TTL_MS = 60 * 60 * 1000; // 1h — GitHub unauthenticated limit is 60/h
@@ -65,7 +65,7 @@ async function check(): Promise<UpdatePayload> {
     const res = await fetch(RELEASES_API, {
       headers: {
         Accept: "application/vnd.github+json",
-        "User-Agent": `HeliosGen-Desktop/${CURRENT_VERSION}`,
+        "User-Agent": `Buonarroti-Desktop/${CURRENT_VERSION}`,
       },
       signal: AbortSignal.timeout(10_000),
     });

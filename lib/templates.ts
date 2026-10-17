@@ -41,7 +41,7 @@ const IMG_PROMPTS = [
 ];
 
 const VID_PROMPTS = [
-  `Static, locked-off shot using the exact same framing as the reference  @Image Generator #1 .
+  `Static, locked-off shot using the exact same framing as the reference  @Image generator #1 .
 Do not alter facial proportions, eye shape, or hairstyle.
 Subject faces the camera directly in a vlog style.
 
@@ -169,7 +169,7 @@ export function makeUGCTemplate(): {
       position: { x: base + X_OFFSET * 2, y: 0 },
       style: { width: 320, height: 220 },
       data: {
-        label: `Video Generator #${i + 1}`,
+        label: `Video generator #${i + 1}`,
         status: "done",
         videoModel: "seedance-2",
         aspectRatio: "9:16",
@@ -187,7 +187,7 @@ export function makeUGCTemplate(): {
       position: { x: base, y: 620 },
       style: { width: 280, height: 280 },
       data: {
-        label: `Image Generator #${i + 1}`,
+        label: `Image generator #${i + 1}`,
         status: "done",
         model: "nano-banana-pro",
         aspectRatio: "9:16",

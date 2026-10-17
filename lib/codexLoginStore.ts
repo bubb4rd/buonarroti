@@ -2,8 +2,7 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync } from "fs";
 import { join } from "path";
 import { DATA_DIR } from "./guest/paths";
 
-// File-based (not in-memory) so state survives Next.js dev's module reloads —
-// same pattern as lib/jobStore.ts.
+// File-based (not in-memory) so state survives Next.js dev's module reloads.
 export type CodexLoginState =
   | { status: "idle" }
   | { status: "pending"; url: string; code: string; startedAt: number }

@@ -2,8 +2,11 @@
 import { useEffect, useRef } from "react";
 import { useReactFlow, Node, Edge } from "@xyflow/react";
 import { useWorkflowStore, NodeData } from "@/lib/store";
-import { edgeStyle, EDGE_COLORS } from "@/lib/edgeStyles";
-import { NODES, NODE_SIZE, FALLBACK_SIZE, NODE_META, getLastNodeSettings, getDefaultNodeSize } from "@/lib/nodeTypes";
+import { edgeStyle } from "@/lib/edgeStyles";
+import { NODES, NODE_SIZE, FALLBACK_SIZE, NODE_META, TypeBadge, getLastNodeSettings, getDefaultNodeSize, nextNodeLabel, gameStepOf, gameOutHandle, gamePortFor, gamePortSources, GAME_NODES, GAME_NODE_TYPES } from "@/lib/nodeTypes";
+import { STEP_IO } from "@/lib/game/artifacts";
+import { floatingPanelClass } from "@/components/ui/floating-toolbar";
+import { cn } from "@/lib/utils";
 import { VIDEO_MODELS, IMAGE_MODELS } from "@/lib/modelConfig";
 
 // Extract the aspect ratio as a float from any source node type
@@ -31,8 +34,13 @@ function closestRatio(ratioFloat: number, candidates: string[]): string | null {
   });
 }
 
-// Node types whose OUTPUT can feed a given input handle
-function sourceNodeTypesFor(targetHandle: string | null): string[] {
+// Node types whose OUTPUT can feed a given input handle (of a node of `targetNodeType`)
+function sourceNodeTypesFor(targetHandle: string | null, targetNodeType: string | undefined): string[] {
+  const step = gameStepOf(targetNodeType);
+  if (step) {
+    const port = STEP_IO[step].inputs.find((p) => p.id === targetHandle);
+    return port ? gamePortSources(port) : [];
+  }
   switch (targetHandle) {
     case "prompt":                         return ["promptNode", "assistantNode"];
     case "image":
@@ -47,6 +55,8 @@ function sourceNodeTypesFor(targetHandle: string | null): string[] {
 
 // The output handle ID to use on a newly-created source node for a given target handle
 function outputHandleForNewNode(newNodeType: string, targetHandle: string): string | undefined {
+  const step = gameStepOf(newNodeType);
+  if (step) return gameOutHandle(step);
   if (newNodeType === "videoInputNode") {
     if (targetHandle === "videoRef" || targetHandle === "referenceVideo") return "videoRefOut";
     if (targetHandle === "startFrame") return "startFrameOut";
@@ -54,30 +64,6 @@ function outputHandleForNewNode(newNodeType: string, targetHandle: string): stri
   }
   return undefined;
 }
-
-// Y offset (from node top) of an input handle, used to anchor the preview line
-function inputHandleTopY(nodeType: string | undefined, handleId: string | null, nodeH: number): number {
-  if (nodeType === "generateNode") {
-    if (handleId === "prompt") return nodeH - 90; // calc(100% - 90px) for models with supportsImages
-    if (handleId === "image")  return nodeH - 52;
-  }
-  if (nodeType === "videoGeneratorNode") {
-    // Handles are bottom-anchored: bottom = 52 + idx * 38 → top = nodeH - that
-    const ORDER = ["prompt", "startFrame", "endFrame", "resource", "videoRef", "referenceVideo", "audioRef"];
-    const idx = handleId ? ORDER.indexOf(handleId) : 0;
-    if (idx >= 0) return nodeH - (52 + idx * 38);
-  }
-  return nodeH / 2;
-}
-
-const NODE_DISPLAY_NAMES: Record<string, string> = {
-  videoInputNode:     "VIDEO",
-  imageInputNode:     "IMAGE",
-  promptNode:         "TEXT",
-  generateNode:       "IMAGE GEN",
-  videoGeneratorNode: "VIDEO GEN",
-  assistantNode:      "ASSISTANT",
-};
 
 export interface DropState {
   screenX: number;
@@ -101,6 +87,10 @@ function targetHandleFor(
   targetNodeType: string,
   sourceHandleId: string | null,
 ): string | null {
+  // Game nodes: the target step's port that takes this source, if any
+  const targetStep = gameStepOf(targetNodeType);
+  if (targetStep) return gamePortFor(targetStep, sourceNodeType, sourceHandleId)?.id ?? null;
+  if (gameStepOf(sourceNodeType)) return null;
   // Typed output handles take priority
   if (sourceHandleId) {
     switch (sourceHandleId) {
@@ -174,10 +164,9 @@ export default function NodePickerMenu({ dropState, onClose }: Props) {
     };
 
     const nodesInStore = storeState.nodes;
-    const count  = nodesInStore.filter((n) => n.type === type).length + 1;
-    const label  = `${NODE_DISPLAY_NAMES[type] ?? type} #${count}`;
+    const label  = nextNodeLabel(type, nodesInStore);
 
-    const nodeStyle = ["imageInputNode", "videoInputNode", "generateNode", "videoGeneratorNode"].includes(type)
+    const nodeStyle = ["imageInputNode", "videoInputNode", "generateNode", "videoGeneratorNode"].includes(type) || gameStepOf(type)
       ? { width: size.w }
       : { width: size.w, height: size.h };
 
@@ -247,24 +236,26 @@ export default function NodePickerMenu({ dropState, onClose }: Props) {
   };
 
   // ── Pending connection line ──────────────────────────────────────────────────
+  // Anchored to the dragged handle's on-screen centre; falls back to the node's
+  // edge midpoint if the handle isn't in the DOM.
   const isInput = dropState.isInputHandle === true;
-  const internal = getInternalNode(dropState.sourceNodeId);
-  const absX  = internal?.internals?.positionAbsolute?.x ?? 0;
-  const absY  = internal?.internals?.positionAbsolute?.y ?? 0;
-  const nodeW = internal?.measured?.width  ?? (NODE_SIZE[dropState.sourceNodeType ?? ""] ?? FALLBACK_SIZE).w;
-  const nodeH = internal?.measured?.height ?? (NODE_SIZE[dropState.sourceNodeType ?? ""] ?? FALLBACK_SIZE).h;
-
+  const handleEl = document.querySelector(
+    `.react-flow__node[data-id="${CSS.escape(dropState.sourceNodeId)}"] .react-flow__handle${
+      dropState.sourceHandleId ? `[data-handleid="${CSS.escape(dropState.sourceHandleId)}"]` : isInput ? ".target" : ".source"
+    }`,
+  );
   let src: { x: number; y: number };
-  if (isInput) {
-    // Line goes from the INPUT handle (left side of node) to the drop point
-    const hy = inputHandleTopY(dropState.sourceNodeType, dropState.sourceHandleId, nodeH);
-    src = flowToScreenPosition({ x: absX, y: absY + hy });
+  if (handleEl) {
+    const r = handleEl.getBoundingClientRect();
+    src = { x: r.left + r.width / 2, y: r.top + r.height / 2 };
   } else {
-    // Line goes from the OUTPUT handle (right side of node) to the drop point
-    const MULTI_OUT_IDS = ["startFrameOut", "endFrameOut", "imagePickOut", "videoRefOut", "audioRefOut"];
-    const multiIdx = dropState.sourceHandleId ? MULTI_OUT_IDS.indexOf(dropState.sourceHandleId) : -1;
-    const hy = multiIdx >= 0 ? 20 + multiIdx * 32 : 20;
-    src = flowToScreenPosition({ x: absX + nodeW, y: absY + hy });
+    const internal = getInternalNode(dropState.sourceNodeId);
+    const absX  = internal?.internals?.positionAbsolute?.x ?? 0;
+    const absY  = internal?.internals?.positionAbsolute?.y ?? 0;
+    const size  = NODE_SIZE[dropState.sourceNodeType ?? ""] ?? FALLBACK_SIZE;
+    const nodeW = internal?.measured?.width  ?? size.w;
+    const nodeH = internal?.measured?.height ?? size.h;
+    src = flowToScreenPosition({ x: isInput ? absX : absX + nodeW, y: absY + nodeH / 2 });
   }
   const dst = { x: dropState.screenX, y: dropState.screenY };
 
@@ -277,26 +268,25 @@ export default function NodePickerMenu({ dropState, onClose }: Props) {
 
   // ── Node list ────────────────────────────────────────────────────────────────
   const HANDLE_ONLY_VIDEO_GEN = new Set(["videoRefOut", "audioRefOut"]);
+  const sourceStep = gameStepOf(dropState.sourceNodeType);
+  // Game nodes appear only where one of their ports takes this source.
+  const gameTargetTypes: string[] = GAME_NODE_TYPES.filter((t) => gamePortFor(GAME_NODES[t].step, dropState.sourceNodeType, dropState.sourceHandleId));
   const linkable = isInput
     ? (() => {
-        const allowed = new Set(sourceNodeTypesFor(dropState.sourceHandleId));
+        const allowed = new Set(sourceNodeTypesFor(dropState.sourceHandleId, dropState.sourceNodeType));
         return NODES.filter((n) => allowed.has(n.type));
       })()
     : NODES.filter((n) => {
         if (!n.canReceiveConnection) return false;
+        if (sourceStep || gameStepOf(n.type)) return gameTargetTypes.includes(n.type);
         if (dropState.sourceHandleId && HANDLE_ONLY_VIDEO_GEN.has(dropState.sourceHandleId)) {
           return n.type === "videoGeneratorNode";
         }
         return true;
       });
 
-  // Preview line color
-  const lineColor = isInput
-    ? EDGE_COLORS[dropState.sourceHandleId ?? "default"] ?? EDGE_COLORS.default
-    : EDGE_COLORS[targetHandleFor(dropState.sourceNodeType, linkable[0]?.type ?? "", dropState.sourceHandleId) ?? "default"] ?? EDGE_COLORS.default;
-
-  const menuW = 224;
-  const menuH = linkable.length * 58 + 36;
+  const menuW = 240;
+  const menuH = linkable.length * 52 + 40;
   const left  = isInput
     ? Math.max(dropState.screenX - menuW - 16, 16)
     : Math.min(dropState.screenX + 16, window.innerWidth - menuW - 16);
@@ -319,67 +309,39 @@ export default function NodePickerMenu({ dropState, onClose }: Props) {
         <path
           d={svgPath}
           fill="none"
-          stroke={lineColor}
-          strokeWidth={2}
-          strokeDasharray="6 3"
+          strokeWidth={1.5}
+          strokeDasharray="6 4"
           strokeDashoffset={0}
           strokeLinecap="round"
           className="pending-edge-line"
-          opacity={0.75}
+          style={{ stroke: "var(--edge-stroke-active)" }}
         />
       </svg>
 
       {/* Node picker */}
       <div
         ref={menuRef}
-        style={{ position: "fixed", left, top, zIndex: 1000 }}
-        className="w-56 bg-[#0F1214] border border-[#2A2A2A] rounded-lg shadow-2xl overflow-hidden"
+        style={{ position: "fixed", left, top, width: menuW, zIndex: 1000 }}
+        className={cn(floatingPanelClass, "overflow-hidden p-1.5 animate-in fade-in-0 zoom-in-95 duration-150")}
         onMouseDown={(e) => e.stopPropagation()}
       >
-        <div className="px-3 py-2 border-b border-[#1E1E1E]">
-          <p className="text-[10px] text-[#4A4A45] uppercase tracking-widest font-medium">
-            Connect to
-          </p>
-        </div>
+        <p className="type-label px-2.5 pt-1.5 pb-1">Connect to</p>
 
-        {linkable.map((n) => {
-          const meta = NODE_META[n.type];
-          return (
-            <button
-              key={n.type}
-              onClick={() => handleSelect(n.type)}
-              onMouseDown={(e) => e.stopPropagation()}
-              className="w-full text-left px-3 py-2.5 hover:bg-[#161A1E] transition-colors"
-            >
-              <div className="flex items-center gap-2.5">
-                <span
-                  style={{
-                    flexShrink: 0,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    width: "30px",
-                    height: "30px",
-                    borderRadius: "8px",
-                    background: meta?.bg ?? "rgba(255,255,255,0.06)",
-                    color: meta?.accent ?? "#aaa",
-                    border: `1px solid ${meta?.accent ?? "#333"}28`,
-                  }}
-                >
-                  {meta?.bigIcon ?? n.icon}
-                </span>
-                <span className="flex flex-col gap-0.5 min-w-0">
-                  <span className="text-[13px] text-white font-medium leading-none">
-                    {n.label}
-                  </span>
-                  <span className="text-[10px] text-[#4A4A45] leading-none">
-                    {n.description}
-                  </span>
-                </span>
-              </div>
-            </button>
-          );
-        })}
+        {linkable.map((n) => (
+          <button
+            key={n.type}
+            type="button"
+            onClick={() => handleSelect(n.type)}
+            onMouseDown={(e) => e.stopPropagation()}
+            className="flex w-full items-center gap-2.5 rounded-[var(--radius)] px-2.5 py-1.5 text-left transition-colors duration-100 hover:bg-wash"
+          >
+            <TypeBadge accent={NODE_META[n.type]?.accent} icon={NODE_META[n.type]?.bigIcon ?? n.icon} size={30} />
+            <span className="flex min-w-0 flex-col gap-0.5">
+              <span className="text-[13px] leading-tight font-medium text-ink">{n.label}</span>
+              <span className="truncate text-[11.5px] leading-snug text-ink-3">{n.description}</span>
+            </span>
+          </button>
+        ))}
       </div>
     </>
   );

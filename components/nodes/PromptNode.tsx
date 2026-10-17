@@ -620,14 +620,9 @@ export default function PromptNode({ id, data, selected }: NodeProps<PromptNodeT
 
         {/* ── Action bar — shown when selected ─────────────────────────────── */}
         <div
-          className="absolute z-50 flex items-center gap-0.5 px-1.5 py-1"
+          className="absolute z-50 flex items-center gap-0.5 px-1.5 py-1 rounded-full bg-surface-raised shadow-[var(--shadow-md)]"
           style={{
             bottom: "calc(100% + 28px)", left: "50%",
-            borderRadius: 999,
-            background: "rgba(16,16,16,0.96)",
-            backdropFilter: "blur(12px)",
-            border: "1px solid rgba(255,255,255,0.07)",
-            boxShadow: "0 4px 24px rgba(0,0,0,0.65), 0 1px 4px rgba(0,0,0,0.4)",
             transform: `translateX(-50%) translateY(${selected ? "0px" : "6px"})`,
             opacity: selected ? 1 : 0,
             transition: "opacity 180ms ease, transform 180ms ease",
@@ -637,30 +632,30 @@ export default function PromptNode({ id, data, selected }: NodeProps<PromptNodeT
         >
           {/* Copy to clipboard */}
           <button onMouseDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); handleCopyToClipboard(); }} title="Copy prompt text"
-            className="w-7 h-7 flex items-center justify-center rounded-full text-[#777] hover:text-white hover:bg-white/10 transition-colors duration-150">
+            className="w-7 h-7 flex items-center justify-center rounded-full text-ink-3 hover:text-ink hover:bg-wash-strong transition-colors duration-150">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" /><rect x="8" y="2" width="8" height="4" rx="1" ry="1" />
             </svg>
           </button>
-          <span className="w-px h-4 bg-white/[0.08] mx-0.5 shrink-0" />
+          <span className="w-px h-4 bg-rule mx-0.5 shrink-0" />
           {/* Duplicate */}
           <button onMouseDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); handleDuplicate(); }} title="Duplicate node"
-            className="w-7 h-7 flex items-center justify-center rounded-full text-[#777] hover:text-white hover:bg-white/10 transition-colors duration-150">
+            className="w-7 h-7 flex items-center justify-center rounded-full text-ink-3 hover:text-ink hover:bg-wash-strong transition-colors duration-150">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <rect x="9" y="9" width="13" height="13" rx="2" ry="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
             </svg>
           </button>
           {/* Expand */}
           <button onMouseDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); setExpandOpen(true); }} title="Expand editor"
-            className="w-7 h-7 flex items-center justify-center rounded-full text-[#777] hover:text-white hover:bg-white/10 transition-colors duration-150">
+            className="w-7 h-7 flex items-center justify-center rounded-full text-ink-3 hover:text-ink hover:bg-wash-strong transition-colors duration-150">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <polyline points="15 3 21 3 21 9" /><polyline points="9 21 3 21 3 15" /><line x1="21" y1="3" x2="14" y2="10" /><line x1="3" y1="21" x2="10" y2="14" />
             </svg>
           </button>
-          <span className="w-px h-4 bg-white/[0.08] mx-0.5 shrink-0" />
+          <span className="w-px h-4 bg-rule mx-0.5 shrink-0" />
           {/* Delete */}
           <button onMouseDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); handleDelete(); }} title="Delete node"
-            className="w-7 h-7 flex items-center justify-center rounded-full text-[#777] hover:text-red-400 hover:bg-red-400/10 transition-colors duration-150">
+            className="w-7 h-7 flex items-center justify-center rounded-full text-ink-3 hover:text-sanguine hover:bg-sanguine/10 transition-colors duration-150">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6M14 11v6" /><path d="M9 6V4h6v2" />
             </svg>
@@ -694,31 +689,18 @@ export default function PromptNode({ id, data, selected }: NodeProps<PromptNodeT
                 }
               }
             }}
-            className="flex items-center gap-1.5 transition-colors duration-150"
-            style={{
-              background: textMode !== "text" ? "rgba(45,212,191,0.1)" : "rgba(255,255,255,0.05)",
-              color: textMode !== "text" ? "#2DD4BF" : "#555",
-              border: `1px solid ${textMode !== "text" ? "rgba(45,212,191,0.25)" : "rgba(255,255,255,0.07)"}`,
-              borderRadius: 6,
-              padding: "2px 7px 2px 5px",
-              fontSize: 10,
-              fontWeight: 500,
-              cursor: "pointer",
-            }}
+            className={`flex items-center gap-1.5 rounded-[var(--radius-sm)] pl-[5px] pr-[7px] py-[2px] text-[11px] font-medium cursor-pointer transition-colors duration-150 ${textMode !== "text"
+              ? "bg-lapis-soft text-lapis shadow-[inset_0_0_0_1px_rgb(var(--lapis-rgb)/0.25)]"
+              : "bg-wash text-ink-3 hover:text-ink-2 shadow-[inset_0_0_0_1px_var(--rule)]"
+              }`}
           >
-            <span style={{
-              width: 22, height: 12, borderRadius: 6, flexShrink: 0, position: "relative",
-              background: textMode !== "text" ? "#2DD4BF" : "rgba(255,255,255,0.15)",
-              transition: "background 150ms",
-              display: "inline-block",
-            }}>
-              <span style={{
-                position: "absolute", top: 2,
-                left: textMode !== "text" ? 12 : 2,
-                width: 8, height: 8, borderRadius: "50%",
-                background: textMode !== "text" ? "#0B3B38" : "#fff",
-                transition: "left 150ms",
-              }} />
+            <span
+              className={`relative inline-block shrink-0 w-[22px] h-3 rounded-[6px] transition-colors duration-150 ${textMode !== "text" ? "bg-lapis" : "bg-rule-strong"}`}
+            >
+              <span
+                className={`absolute top-[2px] w-2 h-2 rounded-full ${textMode !== "text" ? "bg-lapis-ink" : "bg-surface-raised shadow-[var(--shadow-sm)]"}`}
+                style={{ left: textMode !== "text" ? 12 : 2, transition: "left 150ms" }}
+              />
             </span>
             JSON/YAML
           </button>
@@ -735,7 +717,7 @@ export default function PromptNode({ id, data, selected }: NodeProps<PromptNodeT
             <div
               ref={highlightRef}
               aria-hidden
-              className={`absolute inset-0 px-3 pt-2.5 pb-8 text-[15px] text-white leading-[1.6] pointer-events-none whitespace-pre-wrap break-words select-none${textMode !== "text" ? " font-mono" : " overflow-hidden"}`}
+              className={`absolute inset-0 px-3 pt-2.5 pb-8 text-[15px] text-ink leading-[1.6] pointer-events-none whitespace-pre-wrap break-words select-none${textMode !== "text" ? " font-mono" : " overflow-hidden"}`}
               style={textMode !== "text" ? { overflowY: "scroll" } : undefined}
             >
               {textMode === "json"
@@ -745,7 +727,7 @@ export default function PromptNode({ id, data, selected }: NodeProps<PromptNodeT
                   : promptMaxLength !== null && localText.length > promptMaxLength
                   ? <>
                       {renderWithMentions(localText.slice(0, promptMaxLength), knownLabels)}
-                      <span style={{ background: "rgba(239,68,68,0.22)", color: "#f87171", borderRadius: 2 }}>
+                      <span className="bg-sanguine/20 text-sanguine rounded-[2px]">
                         {localText.slice(promptMaxLength)}
                       </span>
                     </>
@@ -758,7 +740,7 @@ export default function PromptNode({ id, data, selected }: NodeProps<PromptNodeT
             {!localText && textMode === "text" && (
               <div
                 aria-hidden
-                className="absolute inset-0 px-3 pt-2.5 pb-8 text-[15px] text-[#3A4055] leading-[1.6] pointer-events-none select-none"
+                className="absolute inset-0 px-3 pt-2.5 pb-8 text-[15px] text-ink-4 leading-[1.6] pointer-events-none select-none"
               >
                 Describe what you want to generate…
               </div>
@@ -769,7 +751,7 @@ export default function PromptNode({ id, data, selected }: NodeProps<PromptNodeT
             <textarea
               ref={textareaRef}
               className={`prompt-ta relative w-full h-full px-3 pt-2.5 pb-8 bg-transparent text-[15px] leading-[1.6] resize-none outline-none overflow-y-auto z-10${textMode !== "text" ? " font-mono" : ""}`}
-              style={{ color: "transparent", caretColor: "white", overscrollBehavior: "contain", ...(textMode !== "text" ? { overflowY: "scroll" as const } : {}) }}
+              style={{ color: "transparent", caretColor: "var(--ink)", overscrollBehavior: "contain", ...(textMode !== "text" ? { overflowY: "scroll" as const } : {}) }}
               defaultValue={storePrompt}
               readOnly={readOnly}
               onChange={handleChange}
@@ -864,13 +846,7 @@ export default function PromptNode({ id, data, selected }: NodeProps<PromptNodeT
             {promptMaxLength !== null && (
               <div
                 aria-hidden
-                className="absolute bottom-1.5 right-2 pointer-events-none select-none z-30 tabular-nums px-1.5 py-0.5 rounded-full"
-                style={{
-                  fontSize: 9,
-                  lineHeight: 1,
-                  color: localText.length > promptMaxLength ? "#f87171" : "#fff",
-                  background: localText.length > promptMaxLength ? "#2a1010" : "#1a1a1a",
-                }}
+                className={`absolute bottom-1.5 right-2 pointer-events-none select-none z-30 tabular-nums px-1.5 py-0.5 rounded-full text-[9px] leading-none ${localText.length > promptMaxLength ? "text-sanguine bg-sanguine/15" : "text-ink-2 bg-wash-strong"}`}
               >
                 {localText.length.toLocaleString()}/{promptMaxLength.toLocaleString()}
               </div>
@@ -891,12 +867,12 @@ export default function PromptNode({ id, data, selected }: NodeProps<PromptNodeT
         {/* ── Inline @mention menu (scales with canvas zoom) ─────────────── */}
         {menuOpen && (
           <div
-            className="absolute left-0 right-0 bg-[#111622] border border-[#2A2A2A] rounded-lg overflow-hidden shadow-xl"
+            className="absolute left-0 right-0 bg-surface-raised rounded-[var(--radius)] overflow-hidden shadow-[var(--shadow-lg)]"
             style={{ top: "calc(100% + 6px)", zIndex: 50 }}
             onMouseDown={(e) => e.preventDefault()}
           >
-            <div className="px-2.5 py-1.5 border-b border-[#1E1E1E]">
-              <p className="text-[9px] text-[#4A4A45] uppercase tracking-widest">
+            <div className="px-2.5 py-1.5 border-b border-rule">
+              <p className="text-[11px] text-ink-3">
                 Connected nodes
               </p>
             </div>
@@ -915,10 +891,10 @@ export default function PromptNode({ id, data, selected }: NodeProps<PromptNodeT
                 <button
                   key={n.id}
                   onClick={() => insertMention(label)}
-                  className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 text-left transition-colors ${active ? "bg-[#1A2010]" : "hover:bg-[#141C28]"
+                  className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 text-left transition-colors ${active ? "bg-lapis-soft" : "hover:bg-wash"
                     }`}
                 >
-                  <div className="w-6 h-6 rounded bg-[#1A1A1A] overflow-hidden shrink-0 flex items-center justify-center">
+                  <div className="w-6 h-6 rounded-[var(--radius-xs)] bg-mat overflow-hidden shrink-0 flex items-center justify-center">
                     {imageUrl ? (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img src={thumbSrc(imageUrl, 24)} alt="" className="w-full h-full object-cover" />
@@ -937,11 +913,11 @@ export default function PromptNode({ id, data, selected }: NodeProps<PromptNodeT
                       <EmptyThumb />
                     )}
                   </div>
-                  <span className={`text-[11px] font-medium truncate ${active ? "text-[#2DD4BF]" : "text-[#CCCCCC]"}`}>
+                  <span className={`text-[11px] font-medium truncate ${active ? "text-lapis" : "text-ink-2"}`}>
                     @{label}
                   </span>
                   {active && (
-                    <span className="ml-auto text-[9px] text-[#4A4A45] shrink-0">↵</span>
+                    <span className="ml-auto text-[9px] text-ink-4 shrink-0">↵</span>
                   )}
                 </button>
               );
@@ -955,22 +931,21 @@ export default function PromptNode({ id, data, selected }: NodeProps<PromptNodeT
         <div className="fixed inset-0 z-[9998] flex items-center justify-center p-6">
           {/* Backdrop */}
           <div
-            className="absolute inset-0 bg-black/60"
-            style={{ backdropFilter: "blur(4px)" }}
+            className="absolute inset-0 bg-[var(--scrim)]"
             onClick={() => { setExpandOpen(false); setExpandMentionQuery(null); }}
           />
           {/* Panel */}
           <div
-            className="relative z-10 flex flex-col rounded-xl border border-white/[0.08]"
-            style={{ width: "min(760px, 100%)", height: "min(520px, 100%)", background: "#0B0E14", boxShadow: "0 24px 80px rgba(0,0,0,0.8)" }}
+            className="relative z-10 flex flex-col rounded-[var(--radius-xl)] bg-surface-raised shadow-[var(--shadow-lg)]"
+            style={{ width: "min(760px, 100%)", height: "min(520px, 100%)" }}
             onKeyDown={(e) => { if (e.key === "Escape") { setExpandOpen(false); setExpandMentionQuery(null); } }}
           >
             {/* Header */}
-            <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.06] shrink-0">
-              <span className="text-[11px] text-[#555] uppercase tracking-widest font-medium">{data.label as string}</span>
+            <div className="flex items-center justify-between px-4 py-3 border-b border-rule shrink-0">
+              <span className="text-[13px] text-ink-2 font-medium">{data.label as string}</span>
               <button
                 onClick={() => { setExpandOpen(false); setExpandMentionQuery(null); }}
-                className="w-6 h-6 flex items-center justify-center rounded text-[#555] hover:text-white hover:bg-white/10 transition-colors"
+                className="w-6 h-6 flex items-center justify-center rounded-[var(--radius-sm)] text-ink-3 hover:text-ink hover:bg-wash-strong transition-colors"
               >
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
               </button>
@@ -982,14 +957,14 @@ export default function PromptNode({ id, data, selected }: NodeProps<PromptNodeT
               <div
                 ref={modalHighlightRef}
                 aria-hidden
-                className="absolute inset-0 px-4 pt-3 pb-4 text-[14px] text-white leading-[1.7] pointer-events-none whitespace-pre-wrap break-words overflow-hidden select-none"
+                className="absolute inset-0 px-4 pt-3 pb-4 text-[14px] text-ink leading-[1.7] pointer-events-none whitespace-pre-wrap break-words overflow-hidden select-none"
               >
                 {renderWithMentions(localText, knownLabels)}
                 {"\u200b"}
               </div>
               {/* Placeholder */}
               {!localText && (
-                <div aria-hidden className="absolute inset-0 px-4 pt-3 pb-4 text-[14px] text-[#444] leading-[1.7] pointer-events-none select-none">
+                <div aria-hidden className="absolute inset-0 px-4 pt-3 pb-4 text-[14px] text-ink-4 leading-[1.7] pointer-events-none select-none">
                   Describe what you want to generate…
                 </div>
               )}
@@ -997,7 +972,7 @@ export default function PromptNode({ id, data, selected }: NodeProps<PromptNodeT
               <textarea
                 ref={modalTextareaRef}
                 className="relative w-full h-full px-4 pt-3 pb-4 bg-transparent text-[14px] leading-[1.7] resize-none outline-none overflow-y-auto"
-                style={{ color: "transparent", caretColor: "white", overscrollBehavior: "contain" }}
+                style={{ color: "transparent", caretColor: "var(--ink)", overscrollBehavior: "contain" }}
                 readOnly={readOnly}
                 onChange={handleModalChange}
                 onScroll={syncModalScroll}
@@ -1040,12 +1015,12 @@ export default function PromptNode({ id, data, selected }: NodeProps<PromptNodeT
             {/* @mention menu */}
             {expandMenuOpen && (
               <div
-                className="shrink-0 border-t border-[#1E1E1E] bg-[#111622] overflow-y-auto"
+                className="shrink-0 border-t border-rule bg-surface overflow-y-auto rounded-b-[var(--radius-xl)]"
                 style={{ maxHeight: 160 }}
                 onMouseDown={(e) => e.preventDefault()}
               >
-                <div className="px-3 py-1.5 border-b border-[#1A1A1A]">
-                  <p className="text-[9px] text-[#4A4A45] uppercase tracking-widest">Connected nodes</p>
+                <div className="px-3 py-1.5 border-b border-rule">
+                  <p className="text-[11px] text-ink-3">Connected nodes</p>
                 </div>
                 {expandFilteredMentions.map((n, idx) => {
                   const label = n.data.label as string;
@@ -1059,14 +1034,14 @@ export default function PromptNode({ id, data, selected }: NodeProps<PromptNodeT
                   const active = idx === expandSelectedIdx;
                   return (
                     <button key={n.id} onClick={() => insertMentionModal(label)}
-                      className={`w-full flex items-center gap-2.5 px-3 py-1.5 text-left transition-colors ${active ? "bg-[#1A2010]" : "hover:bg-[#141C28]"}`}>
-                      <div className="w-5 h-5 rounded bg-[#1A1A1A] overflow-hidden shrink-0 flex items-center justify-center">
+                      className={`w-full flex items-center gap-2.5 px-3 py-1.5 text-left transition-colors ${active ? "bg-lapis-soft" : "hover:bg-wash"}`}>
+                      <div className="w-5 h-5 rounded-[var(--radius-xs)] bg-mat overflow-hidden shrink-0 flex items-center justify-center">
                         {imageUrl ? <img src={thumbSrc(imageUrl, 20)} alt="" className="w-full h-full object-cover" /> :
                           videoUrl ? <video src={videoUrl} autoPlay loop muted playsInline className="w-full h-full" style={{ objectFit: "cover" }} /> :
                             <EmptyThumb />}
                       </div>
-                      <span className={`text-[11px] font-medium truncate ${active ? "text-[#2DD4BF]" : "text-[#CCC]"}`}>@{label}</span>
-                      {active && <span className="ml-auto text-[9px] text-[#4A4A45] shrink-0">↵</span>}
+                      <span className={`text-[11px] font-medium truncate ${active ? "text-lapis" : "text-ink-2"}`}>@{label}</span>
+                      {active && <span className="ml-auto text-[9px] text-ink-4 shrink-0">↵</span>}
                     </button>
                   );
                 })}
@@ -1100,10 +1075,10 @@ export default function PromptNode({ id, data, selected }: NodeProps<PromptNodeT
                   ? "opacity 220ms cubic-bezier(0.16,1,0.3,1), transform 280ms cubic-bezier(0.16,1,0.3,1)"
                   : "opacity 150ms ease, transform 150ms ease",
                 transformOrigin: "bottom center",
-                background: "#16191C",
+                background: "var(--mat)",
                 borderRadius: 8,
                 overflow: "hidden",
-                boxShadow: "0 12px 40px rgba(0,0,0,0.85), 0 0 0 1px rgba(255,255,255,0.06)",
+                boxShadow: "var(--shadow-lg)",
                 maxWidth: 140,
                 minHeight: 80,
               }}
@@ -1137,7 +1112,7 @@ export default function PromptNode({ id, data, selected }: NodeProps<PromptNodeT
 
 function EmptyThumb() {
   return (
-    <svg width="12" height="10" viewBox="0 0 14 12" fill="none" stroke="#333" strokeWidth="1.2">
+    <svg width="12" height="10" viewBox="0 0 14 12" fill="none" stroke="currentColor" strokeWidth="1.2" className="text-ink-4">
       <rect x=".6" y=".6" width="12.8" height="10.8" rx="1.5" />
       <path d="m.6 8.5 3.5-3.5 2.5 2.5 2-2 5 4" />
     </svg>
@@ -1146,7 +1121,7 @@ function EmptyThumb() {
 
 function TextOutIcon() {
   return (
-    <svg width="12" height="12" viewBox="0 0 14 14" fill="white">
+    <svg width="12" height="12" viewBox="0 0 14 14" fill="currentColor">
       <path d="M1.5 2h11v2H8.5v8H5.5V4H1.5V2z" />
     </svg>
   );
@@ -1172,6 +1147,17 @@ function getJsonErrorPos(text: string): number | null {
   }
 }
 
+// JSON/YAML syntax colours — muted pigments that read on both paper and ink.
+const SYNTAX = {
+  key: "var(--lapis)",
+  punct: "var(--ink-3)",
+  string: "var(--verdigris)",
+  number: "var(--ochre)",
+  literal: "var(--sanguine)",
+  plain: "var(--ink-2)",
+  comment: "var(--ink-4)",
+} as const;
+
 function syntaxHighlightYaml(yaml: string, knownLabels: string[] = []): ReactNode {
   const sorted = [...knownLabels].sort((a, b) => b.length - a.length);
   const lines = yaml.split("\n");
@@ -1191,20 +1177,20 @@ function syntaxHighlightYaml(yaml: string, knownLabels: string[] = []): ReactNod
 
   lines.forEach((line, i) => {
     if (/^---/.test(line) || /^\.\.\.$/.test(line)) {
-      parts.push(<span key={k++} style={{ color: "#6b7280" }}>{line}</span>);
+      parts.push(<span key={k++} style={{ color: SYNTAX.punct }}>{line}</span>);
     } else {
       const keyMatch = line.match(/^(\s*(?:-\s+)?)([\w\-./]+)(\s*:)(.*)/);
       if (keyMatch) {
         const [, indent, key, colon, rest] = keyMatch;
         parts.push(<span key={k++}>{indent}</span>);
-        parts.push(<span key={k++} style={{ color: "#06b6d4" }}>{key}</span>);
-        parts.push(<span key={k++} style={{ color: "#6b7280" }}>{colon}</span>);
+        parts.push(<span key={k++} style={{ color: SYNTAX.key }}>{key}</span>);
+        parts.push(<span key={k++} style={{ color: SYNTAX.punct }}>{colon}</span>);
         parts.push(<span key={k++}>{colorYamlValue(rest, k, sorted)}</span>);
         k++;
       } else {
         const listMatch = line.match(/^(\s*-\s+)(.*)/);
         if (listMatch) {
-          parts.push(<span key={k++} style={{ color: "#6b7280" }}>{listMatch[1]}</span>);
+          parts.push(<span key={k++} style={{ color: SYNTAX.punct }}>{listMatch[1]}</span>);
           parts.push(<span key={k++}>{colorYamlValue(listMatch[2], k, sorted)}</span>);
           k++;
         } else {
@@ -1237,19 +1223,19 @@ function colorYamlValue(value: string, baseKey: number, sorted: string[] = []): 
   };
 
   if (/^(true|false|yes|no|on|off)$/i.test(trimmed)) {
-    pushValue(main, "#a78bfa");
+    pushValue(main, SYNTAX.literal);
   } else if (/^-?\d+(\.\d+)?([eE][+-]?\d+)?$/.test(trimmed) || /^0x[\da-fA-F]+$/.test(trimmed)) {
-    pushValue(main, "#fb923c");
+    pushValue(main, SYNTAX.number);
   } else if (/^(null|~)$/.test(trimmed)) {
-    pushValue(main, "#a78bfa");
+    pushValue(main, SYNTAX.literal);
   } else if (/^['"]/.test(trimmed)) {
-    pushValue(main, "#86efac");
+    pushValue(main, SYNTAX.string);
   } else if (trimmed !== "") {
-    pushValue(main, "rgba(255,255,255,0.82)");
+    pushValue(main, SYNTAX.plain);
   } else {
     pushValue(main);
   }
-  if (comment) out.push(<span key={k++} style={{ color: "#4b5563" }}>{comment}</span>);
+  if (comment) out.push(<span key={k++} style={{ color: SYNTAX.comment }}>{comment}</span>);
   return <>{out}</>;
 }
 
@@ -1265,7 +1251,7 @@ function syntaxHighlightJson(json: string, errorPos?: number, knownLabels: strin
       if (errorPos > from)
         parts.push(<span key={k++} style={color ? { color } : undefined}>{json.slice(from, errorPos)}</span>);
       parts.push(
-        <mark key={k++} style={{ background: "rgba(239,68,68,0.45)", color: "#f87171", borderRadius: 2, padding: "0 1px" }}>
+        <mark key={k++} style={{ background: "rgb(var(--sanguine-rgb) / 0.3)", color: "var(--sanguine)", borderRadius: 2, padding: "0 1px" }}>
           {json[errorPos] ?? " "}
         </mark>
       );
@@ -1287,17 +1273,17 @@ function syntaxHighlightJson(json: string, errorPos?: number, knownLabels: strin
     push(last, m.index);
     if (m[1] !== undefined) {
       if (m[2] !== undefined) {
-        push(m.index, m.index + m[1].length, "#06b6d4");
-        push(m.index + m[1].length, m.index + m[0].length, "#6b7280");
+        push(m.index, m.index + m[1].length, SYNTAX.key);
+        push(m.index + m[1].length, m.index + m[0].length, SYNTAX.punct);
       } else {
-        push(m.index, m.index + m[1].length, "#86efac");
+        push(m.index, m.index + m[1].length, SYNTAX.string);
       }
     } else if (m[3] !== undefined) {
-      push(m.index, m.index + m[3].length, "#fb923c");
+      push(m.index, m.index + m[3].length, SYNTAX.number);
     } else if (m[4] !== undefined) {
-      push(m.index, m.index + m[4].length, "#a78bfa");
+      push(m.index, m.index + m[4].length, SYNTAX.literal);
     } else if (m[5] !== undefined) {
-      push(m.index, m.index + m[5].length, "#6b7280");
+      push(m.index, m.index + m[5].length, SYNTAX.punct);
     }
     last = re.lastIndex;
   }

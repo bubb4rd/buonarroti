@@ -1,13 +1,14 @@
 "use client";
 import { useCallback } from "react";
 import { NodeProps, Node, NodeResizer } from "@xyflow/react";
+import { MessageSquare, Trash2 } from "lucide-react";
 import { useWorkflowStore, NodeData } from "@/lib/store";
 import { useReadOnly } from "@/lib/readOnlyContext";
+import { ToolbarButton } from "@/components/ui/floating-toolbar";
 
 type CommentNodeType = Node<NodeData, "commentNode">;
 
-const ACCENT = "#FACC15"; // amber-400
-
+/** A sticky note: ochre-tinted paper, free text. */
 export default function CommentNode({ id, data, selected }: NodeProps<CommentNodeType>) {
   const readOnly = useReadOnly();
   const updateNodeData = useWorkflowStore((s) => s.updateNodeData);
@@ -21,63 +22,39 @@ export default function CommentNode({ id, data, selected }: NodeProps<CommentNod
 
   return (
     <div
-      className="w-full h-full flex flex-col rounded-lg overflow-hidden shadow-lg"
+      className="flex h-full w-full flex-col overflow-hidden rounded-[var(--radius-lg)] transition-shadow duration-150"
       style={{
-        background: "rgba(250, 204, 21, 0.09)",
-        border: `1px solid ${ACCENT}44`,
-        backdropFilter: "blur(2px)",
+        background: "color-mix(in srgb, var(--ochre) 9%, var(--surface))",
+        boxShadow: selected
+          ? "0 0 0 1.5px var(--ochre), var(--shadow-md)"
+          : "inset 0 0 0 1px rgb(var(--ochre-rgb) / 0.28), var(--shadow-sm)",
       }}
     >
       <NodeResizer
         isVisible={editable}
         minWidth={140}
         minHeight={90}
-        color={ACCENT}
+        color="var(--ochre)"
         handleStyle={{ width: 8, height: 8, borderRadius: 2 }}
       />
 
       {/* Header — doubles as the drag handle */}
-      <div
-        className="flex items-center justify-between gap-2 px-2.5 py-1.5 select-none"
-        style={{
-          borderBottom: `1px solid ${ACCENT}22`,
-          background: "rgba(250, 204, 21, 0.07)",
-        }}
-      >
-        <span className="flex items-center gap-1.5 text-[11px] font-semibold" style={{ color: `${ACCENT}dd` }}>
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-          </svg>
+      <div className="flex items-center justify-between gap-2 border-b border-[rgb(var(--ochre-rgb)/0.2)] px-3 py-1.5 select-none">
+        <span className="flex items-center gap-1.5 text-[12px] font-medium text-ochre">
+          <MessageSquare className="size-3" strokeWidth={2} />
           Comment
         </span>
         {editable && (
-          <button
-            onMouseDown={(e) => e.stopPropagation()}
-            onClick={(e) => { e.stopPropagation(); handleDelete(); }}
-            title="Delete comment"
-            className="nodrag flex items-center justify-center w-5 h-5 rounded transition-colors"
-            style={{ color: `${ACCENT}99` }}
-            onMouseEnter={(e) => { e.currentTarget.style.color = "#f87171"; e.currentTarget.style.background = "rgba(248,113,113,0.12)"; }}
-            onMouseLeave={(e) => { e.currentTarget.style.color = `${ACCENT}99`; e.currentTarget.style.background = "transparent"; }}
-          >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="3 6 5 6 21 6" />
-              <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
-              <path d="M10 11v6M14 11v6" />
-              <path d="M9 6V4h6v2" />
-            </svg>
-          </button>
+          <ToolbarButton onClick={handleDelete} tooltip="Delete comment" danger className="nodrag size-5">
+            <Trash2 className="size-3" strokeWidth={1.75} />
+          </ToolbarButton>
         )}
       </div>
 
-      {/* Text input — editable only while the node is selected, so an unselected
-          note can be dragged from anywhere on its body. */}
+      {/* Editable only while selected, so an unselected note drags from anywhere on its body. */}
       <textarea
-        className="nodrag nowheel flex-1 w-full bg-transparent text-[13px] leading-relaxed p-2.5 resize-none focus:outline-none placeholder:text-yellow-200/35"
-        style={{
-          color: "#FEF9C3",
-          pointerEvents: editable ? "auto" : "none",
-        }}
+        className="nodrag nowheel w-full flex-1 resize-none bg-transparent p-3 text-[13px] leading-relaxed text-ink placeholder:text-ink-4 focus:outline-none"
+        style={{ pointerEvents: editable ? "auto" : "none" }}
         placeholder="Write a comment…"
         value={(data.comment as string) ?? ""}
         readOnly={readOnly}

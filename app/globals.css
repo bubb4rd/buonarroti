@@ -1,18 +1,497 @@
 @import "tailwindcss";
+@import "tw-animate-css";
 
+/* ═══════════════════════════════════════════════════════════════════════
+   BUONARROTI — Paper & Ink design system
+   Contract: DESIGN.md. Never hardcode hex/rgba in components; use these.
+   ═══════════════════════════════════════════════════════════════════════ */
 
-/* ── Base ─────────────────────────────────────────────── */
+@custom-variant dark (&:where([data-theme="ink"], [data-theme="ink"] *));
+
+/* ── Paper (light, default) ─────────────────────────────────────────── */
+:root,
+[data-theme="paper"] {
+  color-scheme: light;
+
+  /* Grounds */
+  --paper: #f5f2eb;          /* app ground, the sheet everything sits on   */
+  --paper-sunk: #ece8de;     /* sidebar, recessed wells                    */
+  --surface: #fbfaf6;        /* cards, panels                              */
+  --surface-raised: #fffefb; /* popovers, menus, dialogs                   */
+  --paper-rgb: 245 242 235;
+  --surface-rgb: 251 250 246;
+
+  /* Ink */
+  --ink: #1e1c19;            /* primary text, ink buttons                  */
+  --ink-2: #57524a;          /* secondary text                             */
+  --ink-3: #8a8478;          /* tertiary text, meta                        */
+  --ink-4: #b5ae9f;          /* placeholder, disabled                      */
+  --ink-rgb: 30 28 25;
+
+  /* Rules & washes (ink at alpha) */
+  --rule: rgb(var(--ink-rgb) / 0.1);
+  --rule-strong: rgb(var(--ink-rgb) / 0.17);
+  --wash: rgb(var(--ink-rgb) / 0.045);       /* hover fill               */
+  --wash-strong: rgb(var(--ink-rgb) / 0.08); /* active / selected fill   */
+
+  /* Pigments */
+  --lapis: #2d4db0;          /* the one accent: ultramarine from lapis     */
+  --lapis-hover: #243f94;
+  --lapis-ink: #fdfcf8;      /* text on lapis                              */
+  --lapis-rgb: 45 77 176;
+  --lapis-soft: rgb(var(--lapis-rgb) / 0.1);
+  --sanguine: #b0442a;       /* red chalk — danger, destructive            */
+  --sanguine-rgb: 176 68 42;
+  --verdigris: #3b7a5a;      /* success                                    */
+  --verdigris-rgb: 59 122 90;
+  --ochre: #a8741f;          /* warning, pending                           */
+  --ochre-rgb: 168 116 31;
+  --gilt: #a08442;           /* rare flourish: credits, premium marks      */
+  /* Generate: deep ultramarine, lit from above, paper type (both themes) */
+  --generate-top: #3b5cc8;
+  --generate-bottom: #26419d;
+  --generate-ink: #fdfcf8;
+  --generate-glow-rgb: 45 77 176;
+
+  /* Scrim & shadows (warm, never pure black) */
+  --scrim: rgb(38 33 26 / 0.32);
+  --shadow-rgb: 60 48 30;
+  --shadow-xs: 0 1px 0 rgb(var(--shadow-rgb) / 0.04);
+  --shadow-sm: 0 1px 2px rgb(var(--shadow-rgb) / 0.06), 0 0 0 1px var(--rule);
+  --shadow-md: 0 1px 2px rgb(var(--shadow-rgb) / 0.05), 0 6px 20px -6px rgb(var(--shadow-rgb) / 0.14), 0 0 0 1px var(--rule);
+  --shadow-lg: 0 2px 4px rgb(var(--shadow-rgb) / 0.05), 0 24px 56px -16px rgb(var(--shadow-rgb) / 0.26), 0 0 0 1px var(--rule);
+
+  /* Media mat — the neutral behind images/video */
+  --mat: #e6e1d5;
+
+  /* Focus */
+  --focus-ring: 0 0 0 3px rgb(var(--lapis-rgb) / 0.22);
+}
+
+/* ── Ink (dark) — lamp-black ground, paper-coloured type ────────────── */
+[data-theme="ink"] {
+  color-scheme: dark;
+
+  --paper: #161513;
+  --paper-sunk: #11100e;
+  --surface: #1d1b18;
+  --surface-raised: #24221e;
+  --paper-rgb: 22 21 19;
+  --surface-rgb: 29 27 24;
+
+  --ink: #ede8dd;
+  --ink-2: #b4ad9f;
+  --ink-3: #807a6f;
+  --ink-4: #57524b;
+  --ink-rgb: 237 232 221;
+
+  --rule: rgb(var(--ink-rgb) / 0.09);
+  --rule-strong: rgb(var(--ink-rgb) / 0.16);
+  --wash: rgb(var(--ink-rgb) / 0.05);
+  --wash-strong: rgb(var(--ink-rgb) / 0.09);
+
+  --lapis: #8ea6f0;
+  --lapis-hover: #a8bbf5;
+  --lapis-ink: #0f1424;
+  --lapis-rgb: 142 166 240;
+  --lapis-soft: rgb(var(--lapis-rgb) / 0.14);
+  --sanguine: #e07a5f;
+  --sanguine-rgb: 224 122 95;
+  --verdigris: #6fb38f;
+  --verdigris-rgb: 111 179 143;
+  --ochre: #d9a650;
+  --ochre-rgb: 217 166 80;
+  --gilt: #c9ad6e;
+  --generate-top: #4d6ddb;
+  --generate-bottom: #3553bd;
+  --generate-ink: #fdfcf8;
+  --generate-glow-rgb: 77 109 219;
+
+  --scrim: rgb(0 0 0 / 0.55);
+  --shadow-rgb: 0 0 0;
+  --shadow-xs: 0 1px 0 rgb(0 0 0 / 0.2);
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.3), 0 0 0 1px var(--rule);
+  --shadow-md: 0 1px 2px rgb(0 0 0 / 0.3), 0 8px 24px -8px rgb(0 0 0 / 0.5), 0 0 0 1px var(--rule);
+  --shadow-lg: 0 2px 4px rgb(0 0 0 / 0.3), 0 28px 64px -16px rgb(0 0 0 / 0.7), 0 0 0 1px var(--rule-strong);
+
+  --mat: #0e0d0c;
+
+  --focus-ring: 0 0 0 3px rgb(var(--lapis-rgb) / 0.3);
+}
+
+/* ── Shared scales ──────────────────────────────────────────────────── */
+:root {
+  --font-serif: var(--font-newsreader), "Iowan Old Style", "Palatino", Georgia, serif;
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
+
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius: 9px;
+  --radius-lg: 13px;
+  --radius-xl: 18px;
+
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --dur-fast: 120ms;
+  --dur: 200ms;
+  --dur-slow: 360ms;
+
+  --sidebar-width: 15.5rem;
+  --titlebar-h: 0px; /* set to 28px by the desktop shell (overlay title bar) */
+}
+
+/* ── Tailwind bridge: semantic utilities (bg-paper, text-ink-2, border-rule…)
+      plus the shadcn names the ui/ primitives expect. ───────────────── */
+@theme inline {
+  --color-paper: var(--paper);
+  --color-paper-sunk: var(--paper-sunk);
+  --color-surface: var(--surface);
+  --color-surface-raised: var(--surface-raised);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-ink-4: var(--ink-4);
+  --color-rule: var(--rule);
+  --color-rule-strong: var(--rule-strong);
+  --color-wash: var(--wash);
+  --color-wash-strong: var(--wash-strong);
+  --color-lapis: var(--lapis);
+  --color-lapis-hover: var(--lapis-hover);
+  --color-lapis-ink: var(--lapis-ink);
+  --color-lapis-soft: var(--lapis-soft);
+  --color-sanguine: var(--sanguine);
+  --color-verdigris: var(--verdigris);
+  --color-ochre: var(--ochre);
+  --color-gilt: var(--gilt);
+  --color-mat: var(--mat);
+  --color-scrim: var(--scrim);
+
+  /* shadcn compatibility */
+  --color-background: var(--paper);
+  --color-foreground: var(--ink);
+  --color-card: var(--surface);
+  --color-card-foreground: var(--ink);
+  --color-popover: var(--surface-raised);
+  --color-popover-foreground: var(--ink);
+  --color-primary: var(--ink);
+  --color-primary-foreground: var(--paper);
+  --color-secondary: var(--wash-strong);
+  --color-secondary-foreground: var(--ink);
+  --color-muted: var(--wash);
+  --color-muted-foreground: var(--ink-3);
+  --color-accent: var(--wash-strong);
+  --color-accent-foreground: var(--ink);
+  --color-destructive: var(--sanguine);
+  --color-border: var(--rule);
+  --color-input: var(--rule-strong);
+  --color-ring: var(--lapis);
+  --color-sidebar: var(--paper-sunk);
+  --color-sidebar-foreground: var(--ink-2);
+  --color-sidebar-primary: var(--ink);
+  --color-sidebar-primary-foreground: var(--paper);
+  --color-sidebar-accent: var(--wash-strong);
+  --color-sidebar-accent-foreground: var(--ink);
+  --color-sidebar-border: var(--rule);
+  --color-sidebar-ring: var(--lapis);
+
+  --font-serif: var(--font-serif);
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+
+  --radius-xs: var(--radius-xs);
+  --radius-sm: var(--radius-sm);
+  --radius-md: var(--radius);
+  --radius-lg: var(--radius-lg);
+  --radius-xl: var(--radius-xl);
+
+  --shadow-xs: var(--shadow-xs);
+  --shadow-sm: var(--shadow-sm);
+  --shadow-md: var(--shadow-md);
+  --shadow-lg: var(--shadow-lg);
+
+  --ease-out: var(--ease-out);
+}
+
+/* ── Base ─────────────────────────────────────────────────────────────── */
 html,
 body,
 #__next {
   height: 100%;
 }
 
+/* Hairline is the default border; Tailwind v4 would otherwise use currentColor. */
+@layer base {
+  *, ::before, ::after, ::backdrop {
+    border-color: var(--rule);
+  }
+}
+
+[data-desktop="1"] {
+  --titlebar-h: 28px;
+}
+
 body {
-  background: #0B0E14;
-  color: #FFFFFF;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.45;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background: rgb(var(--lapis-rgb) / 0.2);
+}
+
+:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--rule-strong) transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+  }
+}
+
+/* ── Type ramp ────────────────────────────────────────────────────────── */
+/* Serif carries voice (titles, numbers, empty states); sans carries UI.   */
+.type-display {
+  font-family: var(--font-serif);
+  font-size: clamp(30px, 3.4vw, 44px);
+  line-height: 1.08;
+  letter-spacing: -0.018em;
+  font-weight: 400;
+  font-variation-settings: "opsz" 60;
+}
+.type-title {
+  font-family: var(--font-serif);
+  font-size: 26px;
+  line-height: 1.15;
+  letter-spacing: -0.012em;
+  font-weight: 400;
+  font-variation-settings: "opsz" 36;
+}
+.type-heading {
+  font-family: var(--font-serif);
+  font-size: 19px;
+  line-height: 1.25;
+  letter-spacing: -0.005em;
+  font-weight: 450;
+  font-variation-settings: "opsz" 20;
+}
+.type-figure {
+  font-family: var(--font-serif);
+  font-variant-numeric: lining-nums tabular-nums;
+  font-weight: 400;
+  letter-spacing: -0.01em;
+}
+.type-label {
+  font-size: 11.5px;
+  line-height: 1.3;
+  color: var(--ink-3);
+  letter-spacing: 0.01em;
+}
+.type-eyebrow {
+  font-size: 10.5px;
+  line-height: 1.2;
+  font-weight: 600;
+  color: var(--ink-3);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+/* ── Atmosphere ───────────────────────────────────────────────────────── */
+/* Paper grain: a quiet fibre texture laid over a ground. */
+.paper-grain {
+  position: relative;
+  isolation: isolate;
+}
+.paper-grain::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0.5;
+  mix-blend-mode: multiply;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='220' height='220'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 .35  0 0 0 0 .3  0 0 0 0 .22  0 0 0 .09 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+}
+[data-theme="ink"] .paper-grain::before {
+  mix-blend-mode: screen;
+  opacity: 0.35;
+}
+
+/* Fresco sky: soft lapis + ochre washes, for hero/empty states. */
+.fresco {
+  background:
+    radial-gradient(120% 70% at 85% 0%, rgb(var(--lapis-rgb) / 0.14), transparent 60%),
+    radial-gradient(90% 60% at 10% 10%, rgb(var(--ochre-rgb) / 0.12), transparent 65%),
+    radial-gradient(70% 50% at 50% 100%, rgb(var(--sanguine-rgb) / 0.05), transparent 70%),
+    var(--paper);
+}
+
+/* ── Crop marks: the registration corners that frame artwork. ──────────
+   <div class="crop-marks"> … </div>  (corner length via --crop, colour via --crop-color) */
+.crop-marks {
+  --crop: 12px;
+  --crop-w: 1.5px;
+  --crop-gap: 6px;
+  --crop-color: var(--ink);
+  position: relative;
+}
+.crop-marks::before,
+.crop-marks::after {
+  content: "";
+  position: absolute;
+  inset: calc(-1 * var(--crop-gap));
+  pointer-events: none;
+  background:
+    linear-gradient(var(--crop-color), var(--crop-color)) top left / var(--crop) var(--crop-w),
+    linear-gradient(var(--crop-color), var(--crop-color)) top left / var(--crop-w) var(--crop),
+    linear-gradient(var(--crop-color), var(--crop-color)) top right / var(--crop) var(--crop-w),
+    linear-gradient(var(--crop-color), var(--crop-color)) top right / var(--crop-w) var(--crop);
+  background-repeat: no-repeat;
+}
+.crop-marks::after {
+  background:
+    linear-gradient(var(--crop-color), var(--crop-color)) bottom left / var(--crop) var(--crop-w),
+    linear-gradient(var(--crop-color), var(--crop-color)) bottom left / var(--crop-w) var(--crop),
+    linear-gradient(var(--crop-color), var(--crop-color)) bottom right / var(--crop) var(--crop-w),
+    linear-gradient(var(--crop-color), var(--crop-color)) bottom right / var(--crop-w) var(--crop);
+  background-repeat: no-repeat;
+}
+
+/* ── Generating: a slow ink shimmer for in-flight media slots. ──────── */
+.ink-shimmer {
+  background:
+    linear-gradient(100deg, transparent 20%, rgb(var(--ink-rgb) / 0.06) 50%, transparent 80%) 0 0 / 220% 100%,
+    var(--mat);
+  animation: ink-shimmer 2.2s var(--ease-in-out) infinite;
+}
+@keyframes ink-shimmer {
+  from { background-position: 120% 0, 0 0; }
+  to { background-position: -120% 0, 0 0; }
+}
+
+/* ── Generate: the one action the app exists for (DESIGN.md § Generate). ──
+   Ground ultramarine lit from above; the glow is the pigment's own colour.
+   The tre cerchi part on hover, turn a third on send, orbit while busy. */
+.generate-button {
+  color: var(--generate-ink);
+  background: linear-gradient(180deg, var(--generate-top), var(--generate-bottom));
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.22),
+    inset 0 -1px 0 rgb(0 0 0 / 0.14),
+    0 1px 2px rgb(var(--generate-glow-rgb) / 0.35),
+    0 6px 16px -6px rgb(var(--generate-glow-rgb) / 0.55);
+  transition:
+    box-shadow var(--dur) var(--ease-out),
+    filter var(--dur) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out);
+}
+.generate-button:hover:not(:disabled) {
+  filter: brightness(1.07) saturate(1.06);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.26),
+    inset 0 -1px 0 rgb(0 0 0 / 0.14),
+    0 1px 2px rgb(var(--generate-glow-rgb) / 0.4),
+    0 10px 24px -8px rgb(var(--generate-glow-rgb) / 0.7);
+}
+.generate-button:active:not(:disabled) {
+  transform: scale(0.98);
+}
+.generate-button:focus-visible {
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.22),
+    0 6px 16px -6px rgb(var(--generate-glow-rgb) / 0.55),
+    var(--focus-ring);
+}
+.generate-button[aria-busy="true"] {
+  cursor: progress;
+}
+/* Not yet runnable: a quiet wash, not a faded blue. */
+.generate-button:disabled:not([aria-busy="true"]) {
+  color: var(--ink-3);
+  background: var(--wash-strong);
+  box-shadow: inset 0 0 0 1px var(--rule);
+}
+.generate-button [data-slot="kbd"] {
+  color: rgb(255 255 255 / 0.82);
+  background: rgb(0 0 0 / 0.2);
+  box-shadow: inset 0 1px 1px rgb(0 0 0 / 0.18);
+}
+.generate-button:disabled:not([aria-busy="true"]) [data-slot="kbd"] {
+  color: var(--ink-4);
+  background: var(--wash);
+  box-shadow: inset 0 0 0 1px var(--rule);
+}
+
+.generate-rings {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.generate-rings circle {
+  transition: transform var(--dur) var(--ease-out);
+}
+/* SVG user units: the viewBox is 64 wide, so 4 units ≈ 1px at 17px. */
+.generate-button:hover:not(:disabled) .generate-rings circle:nth-child(1) { transform: translate(0, -5px); }
+.generate-button:hover:not(:disabled) .generate-rings circle:nth-child(2) { transform: translate(-4.3px, 2.5px); }
+.generate-button:hover:not(:disabled) .generate-rings circle:nth-child(3) { transform: translate(4.3px, 2.5px); }
+.generate-rings[data-launch] {
+  animation: generate-rings-turn 520ms var(--ease-out);
+}
+.generate-rings[data-busy] {
+  animation: generate-rings-orbit 1.6s linear infinite;
+}
+@keyframes generate-rings-turn {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(120deg); }
+}
+@keyframes generate-rings-orbit {
+  to { transform: rotate(360deg); }
+}
+
+/* ── Desktop shell: Tauri overlay title bar drag strip ────────────────── */
+.titlebar-drag {
+  -webkit-app-region: drag;
+  app-region: drag;
+}
+.titlebar-drag :is(button, a, input, textarea, select, [role="button"]) {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
+/* ── Marker-pen highlight for changed / matched text ──────────────────── */
+:root {
+  --highlight: rgb(var(--ochre-rgb) / 0.22);
+}
+.highlight {
+  background: var(--highlight);
+  border-radius: 2px;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+  padding: 0 1px;
+}
+
+/* ── Chrome drawn on top of artwork (lightbox, thumbnails) ────────────── */
+.on-media {
+  background: rgb(0 0 0 / 0.42);
+  color: #fff;
+  backdrop-filter: blur(12px) saturate(1.4);
+  -webkit-backdrop-filter: blur(12px) saturate(1.4);
 }
 
 /* ── Prevent iOS Safari zoom on input focus ─────────── */
@@ -23,222 +502,228 @@ body {
 }
 
 /* ── Node design system ──────────────────────────────── */
+/* Canvas, nodes, handles and edges. Tokens only. The categorical handle
+   pigments below are the one place per-type colour lives (user data, not
+   chrome — see DESIGN.md "Categorical colours"). */
+
+:root,
+[data-theme="paper"] {
+  --pigment-violet: #6a5a9a;
+  --pigment-rose: #a4506a;
+  --pigment-umber: #7a5a3a;
+  --pigment-slate: #5b6b7a;
+}
+[data-theme="ink"] {
+  --pigment-violet: #a397d2;
+  --pigment-rose: #d98ba3;
+  --pigment-umber: #c09a72;
+  --pigment-slate: #9aabbb;
+}
+
+:root {
+  /* Per-type handle pigments: what flows through the wire. */
+  --handle-prompt: var(--ink-2);
+  --handle-image: var(--lapis);
+  --handle-resource: var(--lapis);
+  --handle-video: var(--sanguine);
+  --handle-audio: var(--ochre);
+  --handle-assistant: var(--verdigris);
+  --handle-character: var(--pigment-violet);
+  --handle-style: var(--pigment-rose);
+  --handle-surface: var(--pigment-slate);
+  --handle-map: var(--verdigris);
+  --handle-prop: var(--pigment-umber);
+
+  /* Wires */
+  --edge-stroke: rgb(var(--ink-rgb) / 0.35);
+  --edge-stroke-hover: rgb(var(--ink-rgb) / 0.55);
+  --edge-stroke-active: var(--lapis);
+
+  /* Canvas dot grid */
+  --canvas-dot: rgb(var(--ink-rgb) / 0.12);
+}
+
+/* ── Node card ───────────────────────────────────────── */
 .node-card {
-  background: #141820;
+  background: var(--surface);
+  color: var(--ink);
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
   overflow: visible;
   position: relative;
-  box-shadow: 0 2px 16px rgba(0, 0, 0, 0.5);
-  transition: border-color 120ms, box-shadow 120ms;
+  box-shadow: var(--shadow-sm);
+  transition: box-shadow var(--dur) var(--ease-out);
 }
 
 .node-card:hover {
-  box-shadow: 0 2px 20px rgba(0, 0, 0, 0.6);
+  box-shadow: var(--shadow-md);
 }
 
 .node-card:hover .node-above-label {
-  color: #A0A0A0;
+  color: var(--ink-2);
 }
 
 .node-header {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 7px 10px;
-  border-bottom: 1px solid #1C2436;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--rule);
 }
 
 .node-label {
-  font-size: 12px;
+  font-size: 12.5px;
   font-weight: 500;
-  color: #A0A0A0;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
+  line-height: 1.3;
+  color: var(--ink-2);
 }
 
 .node-field-label {
   display: block;
-  font-size: 11px;
-  color: #A0A0A0;
+  font-size: 11.5px;
+  line-height: 1.3;
+  color: var(--ink-3);
   margin-bottom: 4px;
-  letter-spacing: 0.02em;
+}
+
+/* Fields share the fieldClass look (components/ui/input.tsx). */
+.node-textarea,
+.node-input,
+.node-select {
+  width: 100%;
+  background: var(--surface-raised);
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius);
+  color: var(--ink);
+  outline: none;
+  font-family: inherit;
+  transition: border-color var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out);
 }
 
 .node-textarea {
-  width: 100%;
-  background: #0D1119;
-  border: 1px solid #1A2030;
-  border-radius: 5px;
-  color: #FFFFFF;
   font-size: 13px;
   line-height: 1.5;
-  padding: 7px 8px;
+  padding: 7px 10px;
   resize: none;
-  outline: none;
-  font-family: inherit;
-  transition: border-color 100ms;
 }
 
-.node-textarea::placeholder {
-  color: #3A4055;
-}
-
-.node-textarea:focus {
-  border-color: #3A4055;
-}
-
-.node-input {
-  width: 100%;
-  background: #0D1119;
-  border: 1px solid #1A2030;
-  border-radius: 5px;
-  color: #FFFFFF;
-  font-size: 12px;
-  padding: 5px 8px;
-  outline: none;
-  font-family: inherit;
-  transition: border-color 100ms;
-}
-
-.node-input::placeholder {
-  color: #3A4055;
-}
-
-.node-input:focus {
-  border-color: #3A4055;
+.node-input,
+.node-select {
+  font-size: 12.5px;
+  padding: 5px 10px;
 }
 
 .node-select {
-  width: 100%;
-  background: #0D1119;
-  border: 1px solid #1A2030;
-  border-radius: 5px;
-  color: #A0A0A0;
-  font-size: 12px;
-  padding: 5px 8px;
-  outline: none;
-  font-family: inherit;
+  color: var(--ink-2);
   appearance: none;
   cursor: pointer;
-  transition: border-color 100ms;
 }
 
-.node-select:focus {
-  border-color: #1E2840;
+.node-textarea::placeholder,
+.node-input::placeholder {
+  color: var(--ink-4);
+}
+
+.node-textarea:hover,
+.node-input:hover,
+.node-select:hover {
+  border-color: rgb(var(--ink-rgb) / 0.25);
+}
+
+.node-textarea:focus-visible,
+.node-input:focus-visible,
+.node-select:focus-visible {
+  border-color: var(--lapis);
+  box-shadow: var(--focus-ring);
 }
 
 /* ── Floating node label (above frame) ───────────────── */
 .node-above-label {
   position: absolute;
-  top: -20px;
+  top: -22px;
   left: 2px;
-  font-size: 11px;
-  color: #6A7080;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  font-size: 12px;
+  line-height: 1.3;
   font-weight: 500;
+  color: var(--ink-3);
+  white-space: nowrap;
   user-select: none;
   pointer-events: none;
-  transition: color 120ms;
+  transition: color var(--dur-fast) var(--ease-out);
 }
 
 /* ── Handles ─────────────────────────────────────────── */
-
-/* ── Dot handles ─────────────────────────────────────────────────────────── */
-.node-handle.react-flow__handle {
-  width: 14px !important;
-  height: 14px !important;
-  border-radius: 50% !important;
-  border: 2px solid #0B0E14 !important;
-  background: #1A2235 !important;
-  /* neutral — role color when connected or selected */
-  z-index: 10;
-  opacity: 0;
-  pointer-events: none;
-  transition: transform 180ms ease 280ms, opacity 180ms ease 280ms, background-color 180ms ease 280ms;
+/* Each handle class names what it carries; --handle-color picks the pigment. */
+.node-handle-icon-prompt,
+.node-handle-icon-out-text {
+  --handle-color: var(--handle-prompt);
 }
 
-/* Hidden: inputs offset left (slide in from left); outputs sit at node edge (slide out rightward) */
-.react-flow__handle-left.node-handle {
-  transform: translate(calc(-100% - 10px), -50%) !important;
+.node-handle-icon-image,
+.node-handle-icon-out-image {
+  --handle-color: var(--handle-image);
 }
 
-.react-flow__handle-right.node-handle {
-  transform: translate(calc(100% + 10px), -50%) !important;
+.node-handle-icon-resource {
+  --handle-color: var(--handle-resource);
 }
 
-/* Visible: normal position (node hover or selected) — delay reset so hover-in is instant */
-/* Left (input) handles: suppress hover during connection dragging (only show compatible inputs) */
-.react-flow:not([data-connecting-type]) .react-flow__node:hover .react-flow__handle-left.node-handle,
-.react-flow__node.selected .react-flow__handle-left.node-handle {
-  transform: translate(-100%, -50%) !important;
-  opacity: 1;
-  pointer-events: auto;
-  transition-delay: 0ms;
+.node-handle-icon-videoref,
+.node-handle-icon-refvideo,
+.node-handle-icon-out-video {
+  --handle-color: var(--handle-video);
 }
 
-.react-flow__node:hover .react-flow__handle-right.node-handle,
-.react-flow__node.selected .react-flow__handle-right.node-handle {
-  transform: translate(100%, -50%) !important;
-  opacity: 1;
-  pointer-events: auto;
-  transition-delay: 0ms;
+.node-handle-icon-audioref,
+.node-handle-icon-out-audio {
+  --handle-color: var(--handle-audio);
 }
 
-/* Handle hover scale — must come after visible rules (same specificity, source order wins) */
-.react-flow__handle-left.node-handle:hover {
-  transform: translate(-100%, -50%) scale(1.35) !important;
+.node-handle-icon-character {
+  --handle-color: var(--handle-character);
 }
 
-.react-flow__handle-right.node-handle:hover {
-  transform: translate(100%, -50%) scale(1.35) !important;
+/* Game pipelines: artifact handles take their family's pigment from the node (--game-accent). */
+.node-handle-icon-game {
+  --handle-color: var(--game-accent, var(--handle-character));
 }
 
-/* Connected: always visible at normal position, role color */
-.react-flow__handle-left.node-handle.node-handle-connected {
-  transform: translate(-100%, -50%) !important;
-  opacity: 1 !important;
-  pointer-events: auto !important;
+/* Assistant output also carries .node-handle-icon-out-text; this wins by order. */
+.node-handle-icon-out-assistant {
+  --handle-color: var(--handle-assistant);
 }
 
-.react-flow__handle-right.node-handle.node-handle-connected {
-  transform: translate(100%, -50%) !important;
-  opacity: 1 !important;
-  pointer-events: auto !important;
-}
-
-.node-handle-prompt.react-flow__handle.node-handle-connected,
-.react-flow__node.selected .node-handle-prompt.react-flow__handle {
-  background: #2DD4BF !important;
-}
-
-.node-handle-source.react-flow__handle.node-handle-connected,
-.react-flow__node.selected .node-handle-source.react-flow__handle {
-  background: #34d399 !important;
-}
-
-.node-handle-video.react-flow__handle.node-handle-connected,
-.react-flow__node.selected .node-handle-video.react-flow__handle {
-  background: #22d3ee !important;
-}
-
-/* ── Icon handles ────────────────────────────────────────────────────────── */
 .node-handle-icon.react-flow__handle {
   width: 28px !important;
   height: 28px !important;
   border-radius: 50% !important;
-  background: #0D1119 !important;
-  border: 1.5px solid #1E2540 !important;
-  /* neutral — role color only when connected */
+  background: var(--surface-raised) !important;
+  border: 1.5px solid var(--rule-strong) !important;
+  color: var(--ink-3);
+  box-shadow: 0 1px 2px rgb(var(--shadow-rgb) / 0.08);
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
   z-index: 10;
   opacity: 0;
   pointer-events: none;
-  transition: transform 180ms ease 280ms, box-shadow 120ms, opacity 180ms ease 280ms, border-color 180ms ease 280ms;
+  transition:
+    transform 180ms var(--ease-out) 280ms,
+    opacity 180ms var(--ease-out) 280ms,
+    border-color 180ms var(--ease-out) 280ms,
+    color 180ms var(--ease-out) 280ms;
   cursor: crosshair;
+}
+
+/* Handle icons follow the handle colour even if drawn with a literal fill. */
+.node-handle-icon svg[fill="white"],
+.node-handle-icon svg [fill="white"] {
+  fill: currentColor;
+}
+
+.node-handle-icon svg[stroke="white"],
+.node-handle-icon svg [stroke="white"] {
+  stroke: currentColor;
 }
 
 /* Hidden: offset outward */
@@ -250,8 +735,8 @@ body {
   transform: translate(calc(100% + 10px), -50%) !important;
 }
 
-/* Visible: normal position — delay reset so hover-in is instant */
-/* Left (input) icon handles: suppress hover during connection dragging */
+/* Visible: normal position — delay reset so hover-in is instant.
+   Input handles stay hidden on hover while a connection is being dragged. */
 .react-flow:not([data-connecting-type]) .react-flow__node:hover .react-flow__handle-left.node-handle-icon,
 .react-flow__node.selected .react-flow__handle-left.node-handle-icon {
   transform: translate(-100%, -50%) !important;
@@ -260,7 +745,6 @@ body {
   transition-delay: 0ms;
 }
 
-/* Right (output) icon handles: always show on hover/selected */
 .react-flow__node:hover .react-flow__handle-right.node-handle-icon,
 .react-flow__node.selected .react-flow__handle-right.node-handle-icon {
   transform: translate(100%, -50%) !important;
@@ -269,262 +753,71 @@ body {
   transition-delay: 0ms;
 }
 
-/* Handle hover scale */
+/* Hover scale — after the visible rules (same specificity, source order wins) */
 .react-flow__handle-left.node-handle-icon:hover {
-  transform: translate(-100%, -50%) scale(1.15) !important;
+  transform: translate(-100%, -50%) scale(1.12) !important;
 }
 
 .react-flow__handle-right.node-handle-icon:hover {
-  transform: translate(100%, -50%) scale(1.15) !important;
+  transform: translate(100%, -50%) scale(1.12) !important;
 }
 
-/* Connected: always visible at normal position, role border color */
-.react-flow__handle-left.node-handle-icon.node-handle-connected {
-  transform: translate(-100%, -50%) !important;
-  opacity: 1 !important;
-  pointer-events: auto !important;
-}
-
-.react-flow__handle-right.node-handle-icon.node-handle-connected {
-  transform: translate(100%, -50%) !important;
-  opacity: 1 !important;
-  pointer-events: auto !important;
-}
-
-/* Connected or selected: full role color — input handles */
-.node-handle-icon-prompt.react-flow__handle.node-handle-connected,
-.react-flow__node.selected .node-handle-icon-prompt.react-flow__handle {
-  border-color: #2DD4BF !important;
-  --handle-color: #2DD4BF;
-}
-
-.node-handle-icon-image.react-flow__handle.node-handle-connected,
-.react-flow__node.selected .node-handle-icon-image.react-flow__handle {
-  border-color: #2DD4BF !important;
-  --handle-color: #2DD4BF;
-}
-
-.node-handle-icon-resource.react-flow__handle.node-handle-connected,
-.react-flow__node.selected .node-handle-icon-resource.react-flow__handle {
-  border-color: #fb923c !important;
-  --handle-color: #fb923c;
-}
-
-.node-handle-icon-videoref.react-flow__handle.node-handle-connected,
-.react-flow__node.selected .node-handle-icon-videoref.react-flow__handle {
-  border-color: #22d3ee !important;
-  --handle-color: #22d3ee;
-}
-
-.node-handle-icon-refvideo.react-flow__handle.node-handle-connected,
-.react-flow__node.selected .node-handle-icon-refvideo.react-flow__handle {
-  border-color: #38bdf8 !important;
-  --handle-color: #38bdf8;
-}
-
-.node-handle-icon-audioref.react-flow__handle.node-handle-connected,
-.react-flow__node.selected .node-handle-icon-audioref.react-flow__handle {
-  border-color: #5EEAD4 !important;
-  --handle-color: #5EEAD4;
-}
-
-.node-handle-icon-character.react-flow__handle.node-handle-connected,
-.react-flow__node.selected .node-handle-icon-character.react-flow__handle {
-  border-color: #f472b6 !important;
-  --handle-color: #f472b6;
-}
-
-/* Output handle colors — always visible when the handle is shown (hover/selected/connected) */
-.react-flow__node:hover .node-handle-icon-out-text.react-flow__handle,
-.react-flow__node.selected .node-handle-icon-out-text.react-flow__handle,
-.node-handle-icon-out-text.react-flow__handle.node-handle-connected {
-  border-color: #2DD4BF !important;
-}
-
-.react-flow__node:hover .node-handle-icon-out-image.react-flow__handle,
-.react-flow__node.selected .node-handle-icon-out-image.react-flow__handle,
-.node-handle-icon-out-image.react-flow__handle.node-handle-connected {
-  border-color: #2DD4BF !important;
-}
-
-.react-flow__node:hover .node-handle-icon-out-video.react-flow__handle,
-.react-flow__node.selected .node-handle-icon-out-video.react-flow__handle,
-.node-handle-icon-out-video.react-flow__handle.node-handle-connected {
-  border-color: #22d3ee !important;
-}
-
-.react-flow__node:hover .node-handle-icon-out-audio.react-flow__handle,
-.react-flow__node.selected .node-handle-icon-out-audio.react-flow__handle,
-.node-handle-icon-out-audio.react-flow__handle.node-handle-connected {
-  border-color: #5EEAD4 !important;
-}
-
-/* Assistant output — yellow, overrides the inherited out-text blue */
-.react-flow__node:hover .node-handle-icon-out-assistant.react-flow__handle,
-.react-flow__node.selected .node-handle-icon-out-assistant.react-flow__handle,
-.node-handle-icon-out-assistant.react-flow__handle.node-handle-connected {
-  border-color: #FBBF24 !important;
-}
-
-/* Selected + unconnected: dim input (left) handles only; output handles keep full opacity */
-.react-flow__node.selected .react-flow__handle-left.node-handle-icon.react-flow__handle:not(.node-handle-connected) {
-  opacity: 0.35 !important;
-}
-
-/* ── Keep the dragged handle visible while a connection is in progress ───── */
+/* Connected, or being dragged from: always visible at normal position */
+.react-flow__handle-left.node-handle-icon.node-handle-connected,
 .react-flow__handle-left.node-handle-icon.node-handle-connecting {
   transform: translate(-100%, -50%) !important;
   opacity: 1 !important;
   pointer-events: auto !important;
 }
 
+.react-flow__handle-right.node-handle-icon.node-handle-connected,
 .react-flow__handle-right.node-handle-icon.node-handle-connecting {
   transform: translate(100%, -50%) !important;
   opacity: 1 !important;
   pointer-events: auto !important;
 }
 
-.react-flow__handle-left.node-handle.node-handle-connecting {
-  transform: translate(-100%, -50%) !important;
-  opacity: 1 !important;
-  pointer-events: auto !important;
+/* Pigment: inputs when connected/selected; outputs whenever shown. */
+.node-handle-icon.react-flow__handle.node-handle-connected,
+.node-handle-icon.react-flow__handle.node-handle-connecting,
+.node-handle-icon.react-flow__handle:hover,
+.react-flow__node.selected .node-handle-icon.react-flow__handle,
+.react-flow__node:hover .react-flow__handle-right.node-handle-icon.react-flow__handle {
+  border-color: var(--handle-color, var(--rule-strong)) !important;
+  color: var(--handle-color, var(--ink-3));
 }
 
-.react-flow__handle-right.node-handle.node-handle-connecting {
-  transform: translate(100%, -50%) !important;
-  opacity: 1 !important;
-  pointer-events: auto !important;
-}
-
-/* Connecting handle: show its type color */
-.node-handle-icon-prompt.react-flow__handle.node-handle-connecting {
-  border-color: #2DD4BF !important;
-}
-
-.node-handle-icon-image.react-flow__handle.node-handle-connecting {
-  border-color: #2DD4BF !important;
-}
-
-.node-handle-icon-resource.react-flow__handle.node-handle-connecting {
-  border-color: #fb923c !important;
-}
-
-.node-handle-icon-videoref.react-flow__handle.node-handle-connecting {
-  border-color: #22d3ee !important;
-}
-
-.node-handle-icon-refvideo.react-flow__handle.node-handle-connecting {
-  border-color: #38bdf8 !important;
-}
-
-.node-handle-icon-audioref.react-flow__handle.node-handle-connecting {
-  border-color: #5EEAD4 !important;
-}
-
-.node-handle-icon-character.react-flow__handle.node-handle-connecting {
-  border-color: #f472b6 !important;
-}
-
-.node-handle-icon-out-text.react-flow__handle.node-handle-connecting {
-  border-color: #2DD4BF !important;
-}
-
-.node-handle-icon-out-assistant.react-flow__handle.node-handle-connecting {
-  border-color: #FBBF24 !important;
-}
-
-.node-handle-icon-out-image.react-flow__handle.node-handle-connecting {
-  border-color: #2DD4BF !important;
-}
-
-.node-handle-icon-out-video.react-flow__handle.node-handle-connecting {
-  border-color: #22d3ee !important;
-}
-
-.node-handle-icon-out-audio.react-flow__handle.node-handle-connecting {
-  border-color: #5EEAD4 !important;
+/* Selected + unconnected: dim input (left) handles only */
+.react-flow__node.selected .react-flow__handle-left.node-handle-icon.react-flow__handle:not(.node-handle-connected) {
+  opacity: 0.4 !important;
 }
 
 /* ── Show only compatible input handles while connecting ─────────────────── */
-/* data-connecting-type is set by JS onConnectStart on the .react-flow element */
-
-/* Text/prompt output → only prompt inputs */
-.react-flow[data-connecting-type="prompt"] .react-flow__handle-left.node-handle-icon-prompt {
-  transform: translate(-100%, -50%) !important;
-  opacity: 1 !important;
-  pointer-events: auto !important;
-  transition-delay: 0ms !important;
-}
-
-/* Image output → image + resource + character inputs */
+/* data-connecting-type is set by WorkflowCanvas onConnectStart on .react-flow */
+.react-flow[data-connecting-type="prompt"] .react-flow__handle-left.node-handle-icon-prompt,
 .react-flow[data-connecting-type="image"] .react-flow__handle-left.node-handle-icon-image,
 .react-flow[data-connecting-type="image"] .react-flow__handle-left.node-handle-icon-resource,
-.react-flow[data-connecting-type="image"] .react-flow__handle-left.node-handle-icon-character {
-  transform: translate(-100%, -50%) !important;
-  opacity: 1 !important;
-  pointer-events: auto !important;
-  transition-delay: 0ms !important;
-}
-
-/* Video output → videoref + refvideo inputs */
+.react-flow[data-connecting-type="image"] .react-flow__handle-left.node-handle-icon-character,
 .react-flow[data-connecting-type="video"] .react-flow__handle-left.node-handle-icon-videoref,
-.react-flow[data-connecting-type="video"] .react-flow__handle-left.node-handle-icon-refvideo {
+.react-flow[data-connecting-type="video"] .react-flow__handle-left.node-handle-icon-refvideo,
+.react-flow[data-connecting-type="audio"] .react-flow__handle-left.node-handle-icon-audioref,
+.react-flow[data-connecting-type^="game-"] .react-flow__handle-left.node-handle-compatible {
   transform: translate(-100%, -50%) !important;
   opacity: 1 !important;
   pointer-events: auto !important;
   transition-delay: 0ms !important;
-}
-
-/* Audio output → audioref inputs */
-.react-flow[data-connecting-type="audio"] .react-flow__handle-left.node-handle-icon-audioref {
-  transform: translate(-100%, -50%) !important;
-  opacity: 1 !important;
-  pointer-events: auto !important;
-  transition-delay: 0ms !important;
-}
-
-/* ── Duration slider ─────────────────────────────────────────────────────── */
-.dur-slider {
-  -webkit-appearance: none;
-  appearance: none;
-  flex: 1;
-  height: 3px;
-  border-radius: 99px;
-  background: #1C2436;
-  outline: none;
-  cursor: pointer;
-}
-
-.dur-slider::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  background: #ffffff;
-  cursor: pointer;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
-}
-
-.dur-slider::-moz-range-thumb {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  background: #ffffff;
-  cursor: pointer;
-  border: none;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
+  border-color: var(--handle-color) !important;
+  color: var(--handle-color);
 }
 
 /* ── Instant hide on deselect (class toggled by JS) ─────────────────────── */
-.handles-no-delay .node-handle.react-flow__handle,
 .handles-no-delay .node-handle-icon.react-flow__handle {
   transition-delay: 0ms !important;
 }
 
-/* ── Suppress all transitions during rubber-band selection ────────────────── */
-/* Without this, every node gaining/losing .selected fires simultaneous handle
-   transform+opacity animations (180 ms + 280 ms delay), causing visible blinking. */
-.react-flow.is-rubber-band-selecting .node-handle.react-flow__handle,
+/* ── Suppress transitions during rubber-band selection ──────────────────── */
+/* Every node gaining/losing .selected would otherwise fire handle animations
+   at once and blink. */
 .react-flow.is-rubber-band-selecting .node-handle-icon.react-flow__handle {
   transition: none !important;
   animation: none !important;
@@ -534,11 +827,65 @@ body {
   transition: none !important;
 }
 
-/* ── Selection rectangle (drag) + post-release overlay ── */
+/* ── Duration slider ─────────────────────────────────────────────────────── */
+.dur-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  flex: 1;
+  height: 3px;
+  border-radius: 99px;
+  background: var(--rule-strong);
+  outline: none;
+  cursor: pointer;
+}
+
+.dur-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--ink);
+  cursor: pointer;
+  box-shadow: 0 0 0 2px var(--surface);
+}
+
+.dur-slider::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--ink);
+  cursor: pointer;
+  border: none;
+  box-shadow: 0 0 0 2px var(--surface);
+}
+
+.dur-slider:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 0 0 2px var(--surface), var(--focus-ring);
+}
+
+/* ── React Flow ground, selection and controls ──────────────────────────── */
+.react-flow {
+  --xy-background-color: var(--paper);
+  --xy-background-pattern-color: var(--canvas-dot);
+  --xy-edge-stroke: var(--edge-stroke);
+  --xy-edge-stroke-selected: var(--edge-stroke-active);
+  --xy-connectionline-stroke: var(--lapis);
+  --xy-selection-background-color: rgb(var(--lapis-rgb) / 0.05);
+  --xy-selection-border: 1px solid rgb(var(--lapis-rgb) / 0.35);
+  --xy-controls-button-background-color: var(--surface-raised);
+  --xy-controls-button-background-color-hover: var(--surface);
+  --xy-controls-button-color: var(--ink-2);
+  --xy-controls-button-color-hover: var(--ink);
+  --xy-controls-button-border-color: var(--rule);
+  --xy-controls-box-shadow: var(--shadow-md);
+  background: var(--paper);
+  color: var(--ink);
+}
+
 .react-flow__selection {
-  background: rgba(45, 212, 191, 0.04) !important;
-  border: 1px solid rgba(45, 212, 191, 0.3) !important;
-  border-radius: 3px;
+  background: rgb(var(--lapis-rgb) / 0.05) !important;
+  border: 1px solid rgb(var(--lapis-rgb) / 0.35) !important;
+  border-radius: var(--radius-xs);
   z-index: 0 !important;
   pointer-events: none;
 }
@@ -546,69 +893,12 @@ body {
 /* Post-release selection bounding box — keep it below nodes */
 .react-flow__nodesselection {
   z-index: 1 !important;
-  /* below viewport z-index:2 where nodes live */
 }
 
 .react-flow__nodesselection-rect {
-  background: rgba(45, 212, 191, 0.03) !important;
-  border: 1px solid rgba(45, 212, 191, 0.2) !important;
-  border-radius: 3px;
-}
-
-/* ── React Flow overrides ────────────────────────────── */
-.react-flow {
-  --xy-background-color-default: #0B0E14;
-  background: #0B0E14;
-}
-
-.react-flow__node.selected .node-card {
-  border-color: #2DD4BF !important;
-  box-shadow: 0 0 0 1px rgba(45, 212, 191, 0.25), 0 2px 16px rgba(0, 15, 30, 0.5);
-}
-
-.react-flow__node.selected .node-card.node-generating {
-  border-color: transparent !important;
-  box-shadow: none !important;
-}
-
-.react-flow__node .node-card.node-over-limit,
-.react-flow__node.selected .node-card.node-over-limit,
-.react-flow__node.node-ancestor .node-card.node-over-limit {
-  border-color: #ef4444 !important;
-  box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.2), 0 2px 14px rgba(239, 68, 68, 0.12) !important;
-}
-
-.react-flow__edge.selected .react-flow__edge-path {
-  filter: brightness(1.4);
-}
-
-/* ── Ancestor highlight (upstream nodes of selected node) ── */
-.react-flow__node.node-ancestor .node-card {
-  border-color: #2DD4BF !important;
-  box-shadow: 0 0 0 1px rgba(45, 212, 191, 0.15), 0 2px 16px rgba(0, 0, 0, 0.5);
-  transition: border-color 150ms, box-shadow 150ms;
-}
-
-.react-flow__node.node-ancestor .node-above-label {
-  color: rgba(0, 242, 255, 0.7);
-  transition: color 150ms;
-}
-
-.react-flow__edge.edge-ancestor .react-flow__edge-path {
-  filter: brightness(1.25);
-  opacity: 0.85;
-}
-
-/* ── Group-preview highlight (downstream + other connected nodes) ── */
-.react-flow__node.node-group-preview .node-card {
-  border-color: rgba(190, 190, 190, 0.65) !important;
-  box-shadow: 0 0 0 1px rgba(190, 190, 190, 0.1), 0 2px 16px rgba(0, 0, 0, 0.5);
-  transition: border-color 150ms, box-shadow 150ms;
-}
-
-.react-flow__node.node-group-preview .node-above-label {
-  color: rgba(190, 190, 190, 0.65);
-  transition: color 150ms;
+  background: transparent !important;
+  border: 1px dashed rgb(var(--lapis-rgb) / 0.3) !important;
+  border-radius: var(--radius-xs);
 }
 
 .react-flow__attribution {
@@ -616,164 +906,196 @@ body {
 }
 
 .react-flow__controls {
-  box-shadow: none !important;
-  border: 1px solid #1A2030 !important;
-  border-radius: 6px !important;
+  box-shadow: var(--shadow-md) !important;
+  border-radius: var(--radius) !important;
   overflow: hidden;
 }
 
 .react-flow__controls-button {
-  background: #0B0E14 !important;
+  background: var(--surface-raised) !important;
   border: none !important;
-  border-bottom: 1px solid #1A2030 !important;
-  color: #A0A0A0 !important;
+  border-bottom: 1px solid var(--rule) !important;
+  color: var(--ink-2) !important;
+  transition: background-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
 }
 
 .react-flow__controls-button:hover {
-  background: #131720 !important;
-  color: #FFFFFF !important;
+  background: var(--surface) !important;
+  color: var(--ink) !important;
 }
 
 .react-flow__controls-button:last-child {
   border-bottom: none !important;
 }
 
+.react-flow__controls-button svg {
+  fill: currentColor !important;
+}
+
+/* ── Node states ─────────────────────────────────────────────────────────── */
+/* Selected: a 1.5px lapis ring over the lifted shadow. */
+.react-flow__node.selected .node-card {
+  box-shadow: 0 0 0 1.5px var(--lapis), var(--shadow-md);
+}
+
+/* Upstream of the selection */
+.react-flow__node.node-ancestor .node-card {
+  box-shadow: 0 0 0 1px rgb(var(--lapis-rgb) / 0.45), var(--shadow-sm);
+}
+
+.react-flow__node.node-ancestor .node-above-label {
+  color: var(--lapis);
+}
+
+/* Would join the group if grouped now */
+.react-flow__node.node-group-preview .node-card {
+  box-shadow: 0 0 0 1px rgb(var(--ink-rgb) / 0.3), var(--shadow-sm);
+}
+
+.react-flow__node.node-group-preview .node-above-label {
+  color: var(--ink-2);
+}
+
+/* Generating: a calm lapis hairline; the media slot carries the shimmer. */
+.node-card.node-generating {
+  box-shadow: 0 0 0 1px rgb(var(--lapis-rgb) / 0.45), var(--shadow-md);
+}
+
+/* Queued in a pipeline run: a slow ochre breath. */
+@keyframes node-queued-pulse {
+  0%, 100% { box-shadow: 0 0 0 1px rgb(var(--ochre-rgb) / 0.2), var(--shadow-sm); }
+  50%      { box-shadow: 0 0 0 1px rgb(var(--ochre-rgb) / 0.55), var(--shadow-sm); }
+}
+
+.node-card.node-queued {
+  animation: node-queued-pulse 2s var(--ease-in-out) infinite;
+}
+
+/* Over a model's limit: sanguine, wins over selection. */
+.react-flow__node .node-card.node-over-limit,
+.react-flow__node.selected .node-card.node-over-limit,
+.react-flow__node.node-ancestor .node-card.node-over-limit {
+  box-shadow: 0 0 0 1.5px var(--sanguine), 0 0 0 5px rgb(var(--sanguine-rgb) / 0.12), var(--shadow-sm) !important;
+}
+
 /* ── Node error blink ────────────────────────────────── */
-/* box-shadow handles the glow; the ::before pseudo-element overlays the border
-   so the red blink covers the blue selected border instead of appearing outside it. */
+/* The ring lives on ::before so it blinks over whatever ring the card has
+   (selected, ancestor) without overriding it. The animationend event still
+   bubbles to the card with animationName "node-error-blink". */
 @keyframes node-error-blink {
-
-  0%,
-  100% {
-    box-shadow: 0 0 0 1px rgba(80, 80, 80, 0.08), 0 2px 16px rgba(0, 0, 0, 0.5);
-  }
-
-  20%,
-  55% {
-    box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.35), 0 0 28px rgba(239, 68, 68, 0.25);
-  }
-
-  37%,
-  72% {
-    box-shadow: 0 0 0 1px rgba(80, 80, 80, 0.08), 0 2px 16px rgba(0, 0, 0, 0.5);
-  }
+  0%, 37%, 72%, 100% { opacity: 0; }
+  20%, 55%           { opacity: 1; }
 }
 
-/* Pseudo-element overlays the node border — covers the blue selected border with red */
-@keyframes node-error-blink-border {
-
-  0%,
-  100% {
-    border-color: transparent;
-  }
-
-  20%,
-  55% {
-    border-color: #ef4444;
-  }
-
-  37%,
-  72% {
-    border-color: transparent;
-  }
-}
-
-@keyframes label-error-blink {
-
-  0%,
-  100% {
-    color: #6A7080;
-  }
-
-  20%,
-  55% {
-    color: #f87171;
-  }
-
-  37%,
-  72% {
-    color: #6A7080;
-  }
-}
-
-.node-error-blink {
+.node-card.node-error-blink::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: 1;
+  opacity: 0;
+  box-shadow: 0 0 0 1.5px var(--sanguine), 0 0 0 6px rgb(var(--sanguine-rgb) / 0.14);
   animation: node-error-blink 1.4s ease 1 forwards;
 }
 
-/* Positioned over the node border, so the red ring covers the blue selected border */
-.node-card.node-error-blink::before {
-  content: '';
-  position: absolute;
-  inset: -1px;
-  border-radius: 8px;
-  border: 1px solid transparent;
-  pointer-events: none;
-  z-index: 1;
-  animation: node-error-blink-border 1.4s ease 1 forwards;
-}
-
-/* ── Node identify blink (triggered from group toolbar job list) ── */
-/* Applied via an injected <style> tag (not via classList) so React can't wipe it */
-@keyframes node-identify-input-blink {
-  0%, 100% { box-shadow: 0 2px 16px rgba(0,0,0,0.5); border-color: transparent; }
-  18%       { box-shadow: 0 0 0 3px rgba(45,212,191,0.55), 0 0 30px rgba(45,212,191,0.15); border-color: rgba(45,212,191,0.65); }
-  35%       { box-shadow: 0 2px 16px rgba(0,0,0,0.5); border-color: transparent; }
-  58%       { box-shadow: 0 0 0 2px rgba(45,212,191,0.35), 0 0 20px rgba(45,212,191,0.08); border-color: rgba(45,212,191,0.45); }
-  75%       { box-shadow: 0 2px 16px rgba(0,0,0,0.5); border-color: transparent; }
-}
-
-@keyframes node-identify-blink {
-  0%, 100% {
-    box-shadow: 0 2px 16px rgba(0, 0, 0, 0.5);
-    border-color: transparent;
-  }
-  18% {
-    box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.75), 0 0 30px rgba(255, 255, 255, 0.2);
-    border-color: rgba(255, 255, 255, 0.8);
-  }
-  35% {
-    box-shadow: 0 2px 16px rgba(0, 0, 0, 0.5);
-    border-color: transparent;
-  }
-  58% {
-    box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.5), 0 0 20px rgba(255, 255, 255, 0.12);
-    border-color: rgba(255, 255, 255, 0.5);
-  }
-  75% {
-    box-shadow: 0 2px 16px rgba(0, 0, 0, 0.5);
-    border-color: transparent;
-  }
+@keyframes label-error-blink {
+  0%, 37%, 72%, 100% { color: var(--ink-3); }
+  20%, 55%           { color: var(--sanguine); }
 }
 
 .node-error-blink .node-above-label {
   animation: label-error-blink 1.4s ease 1 forwards;
 }
 
-/* ── Animated dashed edge (drag ghost + pending connection line) ── */
+/* ── Node identify blink (group toolbar job list) ── */
+/* Applied via an injected <style> tag (not classList) so React can't wipe it. */
+@keyframes node-identify-input-blink {
+  0%, 35%, 75%, 100% { box-shadow: var(--shadow-sm); }
+  18%                { box-shadow: 0 0 0 2px var(--lapis), 0 0 0 7px rgb(var(--lapis-rgb) / 0.14), var(--shadow-md); }
+  58%                { box-shadow: 0 0 0 1.5px rgb(var(--lapis-rgb) / 0.7), 0 0 0 5px rgb(var(--lapis-rgb) / 0.08), var(--shadow-md); }
+}
+
+@keyframes node-identify-blink {
+  0%, 35%, 75%, 100% { box-shadow: var(--shadow-sm); }
+  18%                { box-shadow: 0 0 0 2px var(--ink), 0 0 0 7px rgb(var(--ink-rgb) / 0.12), var(--shadow-md); }
+  58%                { box-shadow: 0 0 0 1.5px rgb(var(--ink-rgb) / 0.6), 0 0 0 5px rgb(var(--ink-rgb) / 0.06), var(--shadow-md); }
+}
+
+/* ── Wires ───────────────────────────────────────────── */
+.canvas-edge {
+  stroke: var(--edge-stroke);
+  transition: stroke var(--dur-fast) var(--ease-out), opacity var(--dur-fast) var(--ease-out);
+}
+
+.react-flow__edge:hover .canvas-edge {
+  stroke: var(--edge-stroke-hover);
+}
+
+.react-flow__edge.selected .canvas-edge,
+.react-flow__edge.edge-ancestor .canvas-edge,
+.canvas-edge.canvas-edge-active {
+  stroke: var(--edge-stroke-active);
+}
+
 @keyframes dash-flow {
-  from {
-    stroke-dashoffset: 0;
-  }
-
-  to {
-    stroke-dashoffset: -18;
-  }
+  from { stroke-dashoffset: 0; }
+  to   { stroke-dashoffset: -18; }
 }
 
-/* Ghost line while dragging — stroke-dasharray set via connectionLineStyle prop */
+/* Ghost line while dragging — dasharray set via connectionLineStyle */
 .react-flow__connection-path {
-  animation: dash-flow 0.45s linear infinite;
+  animation: dash-flow 0.6s linear infinite;
 }
 
-/* Persistent preview line while node-picker menu is open */
+/* Persistent preview line while the node picker is open */
 .pending-edge-line {
-  animation: dash-flow 0.45s linear infinite;
+  animation: dash-flow 0.6s linear infinite;
+}
+
+@keyframes edge-extracting {
+  from { stroke-dashoffset: 0; }
+  to   { stroke-dashoffset: -12; }
+}
+
+/* Error: two sanguine pulses, back to the resting stroke. */
+@keyframes edge-error-blink {
+  20%, 55% { stroke: var(--sanguine); }
+}
+
+/* ── Handle error blink ──────────────────────────────────────────────────── */
+@keyframes handle-error-blink {
+  0%, 37%, 72%, 100% { box-shadow: none; }
+  20%, 55%           { box-shadow: 0 0 0 4px rgb(var(--sanguine-rgb) / 0.2); }
+}
+
+@keyframes handle-error-blink-border {
+  0%, 37%, 72%, 100% { opacity: 0; }
+  20%, 55%           { opacity: 1; }
+}
+
+.node-handle-error.react-flow__handle {
+  opacity: 1 !important;
+  animation: handle-error-blink 1.4s ease 1 forwards;
+}
+
+/* Covers the pigment border with sanguine while blinking */
+.node-handle-icon.node-handle-error::before {
+  content: "";
+  position: absolute;
+  inset: -1.5px;
+  border-radius: 50%;
+  border: 1.5px solid var(--sanguine);
+  pointer-events: none;
+  z-index: 1;
+  opacity: 0;
+  animation: handle-error-blink-border 1.4s ease 1 forwards;
 }
 
 /* ── Corner resize handles — show per-handle on hover ── */
 .corner-handle {
   opacity: 0;
-  transition: opacity 120ms ease;
+  transition: opacity var(--dur-fast) var(--ease-out);
 }
 
 .corner-handle:hover,
@@ -781,130 +1103,26 @@ body {
   opacity: 1;
 }
 
-/* ── Toolbar buttons ─────────────────────────────────── */
-.toolbar-btn {
-  font-size: 13px;
-  font-weight: 500;
-  color: #A0A0A0;
-  background: #0B0E14;
-  border: 1px solid #1E2840;
-  border-radius: 6px;
-  padding: 5px 12px;
-  cursor: pointer;
-  transition: color 100ms, border-color 100ms;
-  font-family: inherit;
-}
-
-.toolbar-btn:hover:not(:disabled) {
-  color: #FFFFFF;
-  border-color: #243050;
-}
-
-.toolbar-btn:disabled {
-  opacity: 0.3;
-  cursor: not-allowed;
-}
-
-.toolbar-btn-primary {
-  font-size: 13px;
-  font-weight: 500;
-  color: #FFFFFF;
-  background: #2DD4BF;
-  border: 1px solid #2DD4BF;
-  border-radius: 6px;
-  padding: 5px 14px;
-  cursor: pointer;
-  transition: background 100ms, border-color 100ms, box-shadow 100ms;
-  font-family: inherit;
-}
-
-.toolbar-btn-primary:hover:not(:disabled) {
-  background: #2DD4BF;
-  border-color: #2DD4BF;
-  box-shadow: 0 0 12px rgba(45, 212, 191, 0.35);
-}
-
-.toolbar-btn-primary:disabled {
-  opacity: 0.3;
-  cursor: not-allowed;
-}
-
-/* ── Video Generator node — subtle border ────────────── */
-.video-node-card.node-card {
-  border-color: #1C2436;
-  box-shadow: 0 0 0 1px rgba(80, 80, 80, 0.08), 0 2px 16px rgba(0, 0, 0, 0.5);
-}
-
-.video-node-card.node-card:hover {
-  border-color: #2A3550;
-  box-shadow: 0 0 0 1px rgba(45, 212, 191, 0.12), 0 2px 20px rgba(0, 0, 0, 0.6);
-}
-
-.react-flow__node.selected .video-node-card.node-card {
-  border-color: #2DD4BF !important;
-  box-shadow: 0 0 0 1px rgba(45, 212, 191, 0.25), 0 2px 16px rgba(0, 15, 30, 0.5);
-}
-
-.react-flow__node.node-ancestor .video-node-card.node-card {
-  border-color: #2DD4BF !important;
-  box-shadow: 0 0 0 1px rgba(45, 212, 191, 0.15), 0 0 18px rgba(0, 0, 0, 0.5);
-}
-
-/* ── Carousel slide ─────────────────────────────────────────────────────── */
-@keyframes carousel-slide-from-right {
-  from {
-    transform: translateX(100%);
-  }
-
-  to {
-    transform: translateX(0);
-  }
-}
-
-@keyframes carousel-slide-from-left {
-  from {
-    transform: translateX(-100%);
-  }
-
-  to {
-    transform: translateX(0);
-  }
-}
-
 /* ── Spinner ─────────────────────────────────────────────────────────────── */
 @keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
+  to { transform: rotate(360deg); }
 }
 
-/* ── Node action bar / group toolbar enter animation ─────────────────────── */
+/* ── Node action bar / group toolbar enter ───────────────────────────────── */
 @keyframes node-action-bar-enter {
-  from {
-    opacity: 0;
-    transform: translateY(5px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 
 .node-action-bar-enter {
-  animation: node-action-bar-enter 160ms ease forwards;
+  animation: node-action-bar-enter 160ms var(--ease-out) forwards;
 }
 
-/* ── Node delete animation ───────────────────────────────────────────────── */
-/* Use individual `scale` property — does NOT conflict with RF's translate() transform */
+/* ── Node delete ─────────────────────────────────────────────────────────── */
+/* Opacity only — doesn't fight React Flow's translate() transform. */
 @keyframes node-delete {
-  0% {
-    opacity: 1;
-  }
-
-  100% {
-    opacity: 0;
-  }
+  from { opacity: 1; }
+  to   { opacity: 0; }
 }
 
 .node-dying {
@@ -920,8 +1138,8 @@ body {
 
 /* ── Hover-revealed elements slide up from below ─────────────────────────── */
 .node-slide-reveal {
-  transform: translateY(5px);
-  transition: opacity 150ms ease, transform 150ms ease !important;
+  transform: translateY(4px);
+  transition: opacity 150ms var(--ease-out), transform 150ms var(--ease-out) !important;
 }
 
 .group:hover .node-slide-reveal,
@@ -933,170 +1151,33 @@ body {
 
 /* ── Float menu slide (bottom → top) ─────────────────────────────────────── */
 @keyframes float-menu-in {
-  from {
-    opacity: 0;
-    translate: 0 6px;
-  }
-
-  to {
-    opacity: 1;
-    translate: 0 0;
-  }
+  from { opacity: 0; translate: 0 6px; }
+  to   { opacity: 1; translate: 0 0; }
 }
 
 @keyframes float-menu-out {
-  from {
-    opacity: 1;
-    translate: 0 0;
-  }
-
-  to {
-    opacity: 0;
-    translate: 0 6px;
-  }
+  from { opacity: 1; translate: 0 0; }
+  to   { opacity: 0; translate: 0 6px; }
 }
 
 .float-menu-enter {
-  animation: float-menu-in 140ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: float-menu-in 140ms var(--ease-out) forwards;
 }
 
 .float-menu-exit {
   animation: float-menu-out 110ms ease forwards;
 }
 
-/* ── Edge error blink ────────────────────────────────────────────────────── */
-@keyframes edge-extracting {
-  from { stroke-dashoffset: 0; }
-  to   { stroke-dashoffset: -12; }
-}
-
-@keyframes edge-error-blink {
-
-  0%,
-  100% {
-    stroke: var(--edge-color);
-  }
-
-  20%,
-  55% {
-    stroke: #ef4444;
-  }
-
-  37%,
-  72% {
-    stroke: var(--edge-color);
-  }
-}
-
-/* ── Handle error blink ──────────────────────────────────────────────────── */
-/* Glow via box-shadow; border overlay via ::before pseudo so the red covers
-   the role-color border instead of appearing as a ring outside it. */
-@keyframes handle-error-blink {
-
-  0%,
-  100% {
-    box-shadow: none;
-  }
-
-  20%,
-  55% {
-    box-shadow: 0 0 8px rgba(239, 68, 68, 0.5);
-  }
-
-  37%,
-  72% {
-    box-shadow: none;
-  }
-}
-
-/* Pseudo-element matches the handle's border position exactly */
-@keyframes handle-error-blink-border {
-
-  0%,
-  100% {
-    border-color: transparent;
-  }
-
-  20%,
-  55% {
-    border-color: #ef4444;
-  }
-
-  37%,
-  72% {
-    border-color: transparent;
-  }
-}
-
-.node-handle-error.react-flow__handle {
-  opacity: 1 !important;
-  animation: handle-error-blink 1.4s ease 1 forwards;
-}
-
-/* Overlays the handle's role-color border with the blinking red border */
-.node-handle-icon.node-handle-error::before {
-  content: '';
-  position: absolute;
-  inset: -1.5px;
-  border-radius: 50%;
-  border: 1.5px solid transparent;
-  pointer-events: none;
-  z-index: 1;
-  animation: handle-error-blink-border 1.4s ease 1 forwards;
-}
-
 /* ── Upload pulse (image node while uploading) ───────────────────────────── */
 @keyframes upload-pulse {
-
-  0%,
-  100% {
-    opacity: 1;
-  }
-
-  50% {
-    opacity: 0.2;
-  }
-}
-
-/* ── Upload skeleton shimmer ─────────────────────────────────────────────── */
-@keyframes upload-shimmer {
-  0% {
-    left: -70%;
-  }
-
-  100% {
-    left: 130%;
-  }
-}
-
-.upload-shimmer-bar {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  width: 50%;
-  background: linear-gradient(to right,
-      transparent 0%,
-      rgba(255, 255, 255, 0.13) 30%,
-      rgba(255, 255, 255, 0.28) 50%,
-      rgba(255, 255, 255, 0.13) 70%,
-      transparent 100%);
-  animation: upload-shimmer 1.4s ease-in-out infinite;
-  pointer-events: none;
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.2; }
 }
 
 /* ── Lightbox blur-up pulse ───────────────────────────────────────────────── */
 @keyframes lightbox-blur-pulse {
-
-  0%,
-  100% {
-    filter: blur(6px);
-    opacity: 1;
-  }
-
-  50% {
-    filter: blur(22px);
-    opacity: 0.7;
-  }
+  0%, 100% { filter: blur(6px); opacity: 1; }
+  50%      { filter: blur(22px); opacity: 0.7; }
 }
 
 .lightbox-blur-pulse {
@@ -1104,49 +1185,16 @@ body {
   transform-origin: center;
 }
 
-/* ── Generating border animation ─────────────────────────────────────────── */
-.node-card.node-generating {
-  border: 2px solid transparent;
-  background:
-    linear-gradient(#141820, #141820) padding-box,
-    conic-gradient(
-      from var(--border-angle, 0deg),
-      rgba(45, 212, 191, 0.05) 0deg,
-      rgba(45, 212, 191, 0.05) 150deg,
-      #00266A 200deg,
-      #005FCC 250deg,
-      #00AEFF 305deg,
-      #00F2FF 340deg,
-      rgba(0, 242, 255, 0.05) 360deg
-    ) border-box;
-  transition: none;
-  box-shadow: none;
-}
-
-/* ── Pipeline queued state ───────────────────────────────────────────────── */
-@keyframes node-queued-pulse {
-  0%, 100% { border-color: rgba(148, 163, 184, 0.18); box-shadow: 0 2px 16px rgba(0,0,0,0.5); }
-  50%       { border-color: rgba(148, 163, 184, 0.5);  box-shadow: 0 2px 16px rgba(0,0,0,0.5), 0 0 0 1px rgba(148,163,184,0.15); }
-}
-
-.node-card.node-queued {
-  animation: node-queued-pulse 2s ease-in-out infinite;
-}
-
-/* ── Prompt node textarea scrollbar — overlay style, no hover change ─────── */
-/* scrollbar-width:thin keeps the native overlay model (appears on scroll,
-   no reserved gutter, no macOS mode-switch on hover) */
+/* ── Prompt node textarea scrollbar — overlay style ──────────────────────── */
 .prompt-ta {
   scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
+  scrollbar-color: var(--rule-strong) transparent;
 }
 
-/* Suppress the always-visible WebKit classic track that causes the black bar */
 .prompt-ta::-webkit-scrollbar {
   display: none;
 }
 
-/* ── @mention chip in PromptNode ─────────────────────────────────────────── */
 /* ── Canvas hand/pan mode cursor ─────────────────────────────────────────── */
 .canvas-hand-mode,
 .canvas-hand-mode .react-flow__pane {
@@ -1158,15 +1206,15 @@ body {
   cursor: grabbing !important;
 }
 
+/* ── @mention chip in PromptNode ─────────────────────────────────────────── */
 .mention-chip {
   display: inline;
-  background: rgba(255, 255, 255, 0.13);
-  border-radius: 4px;
-  color: #FFFFFF;
+  background: var(--lapis-soft);
+  border-radius: var(--radius-xs);
+  color: var(--lapis);
   padding: 2px 0;
   pointer-events: auto;
-  /* shadows stay well under space-char width (~3-4 px) so the natural space
-     character creates a visible gap to surrounding text, and the caret lands
-     outside the chip */
-  box-shadow: -2px 0 0 rgba(255, 255, 255, 0.13), 2px 0 0 rgba(255, 255, 255, 0.13);
+  /* shadows stay under a space-char width (~3-4 px) so the natural space
+     creates a visible gap and the caret lands outside the chip */
+  box-shadow: -2px 0 0 var(--lapis-soft), 2px 0 0 var(--lapis-soft);
 }

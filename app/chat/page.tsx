@@ -1,667 +1,412 @@
 "use client";
 
-import React, { useCallback, useEffect, useRef, useState, Suspense } from "react";
-import { flushSync } from "react-dom";
+import { Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useChatSessionStore, type StoredMessage, type ChatSession } from "@/lib/chatSessionStore";
-import { getToken } from "@/lib/galleryUtils";
-import { MODEL_GROUPS, MODELS, type ModelId } from "@/lib/models";
-import { SYSTEM_PROMPT } from "@/lib/systemPrompt";
-import { Send, ChevronUp, Copy, Check } from "lucide-react";
-import { motion } from "motion/react";
-import Image from "next/image";
-import DotCanvasBackground from "@/components/ui/DotCanvasBackground";
-import TypewriterHeading from "@/components/ui/TypewriterHeading";
-import { useWorkflowStore } from "@/lib/store";
-import { loadAzureBaseUrl, loadAzureTextDeployment, loadAzureTextModelName } from "@/components/SettingsModal";
+import { PenLine } from "lucide-react";
+import { useChatSessionStore, type ChatMode, type StoredMessage } from "@/lib/chatSessionStore";
+import { useChatStreamingStore, watchSession } from "@/lib/chatStreamingStore";
+import { getDefaultChatModel, useDefaultChatModel } from "@/lib/useAgents";
+import { useModelLabel } from "@/components/chat/ModelPicker";
+import { Mark } from "@/components/brand/Mark";
+import { Button } from "@/components/ui/button";
+import { Composer } from "@/components/chat/Composer";
+import { ChatThread } from "@/components/chat/ChatThread";
+import { ContextCard } from "@/components/chat/ContextCard";
+import { useImageAttachments } from "@/components/chat/useImageAttachments";
 
-// ── Logo ──────────────────────────────────────────────────────────────────────
+const DRAFT_DEBOUNCE_MS = 300;
+const NO_MESSAGES: StoredMessage[] = [];
 
-function LogoIcon({ size = 40 }: { size?: number }) {
-  return <Image src="/HG.svg" alt="Logo" width={size} height={size} />;
-}
-
-// ── Model picker ──────────────────────────────────────────────────────────────
-
-function ModelPicker({
-  model, onChange, direction = "up", disabledIds = [],
-}: {
-  model: ModelId;
-  onChange: (id: ModelId) => void;
-  direction?: "up" | "down";
-  disabledIds?: string[];
-}) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    function onPointer(e: PointerEvent) {
-      if (!ref.current?.contains(e.target as Node)) setOpen(false);
-    }
-    window.addEventListener("pointerdown", onPointer);
-    return () => window.removeEventListener("pointerdown", onPointer);
-  }, []);
-
-  const current = MODELS.find(m => m.id === model);
-  const dropPos = direction === "up"
-    ? { bottom: "calc(100% + 6px)" }
-    : { top: "calc(100% + 6px)" };
-
-  return (
-    <div ref={ref} style={{ position: "relative", flexShrink: 0 }}>
-      <button
-        onClick={() => setOpen(o => !o)}
-        style={{
-          display: "flex", alignItems: "center", gap: "5px",
-          padding: "0 8px", height: "32px", borderRadius: "8px",
-          background: open ? "rgba(255,255,255,0.09)" : "transparent",
-          border: "1px solid transparent",
-          color: "rgba(255,255,255,0.5)", fontSize: "12px",
-          fontFamily: "inherit", cursor: "pointer",
-          transition: "background 120ms, color 120ms", whiteSpace: "nowrap",
-        }}
-      >
-        {current?.label}
-        <ChevronUp
-          size={12}
-          style={{
-            opacity: 0.5,
-            transform: direction === "up"
-              ? (open ? "rotate(180deg)" : "none")
-              : (open ? "none" : "rotate(180deg)"),
-            transition: "transform 120ms",
-          }}
-        />
-      </button>
-      {open && (
-        <div style={{
-          position: "absolute", right: 0, ...dropPos,
-          minWidth: "180px", background: "rgba(14,16,18,0.98)",
-          border: "1px solid rgba(255,255,255,0.1)", borderRadius: "12px",
-          boxShadow: "0 8px 32px rgba(0,0,0,0.6)", overflow: "hidden", zIndex: 100,
-        }}>
-          <div style={{ padding: "4px" }}>
-            {MODEL_GROUPS.map((group, gi) => (
-              <div key={group.label}>
-                {gi > 0 && <div style={{ height: "1px", background: "rgba(255,255,255,0.07)", margin: "4px 0" }} />}
-                <div style={{ padding: "4px 8px 2px", fontSize: "10px", fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase", color: "rgba(255,255,255,0.25)" }}>
-                  {group.label}
-                </div>
-                {group.models.map(m => {
-                  const disabled = disabledIds.includes(m.id);
-                  return (
-                    <button
-                      key={m.id}
-                      onClick={() => { if (!disabled) { onChange(m.id); setOpen(false); } }}
-                      title={disabled ? "Configure Azure in Settings → API Keys" : undefined}
-                      style={{
-                        display: "flex", alignItems: "center", justifyContent: "space-between",
-                        width: "100%", padding: "7px 8px", borderRadius: "7px", border: "none",
-                        background: model === m.id ? "rgba(45,212,191,0.12)" : "transparent",
-                        color: disabled ? "rgba(255,255,255,0.25)" : model === m.id ? "rgba(94,234,212,0.95)" : "rgba(255,255,255,0.7)",
-                        fontSize: "13px", fontFamily: "inherit",
-                        cursor: disabled ? "not-allowed" : "pointer",
-                        textAlign: "left", transition: "background 100ms",
-                        opacity: disabled ? 0.5 : 1,
-                      }}
-                      onMouseEnter={e => { if (!disabled && model !== m.id) (e.currentTarget as HTMLButtonElement).style.background = "rgba(255,255,255,0.06)"; }}
-                      onMouseLeave={e => { if (!disabled && model !== m.id) (e.currentTarget as HTMLButtonElement).style.background = "transparent"; }}
-                    >
-                      <span>{m.label}</span>
-                      <span style={{ fontSize: "10px", color: disabled ? "rgba(255,255,255,0.18)" : "rgba(255,255,255,0.28)", marginLeft: "8px" }}>
-                        {disabled ? "needs Azure key" : m.desc}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ── Cycling placeholder ───────────────────────────────────────────────────────
+// ── Cycling placeholder ──────────────────────────────────────────────────────
 
 const PLACEHOLDER_SENTENCES = [
-  "Convert this prompt into a JSON prompt",
-  "Improve this prompt by giving more camera details",
-  "Generate a prompt to create an image of a girl holding a flower",
-  "Make this prompt more cinematic and add lighting details",
-  "Rewrite this prompt for a photorealistic style",
+  "A lighthouse at dusk, painted like a Turner",
+  "Make this prompt more cinematic, with lighting details",
+  "Turn this prompt into a JSON prompt",
+  "A slow dolly shot through a rain-soaked market at night",
+  "Rewrite this for a photorealistic style",
+];
+
+const SUGGESTIONS = [
+  "Make this more cinematic",
+  "Turn this into a JSON prompt",
+  "Add camera and lens details",
+];
+
+/** Explore starters: openings for someone who doesn't have an idea yet. */
+const EXPLORE_STARTERS = [
+  "I need a picture for…",
+  "I have a mood, not an idea yet",
+  "Help me choose a style",
 ];
 
 function useCyclingPlaceholder(paused: boolean) {
-  const [text, setText] = useState("");
-  const idx = useRef(0);
-  const phase = useRef<"typing" | "waiting" | "deleting">("typing");
-  const char = useRef(0);
+  const [text, setText] = useState(PLACEHOLDER_SENTENCES[0]);
 
   useEffect(() => {
-    if (paused) return;
-
-    let timeout: ReturnType<typeof setTimeout>;
+    if (paused || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    let idx = 0;
+    let char = PLACEHOLDER_SENTENCES[0].length;
+    let phase: "typing" | "waiting" | "deleting" = "waiting";
+    let timeout: number;
 
     function tick() {
-      const sentence = PLACEHOLDER_SENTENCES[idx.current];
-
-      if (phase.current === "typing") {
-        char.current++;
-        setText(sentence.slice(0, char.current));
-        if (char.current >= sentence.length) {
-          phase.current = "waiting";
-          timeout = setTimeout(tick, 2000);
-        } else {
-          timeout = setTimeout(tick, 42);
-        }
-      } else if (phase.current === "waiting") {
-        phase.current = "deleting";
-        timeout = setTimeout(tick, 40);
+      const sentence = PLACEHOLDER_SENTENCES[idx];
+      if (phase === "typing") {
+        char++;
+        setText(sentence.slice(0, char));
+        if (char >= sentence.length) phase = "waiting";
+        timeout = window.setTimeout(tick, phase === "waiting" ? 2600 : 45);
+      } else if (phase === "waiting") {
+        phase = "deleting";
+        timeout = window.setTimeout(tick, 30);
       } else {
-        char.current--;
-        setText(sentence.slice(0, char.current));
-        if (char.current <= 0) {
-          idx.current = (idx.current + 1) % PLACEHOLDER_SENTENCES.length;
-          phase.current = "typing";
-          timeout = setTimeout(tick, 300);
-        } else {
-          timeout = setTimeout(tick, 28);
+        char--;
+        setText(sentence.slice(0, char));
+        if (char <= 0) {
+          idx = (idx + 1) % PLACEHOLDER_SENTENCES.length;
+          phase = "typing";
         }
+        timeout = window.setTimeout(tick, phase === "typing" ? 350 : 22);
       }
     }
 
-    timeout = setTimeout(tick, 400);
+    timeout = window.setTimeout(tick, 2600);
     return () => clearTimeout(timeout);
   }, [paused]);
 
   return text;
 }
 
-// ── Landing view (no active session) ─────────────────────────────────────────
+// ── Chat screen (landing and conversation share one composer instance) ──────
 
+function ChatScreen({ urlId }: { urlId: string | null }) {
+  // The session this composer created from a draft, until `?id=` catches up; switching to it keeps the text.
+  // State drives rendering; the ref mirrors it for debounced callbacks that outlive a render.
+  const [createdId, setCreatedId] = useState<string | null>(null);
+  const createdRef = useRef<string | null>(null);
+  const pending = useRef<{ timer: number; sessionId: string | null; text: string; images: string[] } | null>(null);
+  // The mode picked before this screen has a session; the session takes it when it's created.
+  const [pendingMode, setPendingMode] = useState<ChatMode>("refine");
+  const pendingModeRef = useRef<ChatMode>("refine");
 
-function LandingView({
-  onSubmit, model, onModelChange,
-}: {
-  onSubmit: (text: string) => void;
-  model: ModelId;
-  onModelChange: (id: ModelId) => void;
-}) {
-  const [input, setInput] = useState("");
-  const [headingDone, setHeadingDone] = useState(false);
-  const inputRef = useRef<HTMLTextAreaElement>(null);
-  const animatedPlaceholder = useCyclingPlaceholder(!headingDone || input.length > 0);
-  const kieKeySet   = useWorkflowStore((s) => s.kieKeySet);
-  const azureKeySet = useWorkflowStore((s) => s.azureKeySet);
-  const disabledIds = azureKeySet === true ? [] : ["azure-auto"];
+  // The URL moved somewhere other than the session we created (e.g. "New chat"): forget it.
+  let created = createdId;
+  const [seenUrlId, setSeenUrlId] = useState(urlId);
+  if (seenUrlId !== urlId) {
+    setSeenUrlId(urlId);
+    if (urlId !== createdId) {
+      created = null;
+      setCreatedId(null);
+    }
+  }
+  const sessionId = urlId ?? created;
 
-  useEffect(() => { inputRef.current?.focus(); }, []);
+  const session = useChatSessionStore((s) => (sessionId ? s.sessions.find((x) => x.id === sessionId) : undefined));
+  const defaultModel = useDefaultChatModel();
+  const stream = useChatStreamingStore((s) => (sessionId ? s.streams[sessionId] : undefined));
+  const model = session?.model ?? defaultModel;
+  const mode: ChatMode = session ? (session.mode ?? "refine") : pendingMode;
+  const { label, source, unavailable } = useModelLabel(model);
+  const messages = session?.messages ?? NO_MESSAGES;
+  const isLanding = messages.length === 0 && !stream;
 
-  function submit(text: string) {
-    const trimmed = text.trim();
-    if (trimmed) onSubmit(trimmed);
+  const [input, setInput] = useState(() => session?.draft ?? "");
+  const attachments = useImageAttachments(session?.draftImages, onImagesChange);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const stickToBottom = useRef(true);
+
+  // Switching sessions: show that session's saved draft.
+  const [shownFor, setShownFor] = useState(sessionId);
+  if (shownFor !== sessionId) {
+    setShownFor(sessionId);
+    if (sessionId === null || sessionId !== created) setInput(session?.draft ?? "");
   }
 
-  function onKey(e: React.KeyboardEvent<HTMLTextAreaElement>) {
-    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(input); }
+  // history.replaceState (synced into useSearchParams by Next) rather than router.replace: a new search
+  // string is a new page segment for the router, which would remount this screen mid-keystroke.
+  const markCreated = useCallback((id: string) => {
+    createdRef.current = id;
+    setCreatedId(id);
+    window.history.replaceState(window.history.state, "", `/chat?id=${id}`);
+  }, []);
+
+  const commitDraft = useCallback(
+    (targetId: string | null, text: string, images: string[]) => {
+      const store = useChatSessionStore.getState();
+      const id = targetId ?? createdRef.current;
+      if (id && store.sessions.some((s) => s.id === id)) {
+        store.setDraft(id, text, images);
+      } else if (!targetId && (text.trim() || images.length > 0)) {
+        markCreated(store.ensureDraftSession(getDefaultChatModel(), text, images, { mode: pendingModeRef.current }));
+      }
+    },
+    [markCreated],
+  );
+
+  const flushDraft = useCallback(() => {
+    const p = pending.current;
+    if (!p) return;
+    clearTimeout(p.timer);
+    pending.current = null;
+    commitDraft(p.sessionId, p.text, p.images);
+  }, [commitDraft]);
+
+  // Switching sessions: show that session's saved images too (the text follows above, during render).
+  const { reset: resetAttachments } = attachments;
+  useEffect(() => {
+    if (sessionId !== null && sessionId === createdRef.current) return;
+    const saved = sessionId ? useChatSessionStore.getState().sessions.find((s) => s.id === sessionId) : undefined;
+    resetAttachments(saved?.draftImages ?? []);
+  }, [sessionId, resetAttachments]);
+
+  // Save the draft before switching away, unmounting, or the window closing.
+  useEffect(() => {
+    if (sessionId !== createdRef.current) createdRef.current = null;
+    window.addEventListener("pagehide", flushDraft);
+    return () => {
+      window.removeEventListener("pagehide", flushDraft);
+      flushDraft();
+    };
+  }, [sessionId, flushDraft]);
+
+  useEffect(() => (sessionId ? watchSession(sessionId) : undefined), [sessionId]);
+
+  function scheduleDraft(text: string, images: string[]) {
+    if (pending.current) clearTimeout(pending.current.timer);
+    pending.current = {
+      sessionId,
+      text,
+      images,
+      timer: window.setTimeout(flushDraft, DRAFT_DEBOUNCE_MS),
+    };
   }
 
-  return (
-    <div style={{
-      flex: 1, display: "flex", flexDirection: "column",
-      alignItems: "center", justifyContent: "center",
-      padding: "0 24px 80px", position: "relative", overflow: "hidden",
-    }}>
-      <DotCanvasBackground />
-      {/* Logo */}
-      <div style={{ position: "relative", zIndex: 1, display: "flex", flexDirection: "column", alignItems: "center", width: "100%" }}>
-      <LogoIcon size={48} />
+  function onChange(text: string) {
+    setInput(text);
+    scheduleDraft(text, attachments.urls);
+  }
 
-      {/* Title */}
-      <TypewriterHeading text="I'm here to help you make better prompts." onDone={() => setHeadingDone(true)} />
-      <motion.p
-        initial={{ filter: "blur(10px)", opacity: 0 }}
-        animate={{ filter: "blur(0px)", opacity: 1 }}
-        transition={{ duration: 1 }}
-        style={{ color: "rgba(255,255,255,0.4)", fontSize: "15px", marginBottom: "40px", textAlign: "center" }}
-      >
-        Give me a prompt and I&apos;ll make it better.
-      </motion.p>
+  function onImagesChange(images: string[]) {
+    scheduleDraft(input, images);
+  }
 
-      {/* Input + suggestions */}
-      <div style={{ width: "100%", maxWidth: "680px" }}>
-        {/* Input bar */}
-        <div style={{
-          display: "flex", alignItems: "center",
-          background: "rgba(255,255,255,0.05)",
-          border: "1px solid rgba(255,255,255,0.12)",
-          borderRadius: "18px",
-          padding: "10px 10px 10px 20px",
-          boxShadow: "0 0 0 1px rgba(255,255,255,0.03) inset",
-          transition: "border-color 150ms",
-        }}>
-          <textarea
-            ref={inputRef}
-            value={input}
-            onChange={e => setInput(e.target.value)}
-            onKeyDown={onKey}
-            placeholder={input.length > 0 ? "" : animatedPlaceholder}
-            rows={1}
-            style={{
-              flex: 1, background: "transparent", border: "none", outline: "none",
-              resize: "none", color: "rgba(255,255,255,0.88)", fontSize: "15px",
-              fontFamily: "inherit", lineHeight: "24px", maxHeight: "120px",
-              overflowY: "auto", padding: 0,
-            }}
-            onInput={e => {
-              const t = e.currentTarget;
-              t.style.height = "auto";
-              t.style.height = Math.min(t.scrollHeight, 120) + "px";
-            }}
-          />
-          <div style={{ display: "flex", alignItems: "center", gap: "8px", marginLeft: "12px", flexShrink: 0 }}>
-            <ModelPicker model={model} onChange={onModelChange} direction="down" disabledIds={disabledIds} />
-            <button
-              onClick={() => submit(input)}
-              disabled={!input.trim() || kieKeySet === false || disabledIds.includes(model)}
-              style={{
-                width: "36px", height: "36px", borderRadius: "50%", border: "none",
-                background: input.trim() && kieKeySet !== false && !disabledIds.includes(model) ? "rgba(45,212,191,0.25)" : "rgba(255,255,255,0.07)",
-                color: input.trim() && kieKeySet !== false && !disabledIds.includes(model) ? "rgba(45,212,191,0.9)" : "rgba(255,255,255,0.25)",
-                cursor: input.trim() && kieKeySet !== false && !disabledIds.includes(model) ? "pointer" : "not-allowed",
-                display: "flex", alignItems: "center", justifyContent: "center",
-                flexShrink: 0, transition: "background 150ms, color 150ms",
-              }}
-            >
-              <Send size={15} />
-            </button>
+  function submit() {
+    const text = input.trim();
+    const images = attachments.urls;
+    if (!text && images.length === 0) return;
+    if (pending.current) clearTimeout(pending.current.timer);
+    pending.current = null;
+    const store = useChatSessionStore.getState();
+    let id = sessionId ?? createdRef.current;
+    if (!id || !store.sessions.some((s) => s.id === id)) {
+      id = store.ensureDraftSession(model, "", [], { mode });
+      markCreated(id);
+    }
+    store.setDraft(id, "", []);
+    setInput("");
+    attachments.reset([]);
+    stickToBottom.current = true;
+    useChatStreamingStore.getState().send(id, text, images);
+  }
+
+  function changeModel(id: string) {
+    const store = useChatSessionStore.getState();
+    store.setPreferredModel(id);
+    if (sessionId) store.setSessionModel(sessionId, id);
+  }
+
+  function changeMode(next: ChatMode) {
+    if (session) {
+      useChatSessionStore.getState().setSessionMode(session.id, next);
+    } else {
+      pendingModeRef.current = next;
+      setPendingMode(next);
+    }
+    textareaRef.current?.focus();
+  }
+
+  /** A suggested answer clicked in the thread goes out as-is; whatever is in the composer stays. */
+  function reply(text: string) {
+    if (!sessionId) return;
+    stickToBottom.current = true;
+    useChatStreamingStore.getState().send(sessionId, text);
+  }
+
+  const context = session?.context;
+  const contextCard = context && session && (
+    <ContextCard context={context} onDetach={() => useChatSessionStore.getState().setSessionContext(session.id, undefined)} />
+  );
+
+  function stop() {
+    if (sessionId) useChatStreamingStore.getState().stop(sessionId);
+  }
+
+  function retry() {
+    if (sessionId) useChatStreamingStore.getState().retry(sessionId);
+  }
+
+  // Follow the reply as it streams, unless the reader has scrolled up.
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (el && stickToBottom.current) el.scrollTop = el.scrollHeight;
+  }, [messages, stream?.content]);
+
+  useEffect(() => {
+    stickToBottom.current = true;
+    const t = textareaRef.current;
+    if (!t) return;
+    t.focus();
+    t.setSelectionRange(t.value.length, t.value.length);
+  }, [sessionId]);
+
+  const placeholder = useCyclingPlaceholder(!isLanding || input.length > 0 || mode === "explore" || !!context);
+
+  const composer = (
+    <Composer
+      value={input}
+      onChange={onChange}
+      onSubmit={submit}
+      onStop={stop}
+      streaming={!!stream}
+      model={model}
+      onModelChange={changeModel}
+      textareaRef={textareaRef}
+      pickerSide={isLanding ? "bottom" : "top"}
+      placeholder={
+        isLanding
+          ? context
+            ? "What would you like help with? Or just send, and I'll start."
+            : mode === "explore"
+              ? "A feeling, a purpose, a half-idea…"
+              : placeholder
+          : "Reply, or ask for another take…"
+      }
+      autoFocus
+      attachments={attachments}
+      mode={mode}
+      onModeChange={changeMode}
+    />
+  );
+
+  if (isLanding) {
+    const explore = mode === "explore";
+    return (
+      <div className="flex min-h-0 flex-1 flex-col">
+        <div className="titlebar-drag h-10 shrink-0" />
+        <div className="flex flex-1 flex-col items-center justify-center overflow-y-auto px-6 pb-[12vh]">
+          <div className="flex w-full max-w-[680px] flex-col">
+            <Mark className="mb-6 size-9 text-ink-3" />
+            <h1 className="type-display text-ink">{explore ? "What are you after?" : "What shall we make?"}</h1>
+            <p className="mt-2 mb-8 text-[15px] text-ink-2">
+              {explore
+                ? "Start with a feeling, a purpose, or a few references. I'll ask a few questions and sketch directions with you, then write the prompt."
+                : "Describe an idea, or paste a prompt. You will get back a richer prompt for images or video. Not sure yet? Turn on Explore."}
+            </p>
+            {contextCard && <div className="mb-3">{contextCard}</div>}
+            {composer}
+            <div className="mt-4 flex flex-wrap gap-2">
+              {(explore ? EXPLORE_STARTERS : SUGGESTIONS).map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => {
+                    if (explore) onChange(input.trim() ? `${input}\n${s}` : s);
+                    else onChange(input.trim() ? `${s}:\n${input}` : `${s}: `);
+                    textareaRef.current?.focus();
+                  }}
+                  className="h-7 rounded-full border border-dashed border-rule-strong px-3 text-[12.5px] text-ink-2 transition-colors duration-150 hover:bg-wash hover:text-ink"
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
-
       </div>
+    );
+  }
+
+  const modelLabel = (
+    <>
+      {label}
+      {source && ` · ${source}`}
+      {unavailable && <span className="text-ochre"> · unavailable</span>}
+    </>
+  );
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <header className="titlebar-drag flex h-14 shrink-0 items-end border-b border-rule px-6 pb-3">
+        <div className="mx-auto flex w-full max-w-[680px] items-baseline gap-3">
+          <h1 className="type-heading min-w-0 truncate text-ink">{session?.title || "Chat"}</h1>
+          <span className="shrink-0 text-[12px] text-ink-3">{modelLabel}</span>
+        </div>
+      </header>
+      <div
+        ref={scrollRef}
+        className="min-h-0 flex-1 overflow-y-auto px-6"
+        onScroll={(e) => {
+          const el = e.currentTarget;
+          stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+        }}
+      >
+        <div className="mx-auto flex w-full max-w-[680px] flex-col gap-7 py-8">
+          {contextCard}
+          <ChatThread messages={messages} stream={stream} onRetry={retry} onReply={reply} context={context} />
+        </div>
+      </div>
+      <div className="shrink-0 px-6 pb-5">
+        <div className="mx-auto w-full max-w-[680px]">{composer}</div>
       </div>
     </div>
   );
 }
 
-// ── Chat window ───────────────────────────────────────────────────────────────
+// ── Missing chat ─────────────────────────────────────────────────────────────
 
-interface LiveMessage {
-  role: "user" | "assistant";
-  content: string;
-  streaming?: boolean;
-}
-
-function ChatWindow({
-  session, onUpdate, defaultModel, onModelChange, onAuthRequired, initialMessage,
-}: {
-  session: ChatSession;
-  onUpdate: (msgs: StoredMessage[], model: string) => void;
-  defaultModel?: string;
-  onModelChange?: (id: ModelId) => void;
-  onAuthRequired?: () => void;
-  initialMessage?: string;
-}) {
-  const [isStreaming, setIsStreaming] = useState(false);
-  const [messages, setMessages] = useState<LiveMessage[]>(() =>
-    session.messages.map((m) => ({ ...m }))
-  );
-  const [input, setInput] = useState("");
-  const [model, setModel] = useState<ModelId>((session.model || defaultModel || "claude-sonnet-4-6") as ModelId);
-  const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
-  const kieKeySet   = useWorkflowStore((s) => s.kieKeySet);
-  const azureKeySet = useWorkflowStore((s) => s.azureKeySet);
-  const disabledIds = azureKeySet === true ? [] : ["azure-auto"];
-
-  function handleModelChange(id: ModelId) { setModel(id); onModelChange?.(id); }
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLTextAreaElement>(null);
-  const abortRef = useRef<AbortController | null>(null);
-
-  useEffect(() => {
-    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-  }, [messages]);
-
-  const send = useCallback(async (text: string) => {
-    const trimmed = text.trim();
-    if (!trimmed || isStreaming) return;
-    if (onAuthRequired) { onAuthRequired(); return; }
-
-    const contextMessages: StoredMessage[] = [
-      ...session.messages,
-      { role: "user", content: trimmed },
-    ];
-
-    const assistantIdx = contextMessages.length; // index in the new messages array
-    flushSync(() => {
-      setMessages((prev) => [
-        ...prev.filter((m) => !m.streaming),
-        { role: "user", content: trimmed },
-        { role: "assistant", content: "", streaming: true },
-      ]);
-      setInput("");
-      setIsStreaming(true);
-    });
-
-    onUpdate(contextMessages, model);
-
-    const abort = new AbortController();
-    abortRef.current = abort;
-
-    try {
-      const token = await getToken();
-      const azureConfig = model === "azure-auto" ? {
-        azureEndpoint:   loadAzureBaseUrl(),
-        azureDeployment: loadAzureTextDeployment(),
-        azureModelName:  loadAzureTextModelName(),
-      } : {};
-
-      const res = await fetch("/api/assistant", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({
-          model,
-          messages: [
-            { role: "system", content: SYSTEM_PROMPT },
-            ...contextMessages.map((m) => ({ role: m.role, content: m.content })),
-          ],
-          stream: true,
-          ...azureConfig,
-        }),
-        signal: abort.signal,
-      });
-
-      if (!res.ok || !res.body) {
-        let errMsg = "Request failed";
-        try { const j = await res.json(); errMsg = j.error ?? errMsg; } catch { errMsg = await res.text().catch(() => errMsg); }
-        setMessages((prev) => prev.map((m, i) => i === assistantIdx ? { ...m, content: `Error: ${errMsg}`, streaming: false } : m));
-        setIsStreaming(false);
-        return;
-      }
-
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buf = "";
-      let accumulated = "";
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buf += decoder.decode(value, { stream: true });
-        const lines = buf.split("\n");
-        buf = lines.pop() ?? "";
-        for (const line of lines) {
-          if (!line.startsWith("data: ")) continue;
-          const json = line.slice(6).trim();
-          if (json === "[DONE]") continue;
-          try {
-            const parsed = JSON.parse(json);
-            const chunk =
-              (parsed.type === "content_block_delta" ? parsed.delta?.text : null) ??
-              parsed.choices?.[0]?.delta?.content ??
-              null;
-            if (chunk) accumulated += chunk;
-          } catch { /* skip malformed SSE */ }
-        }
-        // One state update per network read — the await above yields to the browser for painting
-        setMessages((prev) => prev.map((m, i) =>
-          i === assistantIdx ? { ...m, content: accumulated } : m
-        ));
-      }
-
-      const finalMessages: StoredMessage[] = [...contextMessages, { role: "assistant", content: accumulated }];
-      setMessages(finalMessages.map((m) => ({ ...m })));
-      onUpdate(finalMessages, model);
-    } catch (err: unknown) {
-      if ((err as Error)?.name !== "AbortError") {
-        setMessages((prev) => prev.map((m, i) => i === assistantIdx ? { ...m, content: "Request failed.", streaming: false } : m));
-      }
-    } finally {
-      setIsStreaming(false);
-    }
-  }, [isStreaming, model, onAuthRequired, session, onUpdate]);
-
-  const hasSentInitial = useRef(false);
-  useEffect(() => {
-    if (initialMessage && !hasSentInitial.current) {
-      hasSentInitial.current = true;
-      send(initialMessage);
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  function onKey(e: React.KeyboardEvent<HTMLTextAreaElement>) {
-    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(input); }
-  }
-
-  // ── Empty state: centered welcome + input ──────────────────────────────────
-  if (messages.length === 0 && !isStreaming) {
-    return (
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "0 24px 80px", minWidth: 0 }}>
-        <LogoIcon size={48} />
-        <TypewriterHeading text="I'm here to help you make better prompts." />
-        <div style={{ width: "100%", maxWidth: "680px" }}>
-          <div style={{ display: "flex", alignItems: "center", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: "18px", padding: "10px 10px 10px 20px", transition: "border-color 150ms" }}>
-            <textarea
-              ref={inputRef}
-              value={input}
-              onChange={e => setInput(e.target.value)}
-              onKeyDown={onKey}
-              placeholder="Describe your image or video idea…"
-              rows={1}
-              style={{ flex: 1, background: "transparent", border: "none", outline: "none", resize: "none", color: "rgba(255,255,255,0.88)", fontSize: "15px", fontFamily: "inherit", lineHeight: "24px", maxHeight: "120px", overflowY: "auto", padding: 0 }}
-              onInput={e => { const t = e.currentTarget; t.style.height = "auto"; t.style.height = Math.min(t.scrollHeight, 120) + "px"; }}
-            />
-            <div style={{ display: "flex", alignItems: "center", gap: "8px", marginLeft: "12px", flexShrink: 0 }}>
-              <ModelPicker model={model} onChange={handleModelChange} direction="down" disabledIds={disabledIds} />
-              <button onClick={() => send(input)} disabled={!input.trim() || kieKeySet === false || disabledIds.includes(model)} style={{ width: "36px", height: "36px", borderRadius: "50%", border: "none", background: input.trim() && kieKeySet !== false && !disabledIds.includes(model) ? "rgba(45,212,191,0.25)" : "rgba(255,255,255,0.07)", color: input.trim() && kieKeySet !== false && !disabledIds.includes(model) ? "rgba(45,212,191,0.9)" : "rgba(255,255,255,0.25)", cursor: input.trim() && kieKeySet !== false && !disabledIds.includes(model) ? "pointer" : "not-allowed", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, transition: "background 150ms, color 150ms" }}>
-                <Send size={15} />
-              </button>
-            </div>
-          </div>
-        </div>
-        <style>{`@keyframes chatDot { 0%,80%,100%{opacity:.3;transform:scale(.8)} 40%{opacity:1;transform:scale(1)} } @keyframes cursorBlink { 0%,100%{opacity:.6} 50%{opacity:0} }`}</style>
-      </div>
-    );
-  }
-
-  // ── Normal chat layout ─────────────────────────────────────────────────────
+function MissingChat() {
+  const router = useRouter();
   return (
-    <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0, minWidth: 0 }}>
-      {/* Header */}
-      <div style={{ padding: "16px 20px 12px", borderBottom: "1px solid rgba(255,255,255,0.06)", flexShrink: 0 }}>
-        <h2 style={{ margin: 0, fontSize: "14px", fontWeight: 600, color: "#fff", letterSpacing: "-0.02em" }}>
-          {session.title}
-        </h2>
-      </div>
-
-      {/* Messages */}
-      <div ref={scrollRef} style={{ flex: 1, overflowY: "auto", padding: "20px", display: "flex", flexDirection: "column", gap: "14px" }}>
-        {messages.map((m, i) => (
-          <div key={i} style={{ display: "flex", justifyContent: m.role === "user" ? "flex-end" : "flex-start" }}>
-            <div style={{ display: "flex", flexDirection: "column", alignItems: m.role === "user" ? "flex-end" : "flex-start", maxWidth: "72%" }}>
-              <div style={{
-                padding: "10px 14px",
-                borderRadius: m.role === "user" ? "16px 16px 4px 16px" : "16px 16px 16px 4px",
-                background: m.role === "user" ? "rgba(45,212,191,0.15)" : "rgba(255,255,255,0.06)",
-                border: m.role === "user" ? "1px solid rgba(45,212,191,0.25)" : "1px solid rgba(255,255,255,0.07)",
-                fontSize: "14px", lineHeight: 1.6,
-                color: m.role === "user" ? "#FFFFFF" : "rgba(255,255,255,0.88)",
-                whiteSpace: "pre-wrap", wordBreak: "break-word",
-              }}>
-                {m.content}
-                {m.streaming && (
-                  m.content
-                    ? <span style={{ display: "inline-block", width: "2px", height: "14px", background: "rgba(255,255,255,0.6)", borderRadius: "1px", marginLeft: "2px", verticalAlign: "text-bottom", animation: "cursorBlink 0.8s ease-in-out infinite" }} />
-                    : <span style={{ display: "inline-flex", gap: "3px", alignItems: "center" }}>
-                        {[0, 1, 2].map(d => (
-                          <span key={d} style={{ width: "4px", height: "4px", borderRadius: "50%", background: "rgba(255,255,255,0.4)", animation: `chatDot 1s ${d * 0.2}s infinite` }} />
-                        ))}
-                      </span>
-                )}
-              </div>
-              {m.role === "assistant" && !m.streaming && m.content && (
-                <button
-                  onClick={() => {
-                    navigator.clipboard.writeText(m.content);
-                    setCopiedIdx(i);
-                    setTimeout(() => setCopiedIdx(null), 1500);
-                  }}
-                  title="Copy response"
-                  style={{
-                    marginTop: "4px",
-                    display: "flex", alignItems: "center", gap: "4px",
-                    padding: "3px 8px", borderRadius: "6px", border: "none",
-                    background: "transparent", color: copiedIdx === i ? "rgba(45,212,191,0.8)" : "rgba(255,255,255,0.25)",
-                    fontSize: "11px", fontFamily: "inherit", cursor: "pointer",
-                    transition: "color 150ms, background 150ms",
-                  }}
-                  onMouseEnter={e => { if (copiedIdx !== i) (e.currentTarget as HTMLButtonElement).style.color = "rgba(255,255,255,0.55)"; (e.currentTarget as HTMLButtonElement).style.background = "rgba(255,255,255,0.06)"; }}
-                  onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = copiedIdx === i ? "rgba(45,212,191,0.8)" : "rgba(255,255,255,0.25)"; (e.currentTarget as HTMLButtonElement).style.background = "transparent"; }}
-                >
-                  {copiedIdx === i ? <Check size={11} /> : <Copy size={11} />}
-                  {copiedIdx === i ? "Copied" : "Copy"}
-                </button>
-              )}
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* Input bar */}
-      <div style={{ padding: "16px", borderTop: "1px solid rgba(255,255,255,0.06)", flexShrink: 0 }}>
-        <div style={{
-          display: "flex", alignItems: "center",
-          background: "rgba(255,255,255,0.04)",
-          border: "1px solid rgba(255,255,255,0.1)",
-          borderRadius: "12px",
-          padding: "8px 8px 8px 14px",
-          transition: "border-color 150ms",
-        }}>
-          <textarea
-            ref={inputRef}
-            value={input}
-            onChange={e => setInput(e.target.value)}
-            onKeyDown={onKey}
-            placeholder="Send a message…"
-            rows={1}
-            disabled={isStreaming}
-            style={{
-              flex: 1, background: "transparent", border: "none", outline: "none",
-              resize: "none", color: "rgba(255,255,255,0.88)", fontSize: "14px",
-              fontFamily: "inherit", lineHeight: "22px", maxHeight: "120px",
-              overflowY: "auto", padding: 0,
-            }}
-            onInput={e => {
-              const t = e.currentTarget;
-              t.style.height = "auto";
-              t.style.height = Math.min(t.scrollHeight, 120) + "px";
-            }}
-          />
-          <div style={{ display: "flex", alignItems: "center", gap: "6px", marginLeft: "8px", flexShrink: 0 }}>
-            <ModelPicker model={model} onChange={handleModelChange} disabledIds={disabledIds} />
-            <button
-              onClick={() => send(input)}
-              disabled={!input.trim() || isStreaming || kieKeySet === false || disabledIds.includes(model)}
-              style={{
-                width: "32px", height: "32px", borderRadius: "8px", border: "none",
-                background: input.trim() && !isStreaming && kieKeySet !== false && !disabledIds.includes(model) ? "rgba(45,212,191,0.25)" : "rgba(255,255,255,0.07)",
-                color: input.trim() && !isStreaming && kieKeySet !== false && !disabledIds.includes(model) ? "rgba(45,212,191,0.9)" : "rgba(255,255,255,0.25)",
-                cursor: input.trim() && !isStreaming && kieKeySet !== false && !disabledIds.includes(model) ? "pointer" : "not-allowed",
-                display: "flex", alignItems: "center", justifyContent: "center",
-                flexShrink: 0, transition: "background 150ms, color 150ms",
-              }}
-            >
-              <Send size={14} />
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <style>{`
-        @keyframes chatDot {
-          0%, 80%, 100% { opacity: 0.3; transform: scale(0.8); }
-          40% { opacity: 1; transform: scale(1); }
-        }
-        @keyframes cursorBlink {
-          0%, 100% { opacity: 1; }
-          50% { opacity: 0; }
-        }
-      `}</style>
+    <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 pb-[12vh] text-center">
+      <Mark className="mb-2 size-8 text-ink-4" />
+      <h1 className="type-title text-ink">This chat no longer exists</h1>
+      <p className="max-w-sm text-[14px] text-ink-2">It may have been deleted. Your other chats are in the sidebar.</p>
+      <Button variant="primary" className="mt-3" onClick={() => router.replace("/chat")}>
+        <PenLine />
+        New chat
+      </Button>
     </div>
   );
 }
 
 // ── Inner page (uses useSearchParams) ────────────────────────────────────────
 
+const subscribeHydration = (onDone: () => void) =>
+  useChatSessionStore.persist?.onFinishHydration(onDone) ?? (() => {});
+
 function ChatInner() {
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const idParam = searchParams.get("id");
-
-  const { sessions, createSession, upsertSession, preferredModel, setPreferredModel } = useChatSessionStore();
-  const [hydrated, setHydrated] = useState(false);
-  const [landingModel, setLandingModel] = useState<ModelId>("claude-sonnet-4-6");
-  const [pendingMessage, setPendingMessage] = useState("");
-
-  // Sync landingModel from store once hydrated
-  useEffect(() => { if (hydrated) setLandingModel(preferredModel as ModelId); }, [hydrated]);
-
-  useEffect(() => {
-    const unsub = useChatSessionStore.persist?.onFinishHydration(() => setHydrated(true));
-    if (useChatSessionStore.persist?.hasHydrated()) setHydrated(true);
-    return unsub;
-  }, []);
-
-  const activeSession = idParam ? (sessions.find(s => s.id === idParam) ?? null) : null;
-
-  function handleLandingSubmit(text: string) {
-    const id = createSession(landingModel, text.slice(0, 50));
-    setPendingMessage(text);
-    router.push(`/chat?id=${id}`);
-  }
-
-  if (!hydrated) {
-    return (
-      <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "rgba(255,255,255,0.3)", fontSize: "14px" }}>
-        Loading…
-      </div>
-    );
-  }
-
-  return (
-    <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
-      {activeSession ? (
-        <ChatWindow
-          key={activeSession.id}
-          session={activeSession}
-          onUpdate={(msgs, mdl) => upsertSession(activeSession.id, msgs, mdl)}
-          defaultModel={preferredModel}
-          onModelChange={setPreferredModel}
-          initialMessage={pendingMessage || undefined}
-        />
-      ) : (
-        <LandingView
-          onSubmit={handleLandingSubmit}
-          model={landingModel}
-          onModelChange={id => { setLandingModel(id); setPreferredModel(id); }}
-        />
-      )}
-    </div>
+  const idParam = useSearchParams().get("id");
+  // false on the server and the first client render (so markup matches), then true once localStorage is read.
+  const hydrated = useSyncExternalStore(
+    subscribeHydration,
+    () => useChatSessionStore.persist?.hasHydrated() ?? false,
+    () => false,
   );
+  const exists = useChatSessionStore((s) => (idParam ? s.sessions.some((x) => x.id === idParam) : false));
+
+  if (!hydrated) return <div className="flex-1" />;
+  if (idParam && !exists) return <MissingChat />;
+  return <ChatScreen urlId={idParam} />;
 }
 
-// ── Page ──────────────────────────────────────────────────────────────────────
+// ── Page ─────────────────────────────────────────────────────────────────────
 
 export default function ChatPage() {
   return (
-    <div className="flex-1 flex overflow-hidden min-h-0">
-      <Suspense fallback={<div style={{ flex: 1 }} />}>
+    <div className="flex min-h-0 flex-1 overflow-hidden">
+      <Suspense fallback={<div className="flex-1" />}>
         <ChatInner />
       </Suspense>
     </div>

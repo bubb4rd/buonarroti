@@ -1,14 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { jobStore } from "@/lib/jobStore";
-import { pollKieJob } from "@/lib/kieJobPoller";
+import { createOnce, parseClientRequestId, type CreateOutcome } from "@/lib/jobStore";
+import { ensureJobsRecovered, pollKieJob } from "@/lib/kieJobPoller";
+import { KIE_BASE, KieCreateError, createKieTask } from "@/lib/kieApi";
 import { rewriteLocalMediaForKie } from "@/lib/kieUpload";
-import { ensureR2 } from "@/lib/storage";
+import { ensureStorage } from "@/lib/storage";
 import { VIDEO_MODELS } from "@/lib/modelConfig";
-import { getKieTokenForUser } from "@/lib/getKieToken";
+import { getKieToken } from "@/lib/getKieToken";
 import { GUEST_USER_ID } from "@/lib/guestMode";
 import * as guestDb from "@/lib/guest/db";
-
-const KIE_BASE = "https://api.kie.ai";
 
 interface Resource {
   url: string;
@@ -21,43 +20,81 @@ interface KlingElementInput {
   imageUrls: string[];
 }
 
+type CreateErrorCode = "credits" | "auth" | "invalid" | "upstream" | "rate_limited";
+
+function errorOutcome(error: string, code: CreateErrorCode, status: number): CreateOutcome {
+  return { status, body: { error, code } };
+}
+
+function respond(outcome: CreateOutcome): NextResponse {
+  return NextResponse.json(outcome.body, { status: outcome.status });
+}
+
+/**
+ * Store a reference locally (mirrors remote URLs, decodes data URLs). If that
+ * fails the original URL is kept: `rewriteLocalMediaForKie` re-hosts local and
+ * data URLs, and kie.ai fetches public ones itself — nothing is dropped.
+ */
+function keepLocal(url: string): Promise<string> {
+  return ensureStorage(url, "references").catch((e: unknown) => {
+    console.warn("[generate-video] couldn't store reference locally, sending it as-is:", (e as Error).message);
+    return url;
+  });
+}
+
+function stringList(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((v): v is string => typeof v === "string" && v.length > 0) : [];
+}
 
 export async function POST(req: NextRequest) {
+  let parsed: unknown;
   try {
-  const body = await req.json();
+    parsed = await req.json();
+  } catch {
+    return respond(errorOutcome("The request body isn't valid JSON.", "invalid", 400));
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return respond(errorOutcome("The request body must be a JSON object.", "invalid", 400));
+  }
+  const body = parsed as Record<string, unknown>;
+
+  try {
   const {
-    videoModel      = body.model || "kling-3.0",
+    videoModel      = typeof body.model === "string" && body.model ? body.model : "kling-3.0",
     prompt,
     startFrameUrl:  rawStartFrame,
     endFrameUrl:    rawEndFrame,
     videoRefUrl:    rawVideoRef,
     resources       = [] as Resource[],
     klingElements   = [] as KlingElementInput[],
-    referenceImageUrls:  rawRefImages     = body.imageUrls || [] as string[],
-    referenceVideoUrls:  rawRefVideoUrls  = [] as string[],
-    referenceAudioUrls:  rawRefAudioUrls  = [] as string[],
     sound           = false,
     duration        = 5,
-    aspectRatio     = body.aspect_ratio || "16:9",
+    aspectRatio     = typeof body.aspect_ratio === "string" && body.aspect_ratio ? body.aspect_ratio : "16:9",
     mode            = "pro",
     resolution:     rawResolution,
     seed,
     veoMode,
     generationType: rawGenerationType,
-    callBackUrl:    rawCallBackUrl,
     debugOnly       = false,
-  } = body;
+  } = body as {
+    videoModel?: string; prompt?: string; startFrameUrl?: string; endFrameUrl?: string; videoRefUrl?: string;
+    resources?: Resource[]; klingElements?: KlingElementInput[]; sound?: boolean; duration?: number | string;
+    aspectRatio?: string; mode?: string; resolution?: string; seed?: number | string | null; veoMode?: string;
+    generationType?: string; debugOnly?: boolean;
+  };
+  const rawRefImages    = stringList(body.referenceImageUrls ?? body.imageUrls);
+  const rawRefVideoUrls = stringList(body.referenceVideoUrls);
+  const rawRefAudioUrls = stringList(body.referenceAudioUrls);
+  const clientRequestId = parseClientRequestId(body.clientRequestId);
+  const warnings: string[] = [];
 
   const userId = GUEST_USER_ID;
 
-  const apiKey = (await getKieTokenForUser()) ?? process.env.KIE_API_TOKEN ?? null;
-  if (!apiKey) return NextResponse.json({ error: "No Kie.ai API key configured. Add one in Settings." }, { status: 401 });
-
-  // The app polls kie.ai directly (lib/kieJobPoller) — no callback URL needed.
-  const callBackUrl = rawCallBackUrl || undefined;
+  const apiKey = await getKieToken();
+  if (!apiKey) return respond(errorOutcome("No kie.ai API key is saved. Add one in Settings.", "auth", 401));
 
   const cfg = VIDEO_MODELS.find((m) => m.id === videoModel);
-  if (!cfg) return NextResponse.json({ error: `Unknown video model: ${videoModel}` }, { status: 400 });
+  if (!cfg) return respond(errorOutcome(`Unknown video model: ${videoModel}`, "invalid", 400));
 
   const resolution = rawResolution || cfg.defaultResolution || "480p";
   const { apiInput } = cfg;
@@ -78,8 +115,8 @@ export async function POST(req: NextRequest) {
     // ── Kling 2.6 motion control ──────────────────────────────────────────────
     // { prompt, input_urls, video_urls, mode, character_orientation }
     const [inputImageUrl, inputVideoUrl] = await Promise.all([
-      rawStartFrame ? ensureR2(rawStartFrame, "references").catch(() => rawStartFrame) : Promise.resolve(undefined),
-      rawVideoRef   ? ensureR2(rawVideoRef,   "references").catch(() => rawVideoRef)   : Promise.resolve(undefined),
+      rawStartFrame ? keepLocal(rawStartFrame) : undefined,
+      rawVideoRef   ? keepLocal(rawVideoRef)   : undefined,
     ]);
 
     input = {
@@ -94,11 +131,11 @@ export async function POST(req: NextRequest) {
   } else if (apiInput.useMinimaxH3) {
     // ── MiniMax H3 (text / image / reference to video) ───────────────────────
     const [startFrameUrl, endFrameUrl, r2RefImages, r2RefVideos, r2RefAudios] = await Promise.all([
-      rawStartFrame ? ensureR2(rawStartFrame, "references").catch(() => rawStartFrame) : Promise.resolve(undefined),
-      rawEndFrame   ? ensureR2(rawEndFrame,   "references").catch(() => rawEndFrame)   : Promise.resolve(undefined),
-      Promise.all((rawRefImages    as string[]).map((u) => ensureR2(u, "references").catch(() => u))),
-      Promise.all((rawRefVideoUrls as string[]).map((u) => ensureR2(u, "references").catch(() => u))),
-      Promise.all((rawRefAudioUrls as string[]).map((u) => ensureR2(u, "references").catch(() => u))),
+      rawStartFrame ? keepLocal(rawStartFrame) : undefined,
+      rawEndFrame   ? keepLocal(rawEndFrame)   : undefined,
+      Promise.all(rawRefImages.map(keepLocal)),
+      Promise.all(rawRefVideoUrls.map(keepLocal)),
+      Promise.all(rawRefAudioUrls.map(keepLocal)),
     ]);
 
     if (startFrameUrl || endFrameUrl) {
@@ -111,6 +148,7 @@ export async function POST(req: NextRequest) {
       if (startFrameUrl)          input[apiInput.firstFrameKey!] = startFrameUrl;
       if (endFrameUrl)            input[apiInput.lastFrameKey!]  = endFrameUrl;
       if (apiInput.resolutionKey) input[apiInput.resolutionKey]  = resolution;
+      if (r2RefImages.length > 0) warnings.push("Reference images aren't used when a start or end frame is set.");
     } else if (r2RefImages.length > 0) {
       // reference-to-video
       effectiveApiId = "minimax-h3/reference-to-video";
@@ -138,11 +176,11 @@ export async function POST(req: NextRequest) {
   } else if (apiInput.firstFrameKey) {
     // ── Seedance-style models (separate frame keys + multi-ref arrays) ─────────
     const [startFrameUrl, endFrameUrl, r2RefImages, r2RefVideos, r2RefAudios] = await Promise.all([
-      rawStartFrame ? ensureR2(rawStartFrame, "references").catch(() => rawStartFrame) : Promise.resolve(undefined),
-      rawEndFrame   ? ensureR2(rawEndFrame,   "references").catch(() => rawEndFrame)   : Promise.resolve(undefined),
-      Promise.all((rawRefImages    as string[]).map((u) => ensureR2(u, "references").catch(() => u))),
-      Promise.all((rawRefVideoUrls as string[]).map((u) => ensureR2(u, "references").catch(() => u))),
-      Promise.all((rawRefAudioUrls as string[]).map((u) => ensureR2(u, "references").catch(() => u))),
+      rawStartFrame ? keepLocal(rawStartFrame) : undefined,
+      rawEndFrame   ? keepLocal(rawEndFrame)   : undefined,
+      Promise.all(rawRefImages.map(keepLocal)),
+      Promise.all(rawRefVideoUrls.map(keepLocal)),
+      Promise.all(rawRefAudioUrls.map(keepLocal)),
     ]);
 
     input = {
@@ -156,22 +194,20 @@ export async function POST(req: NextRequest) {
     if (apiInput.resolutionKey)                                input[apiInput.resolutionKey]       = resolution;
     if (apiInput.soundKey)                                     input[apiInput.soundKey]            = Boolean(sound);
     // Seedance (and similar): first/last frames and reference images are mutually exclusive
-    if (apiInput.referenceImagesKey && r2RefImages.length > 0 && !startFrameUrl && !endFrameUrl) input[apiInput.referenceImagesKey]  = r2RefImages;
+    if (apiInput.referenceImagesKey && r2RefImages.length > 0) {
+      if (!startFrameUrl && !endFrameUrl) input[apiInput.referenceImagesKey] = r2RefImages;
+      else warnings.push("Reference images aren't used when a start or end frame is set.");
+    }
     if (apiInput.referenceVideosKey && r2RefVideos.length > 0) input[apiInput.referenceVideosKey]  = r2RefVideos;
     if (apiInput.referenceAudiosKey && r2RefAudios.length > 0) input[apiInput.referenceAudiosKey]  = r2RefAudios;
     if (apiInput.extra)                                        Object.assign(input, apiInput.extra);
 
   } else if (apiInput.useHappyHorse) {
     // ── HappyHorse (Alibaba) — routes to text/image/reference endpoint ────────
-    const refImageUrls = (
-      await Promise.all(
-        (rawRefImages as string[]).map((u) => ensureR2(u, "references").catch(() => null))
-      )
-    ).filter((u): u is string => u !== null);
-
-    const startFrameUrl = rawStartFrame
-      ? await ensureR2(rawStartFrame, "references").catch(() => rawStartFrame)
-      : undefined;
+    const [refImageUrls, startFrameUrl] = await Promise.all([
+      Promise.all(rawRefImages.map(keepLocal)),
+      rawStartFrame ? keepLocal(rawStartFrame) : undefined,
+    ]);
 
     const maybeSeed = seed !== undefined && seed !== null && Number(seed) > 0 ? Number(seed) : undefined;
 
@@ -185,6 +221,7 @@ export async function POST(req: NextRequest) {
       };
       if (apiInput.resolutionKey) input[apiInput.resolutionKey] = resolution;
       if (maybeSeed !== undefined && apiInput.seedKey) input[apiInput.seedKey] = maybeSeed;
+      if (startFrameUrl) warnings.push("The start frame isn't used when reference images are set.");
     } else if (startFrameUrl) {
       effectiveApiId = "happyhorse/image-to-video";
       input = {
@@ -207,9 +244,7 @@ export async function POST(req: NextRequest) {
 
   } else if (apiInput.useKlingTurbo) {
     // ── Kling 3.0 Turbo (text-to-video / image-to-video) ─────────────────────
-    const startFrameUrl = rawStartFrame
-      ? await ensureR2(rawStartFrame, "references").catch(() => rawStartFrame)
-      : undefined;
+    const startFrameUrl = rawStartFrame ? await keepLocal(rawStartFrame) : undefined;
 
     const durationValue = String(clampedDuration);
 
@@ -233,56 +268,68 @@ export async function POST(req: NextRequest) {
 
   } else if (apiInput.useGoogleVeo) {
     // ── Google Veo 3.1 ───────────────────────────────────────────────────────
+    // Veo reads only `imageUrls` + `generationType`. The mode is derived from
+    // the images actually attached — a client-sent generationType is only a
+    // hint, so a retry can't strip images by sending TEXT_2_VIDEO.
     const [startFrameUrl, endFrameUrl, refImages] = await Promise.all([
-      rawStartFrame ? ensureR2(rawStartFrame, "references").catch(() => rawStartFrame) : Promise.resolve(undefined),
-      rawEndFrame   ? ensureR2(rawEndFrame,   "references").catch(() => rawEndFrame)   : Promise.resolve(undefined),
-      Promise.all((rawRefImages as string[]).map((u) => ensureR2(u, "references").catch(() => u))),
+      rawStartFrame ? keepLocal(rawStartFrame) : undefined,
+      rawEndFrame   ? keepLocal(rawEndFrame)   : undefined,
+      Promise.all(rawRefImages.map(keepLocal)),
     ]);
 
-    const imageUrls: string[] = [];
-    let generationType = "TEXT_2_VIDEO";
-
-    // For veo3.1 lite, if an image is attached use: Image to video, just a text is attached, use text to video.
-    // On the two other models (fast/quality), one more element is present: reference.
+    // Veo 3.1 Lite has text-to-video and frames-to-video only; Fast and Quality
+    // also accept reference images.
     const isLite = cfg.id === "veo3_lite";
+    const wantsReferences = veoMode === "references" || rawGenerationType === "REFERENCE_2_VIDEO";
+    const frames = [startFrameUrl, endFrameUrl].filter((u): u is string => !!u);
 
-    if (veoMode === "references" && !isLite) {
+    let generationType: string;
+    let imageUrls: string[];
+    if (wantsReferences && !isLite && refImages.length > 0) {
       generationType = "REFERENCE_2_VIDEO";
-      if (refImages.length > 0) imageUrls.push(...refImages.slice(0, 3));
+      imageUrls = refImages.slice(0, 3);
+      if (refImages.length > 3) warnings.push(`Veo takes up to 3 reference images; ${refImages.length - 3} were left out.`);
+    } else if (frames.length > 0) {
+      generationType = "FIRST_AND_LAST_FRAMES_2_VIDEO";
+      imageUrls = frames;
+      if (refImages.length > 0) warnings.push("Reference images aren't used when a start or end frame is set.");
+    } else if (refImages.length > 0) {
+      // Plain attached images (e.g. the Generate screen): first and last frames.
+      generationType = "FIRST_AND_LAST_FRAMES_2_VIDEO";
+      imageUrls = refImages.slice(0, 2);
+      if (wantsReferences && isLite) warnings.push("Veo 3.1 Lite doesn't take reference images, so they were used as first and last frames.");
+      if (refImages.length > 2) warnings.push(`Veo uses up to 2 images as first and last frames; ${refImages.length - 2} were left out.`);
     } else {
-      if (startFrameUrl || endFrameUrl) {
-        generationType = "FIRST_AND_LAST_FRAMES_2_VIDEO";
-        if (startFrameUrl) imageUrls.push(startFrameUrl);
-        if (endFrameUrl) imageUrls.push(endFrameUrl);
-      }
+      generationType = "TEXT_2_VIDEO";
+      imageUrls = [];
     }
 
-    effectiveApiId = cfg.apiId; // Use veo3, veo3_fast, or veo3_lite directly
+    effectiveApiId = cfg.apiId; // veo3, veo3_fast, or veo3_lite
 
     input = {
       prompt: prompt ?? "",
-      generationType: rawGenerationType || generationType,
+      generationType,
       [apiInput.aspectRatioKey!]: aspectRatio,
       [apiInput.resolutionKey!]: resolution,
-      imageUrls: imageUrls,
+      imageUrls,
       watermark: "",
       enableFallback: false,
       enableTranslation: true,
-      callBackUrl,
     };
     if (apiInput.extra) Object.assign(input, apiInput.extra);
 
   } else if (apiInput.useGeminiOmniVideo) {
     // ── Gemini Omni Video (quota-based: image=1 slot, video=2 slots, max 7) ────
-    const r2RefImages = await Promise.all(
-      (rawRefImages as string[]).map((u) => ensureR2(u, "references").catch(() => u))
-    );
-    const r2RefVideos = await Promise.all(
-      (rawRefVideoUrls as string[]).slice(0, 1).map((u) => ensureR2(u, "references").catch(() => u))
-    );
+    const [r2RefImages, r2RefVideos] = await Promise.all([
+      Promise.all(rawRefImages.map(keepLocal)),
+      Promise.all(rawRefVideoUrls.slice(0, 1).map(keepLocal)),
+    ]);
 
     const videoSlots = r2RefVideos.length > 0 ? 2 : 0;
     const clampedImages = r2RefImages.slice(0, 7 - videoSlots);
+    if (r2RefImages.length > clampedImages.length) {
+      warnings.push(`This model takes up to ${7 - videoSlots} reference images here; ${r2RefImages.length - clampedImages.length} were left out.`);
+    }
 
     const maybeSeed = seed !== undefined && seed !== null && Number(seed) > 0 ? Number(seed) : undefined;
 
@@ -297,11 +344,7 @@ export async function POST(req: NextRequest) {
 
   } else if (apiInput.referenceImagesKey) {
     // ── Reference-image-based models (Grok Imagine, Grok Imagine 1.5) ─────────
-    const refImageUrls = (
-      await Promise.all(
-        (rawRefImages as string[]).map((u) => ensureR2(u, "references").catch(() => null))
-      )
-    ).filter((u): u is string => u !== null);
+    const refImageUrls = await Promise.all(rawRefImages.map(keepLocal));
 
     const hasImages = refImageUrls.length > 0;
     effectiveApiId = hasImages && cfg.imageApiId ? cfg.imageApiId : cfg.apiId;
@@ -321,31 +364,27 @@ export async function POST(req: NextRequest) {
 
   } else {
     // ── Start/end-frame + elements models (Kling) ─────────────────────────────
-    const hasNewElements = (klingElements as KlingElementInput[]).length > 0;
+    const hasNewElements = klingElements.length > 0;
 
     const [startFrameUrl, endFrameUrl, r2Resources, uploadedElements] = await Promise.all([
-      rawStartFrame ? ensureR2(rawStartFrame, "references") : Promise.resolve(undefined),
-      rawEndFrame   ? ensureR2(rawEndFrame,   "references") : Promise.resolve(undefined),
+      rawStartFrame ? keepLocal(rawStartFrame) : undefined,
+      rawEndFrame   ? keepLocal(rawEndFrame)   : undefined,
       hasNewElements
         ? Promise.resolve([] as Resource[])
-        : Promise.all(
-            (resources as Resource[]).slice(0, 3).map(async (r) => ({
-              ...r,
-              url: await ensureR2(r.url, "references").catch(() => r.url),
-            }))
-          ),
+        : Promise.all(resources.slice(0, 3).map(async (r) => ({ ...r, url: await keepLocal(r.url) }))),
       hasNewElements
         ? Promise.all(
-            (klingElements as KlingElementInput[]).slice(0, 3).map(async (el) => ({
+            klingElements.slice(0, 3).map(async (el) => ({
               name:        el.name,
               description: el.description,
-              imageUrls:   await Promise.all(
-                el.imageUrls.map((u) => ensureR2(u, "references").catch(() => u))
-              ),
+              imageUrls:   await Promise.all(el.imageUrls.map(keepLocal)),
             }))
           )
         : Promise.resolve([] as { name: string; description: string; imageUrls: string[] }[]),
     ]);
+    if ((hasNewElements ? klingElements.length : resources.length) > 3) {
+      warnings.push("This model takes up to 3 elements; the rest were left out.");
+    }
 
     input = {
       prompt:                     prompt ?? "",
@@ -383,68 +422,8 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // kie.ai can't fetch our local reference media, so re-host any /generated or
-  // data: URLs in the payload first.
-  try {
-    await rewriteLocalMediaForKie(input, apiKey);
-  } catch (e) {
-    return NextResponse.json(
-      { error: `Couldn't upload reference media to kie.ai: ${(e as Error).message}` },
-      { status: 502 },
-    );
-  }
-
-  // Submit task to kie.ai
-  // Google Veo models require a dedicated endpoint and a flattened structure
-  const endpoint = apiInput.useGoogleVeo
-    ? `${KIE_BASE}/api/v1/veo/generate`
-    : `${KIE_BASE}/api/v1/jobs/createTask`;
-
-  const kieBody = apiInput.useGoogleVeo
-    ? { model: effectiveApiId, ...input }
-    : { model: effectiveApiId, callBackUrl, input };
-
-  // Debug mode — log payload to server console and return without submitting
-  if (debugOnly) {
-    console.log(`[DEBUG] generate-video payload → ${endpoint}`, JSON.stringify(kieBody, null, 2));
-    return NextResponse.json({ debugPayload: kieBody, debugEndpoint: endpoint });
-  }
-
-  console.log(`[generate-video] sending to ${endpoint}:`, JSON.stringify(kieBody));
-  const createRes = await fetch(endpoint, {
-    method:  "POST",
-    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-    body:    JSON.stringify(kieBody),
-  });
-
-  if (!createRes.ok) {
-    if (createRes.status === 401) {
-      return NextResponse.json({ error: "Invalid Kie.ai API key — please update it in Settings." }, { status: 401 });
-    }
-    const errText = await createRes.text();
-    console.error("[generate-video] kie.ai HTTP error:", createRes.status, errText);
-    return NextResponse.json({ error: errText }, { status: 500 });
-  }
-
-  const createdText = await createRes.text();
-  console.log("[generate-video] kie.ai response:", createdText);
-  let created: { code?: number; msg?: string; data?: { taskId?: string; id?: string } };
-  try {
-    created = JSON.parse(createdText);
-  } catch {
-    return NextResponse.json({ error: `Upstream returned non-JSON: ${createdText.slice(0, 200)}` }, { status: 500 });
-  }
-  if (created.code !== 200) {
-    console.error("[generate-video] kie.ai API error:", created.code, created.msg, "input:", JSON.stringify(input));
-    return NextResponse.json({ error: created.msg ?? "Task creation failed" }, { status: 500 });
-  }
-
-  const taskId = created.data?.taskId || created.data?.id;
-  if (!taskId) return NextResponse.json({ error: "No taskId returned" }, { status: 500 });
-
-  // Register as pending so the frontend can poll job-status
-  jobStore.set(taskId, { status: "pending", type: "video", userId: userId ?? undefined });
-
+  // Reference URLs recorded with the generation — captured before the kie.ai
+  // rewrite below, so they point at our local copies, not 3-day temp files.
   const referenceUrls: string[] = apiInput.useMotionControl
     ? [
         ...((input.input_urls as string[] | undefined) ?? []),
@@ -455,6 +434,8 @@ export async function POST(req: NextRequest) {
         ...((input.image_urls as string[] | undefined) ?? []),
         ...((input.video_list as Array<{ url: string }> | undefined)?.map((v) => v.url) ?? []),
       ]
+    : apiInput.useGoogleVeo
+    ? [...((input.imageUrls as string[] | undefined) ?? [])]
     : apiInput.useMinimaxH3
     ? [
         ...(input.first_frame_url ? [input.first_frame_url as string] : []),
@@ -464,31 +445,73 @@ export async function POST(req: NextRequest) {
         ...((input.reference_audio_urls as string[] | undefined) ?? []),
       ]
     : apiInput.referenceImagesKey
-    ? (input[apiInput.referenceImagesKey] as string[] | undefined) ?? []
+    ? [...((input[apiInput.referenceImagesKey] as string[] | undefined) ?? [])]
     : [
         ...((input.image_urls as string[] | undefined) ?? []),
         ...((input.kling_elements as Array<{ element_input_urls: string[] }> | undefined)
           ?.map((el) => el.element_input_urls[0]) ?? []),
       ];
 
-  guestDb.insertGeneration({
-    task_id: taskId, user_id: userId, generation_type: "video",
-    status: "pending", model: videoModel, prompt, aspect_ratio: effectiveAspectRatio,
-    duration: clampedDuration, kling_mode: mode,
-    sound: cfg.sound ? Boolean(sound) : false,
-    reference_image_urls: referenceUrls,
-  });
-  if (apiInput.useGoogleVeo) {
-    console.warn("[generate-video] Veo has no jobs-API polling yet — result needs a callback URL");
-  } else {
-    pollKieJob(taskId, apiKey, "video");
+  // Google Veo models use a dedicated endpoint and a flattened body.
+  const endpoint = apiInput.useGoogleVeo
+    ? `${KIE_BASE}/api/v1/veo/generate`
+    : `${KIE_BASE}/api/v1/jobs/createTask`;
+
+  // Debug mode — log payload to server console and return without submitting
+  if (debugOnly) {
+    const debugPayload = apiInput.useGoogleVeo ? { model: effectiveApiId, ...input } : { model: effectiveApiId, input };
+    console.log(`[DEBUG] generate-video payload → ${endpoint}`, JSON.stringify(debugPayload, null, 2));
+    return NextResponse.json({ debugPayload, debugEndpoint: endpoint });
   }
 
-  return NextResponse.json({ taskId });
+  await ensureJobsRecovered();
+
+  return respond(await createOnce(clientRequestId, async () => {
+    // kie.ai can't fetch our local reference media, so re-host any /generated or
+    // data: URLs in the payload first.
+    try {
+      await rewriteLocalMediaForKie(input, apiKey);
+    } catch (e) {
+      return errorOutcome(
+        `Couldn't upload your reference media to kie.ai (${(e as Error).message}). Try again.`,
+        "upstream",
+        502,
+      );
+    }
+
+    // The app polls kie.ai (lib/kieJobPoller), so no callback URL.
+    const kieBody = apiInput.useGoogleVeo
+      ? { model: effectiveApiId, ...input }
+      : { model: effectiveApiId, input };
+
+    console.log(`[generate-video] sending to ${endpoint}:`, JSON.stringify(kieBody));
+    let taskId: string;
+    try {
+      taskId = await createKieTask(endpoint, apiKey, kieBody);
+    } catch (e) {
+      if (e instanceof KieCreateError) {
+        console.error("[generate-video] kie.ai refused the task:", e.code, e.message);
+        return errorOutcome(e.message, e.code, e.httpStatus);
+      }
+      throw e;
+    }
+
+    const provider = apiInput.useGoogleVeo ? "kie-veo" : "kie";
+    guestDb.insertGeneration({
+      task_id: taskId, user_id: userId, generation_type: "video",
+      status: "pending", provider, client_request_id: clientRequestId,
+      model: videoModel, prompt, aspect_ratio: effectiveAspectRatio,
+      duration: clampedDuration, kling_mode: mode,
+      sound: cfg.sound ? Boolean(sound) : false,
+      reference_image_urls: referenceUrls,
+    });
+    pollKieJob(taskId, apiKey, "video", provider);
+
+    return { status: 200, body: { taskId, ...(warnings.length > 0 ? { warnings } : {}) } };
+  }));
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
-    const cause = e instanceof Error && (e as NodeJS.ErrnoException).cause;
-    console.error("[generate-video] unhandled error:", msg, cause ?? "");
-    return NextResponse.json({ error: msg }, { status: 500 });
+    console.error("[generate-video] couldn't start generation:", msg, e instanceof Error ? e.cause ?? "" : "");
+    return respond(errorOutcome(`Couldn't start the generation: ${msg}`, "upstream", 500));
   }
 }

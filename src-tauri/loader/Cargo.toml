@@ -1,5 +1,5 @@
 [package]
-name = "helios-node-loader"
+name = "buonarroti-node-loader"
 version = "0.0.0"
 edition = "2021"
 publish = false
@@ -10,7 +10,7 @@ description = "Sidecar shim: hides the bundled Node server from the macOS Dock, 
 # scripts/desktop/build-server.mjs as the Tauri `externalBin`.
 
 [[bin]]
-name = "helios-node"
+name = "buonarroti-node"
 path = "src/main.rs"
 
 [profile.release]

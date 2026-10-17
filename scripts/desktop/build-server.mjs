@@ -40,10 +40,10 @@ const APP_VERSION = JSON.parse(
  */
 function stageShim(triple) {
   const manifest = join(SRC_TAURI, "loader", "Cargo.toml");
-  console.log("[desktop] building sidecar shim (helios-node)…");
+  console.log("[desktop] building sidecar shim (buonarroti-node)…");
   run("cargo", ["build", "--release", "--manifest-path", manifest]);
-  const src = join(SRC_TAURI, "loader", "target", "release", `helios-node${EXE}`);
-  const dest = join(BIN_DIR, `helios-node-${triple}${EXE}`);
+  const src = join(SRC_TAURI, "loader", "target", "release", `buonarroti-node${EXE}`);
+  const dest = join(BIN_DIR, `buonarroti-node-${triple}${EXE}`);
   mkdirSync(BIN_DIR, { recursive: true });
   copyFileSync(src, dest);
   if (process.platform !== "win32") chmodSync(dest, 0o755);
@@ -124,6 +124,12 @@ if (existsSync(join(ROOT, "public"))) {
     filter: (src) => !src.includes(`${sep}public${sep}generated`), // runtime data, not an asset
   });
 }
+// Character pipeline: bpy scripts, the Godot check project and the mocap clip are
+// read at runtime from <server>/scripts/game (the sidecar's working directory).
+cpSync(join(ROOT, "scripts", "game"), join(STAGE, "scripts", "game"), {
+  recursive: true,
+  filter: (src) => !/\.(m?ts)$/.test(src) && !src.includes(`${sep}.godot`) && !src.includes("__pycache__"),
+});
 
 // The Next.js file tracer (nft) is unreliable with pnpm's symlinked store — it
 // leaves many packages as a bare package.json. Rather than chase truncations,
@@ -160,6 +166,24 @@ for (const probe of ["next/package.json", "@next/env/package.json", "react/packa
   if (!existsSync(join(STAGE, "node_modules", ...probe.split("/")))) {
     throw new Error(`staged install is missing ${probe}`);
   }
+}
+
+// ACP: only the small Claude adapter ships (lib/acp spawns it, so the tracer
+// can't prove it's present). The agents themselves — Claude Code, codex-acp,
+// Gemini CLI — are the user's own installs, found on their shell PATH.
+const claudeAdapter = join(STAGE, "node_modules", "@agentclientprotocol", "claude-agent-acp", "dist", "index.js");
+if (!existsSync(claudeAdapter)) {
+  throw new Error(`staged install is missing the Claude ACP adapter: ${claudeAdapter}`);
+}
+// The Agent SDK pulls in its own ~240 MB Claude Code binary as an optional
+// platform package; the adapter is pointed at the user's `claude` instead
+// (CLAUDE_CODE_EXECUTABLE), so drop every copy wherever npm nested it.
+for (const dir of execFileSync(
+  "find",
+  [join(STAGE, "node_modules"), "-type", "d", "-path", "*/@anthropic-ai/claude-agent-sdk-*", "-prune"],
+  { encoding: "utf8" },
+).split("\n").filter(Boolean)) {
+  rmSync(dir, { recursive: true, force: true });
 }
 
 // Prune what a prebuilt standalone server never loads at runtime:
@@ -238,7 +262,7 @@ if (process.platform === "darwin" && process.env.APPLE_SIGNING_IDENTITY) {
   )
     .split("\n")
     .filter(Boolean);
-  macho.push(nodeDest); // the bundled Node runtime
+  macho.push(nodeDest); // the bundled Node runtime (JIT: same entitlements)
   console.log(`[desktop] codesigning ${macho.length} Mach-O files…`);
   for (const f of macho) {
     run("codesign", [

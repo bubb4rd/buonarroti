@@ -1,17 +1,18 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Core window permissions plus spawning the bundled Node server sidecar shim.",
+  "description": "Core window permissions, window dragging for the loading page, plus spawning the bundled Node server sidecar shim.",
   "windows": ["main"],
   "permissions": [
     "core:default",
+    "core:window:allow-start-dragging",
     {
       "identifier": "shell:allow-spawn",
-      "allow": [{ "name": "helios-node", "sidecar": true, "args": true }]
+      "allow": [{ "name": "buonarroti-node", "sidecar": true, "args": true }]
     },
     {
       "identifier": "shell:allow-execute",
-      "allow": [{ "name": "helios-node", "sidecar": true, "args": true }]
+      "allow": [{ "name": "buonarroti-node", "sidecar": true, "args": true }]
     }
   ]
 }

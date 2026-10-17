@@ -48,6 +48,8 @@ next-env.d.ts
 /data/*.db
 /data/*.db-shm
 /data/*.db-wal
+# Unreal check project: a copy of the engine's mannequin content, made on first run
+/data/unreal/
 /public/generated/**
 !/public/generated/.gitkeep
 
@@ -65,3 +67,5 @@ next-env.d.ts
 # Signing / notarization secrets
 /scripts/desktop/sign.env
 /src-tauri/.node-cache/
+# Blender imports scripts/game/bpy/common.py
+__pycache__/

@@ -1,5 +1,5 @@
 {
-  "name": "heliosgen",
+  "name": "buonarroti",
   "version": "1.2.1",
   "private": true,
   "packageManager": "pnpm@9.15.9",
@@ -12,13 +12,20 @@
     "desktop:check-version": "node scripts/desktop/check-version.mjs",
     "desktop:build": "node scripts/desktop/check-version.mjs && CI=true tauri build",
     "desktop:icon": "tauri icon",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "game:character": "tsx scripts/game/run-character.mts",
+    "game:step": "tsx scripts/game/run-step.mts",
+    "game:verify": "tsx scripts/game/verify.mts"
   },
   "dependencies": {
+    "@agentclientprotocol/claude-agent-acp": "0.91.0",
+    "@agentclientprotocol/sdk": "1.8.0",
     "@base-ui/react": "^1.4.1",
+    "@gradio/client": "^2.7.1",
     "@xyflow/react": "^12.10.2",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "gltf-validator": "2.0.0-dev.3.10",
     "lucide-react": "^1.14.0",
     "motion": "^12.38.0",
     "next": "^16.2.3",
@@ -41,6 +48,7 @@
     "eslint-config-next": "16.2.3",
     "shadcn": "^4.7.0",
     "tailwindcss": "^4",
+    "tsx": "^4.23.15",
     "typescript": "^5.9.3"
   }
 }

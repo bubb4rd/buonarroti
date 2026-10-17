@@ -1,9 +1,11 @@
 "use client";
-import React, { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useReactFlow, Node } from "@xyflow/react";
+import { LayoutGrid, Group, Copy, Trash2 } from "lucide-react";
 import { useWorkflowStore, NodeData } from "@/lib/store";
-import { edgeStyle } from "@/lib/edgeStyles";
 import { arrangeNodes } from "@/lib/arrangeNodes";
+import { FloatingBar, ToolbarButton, ToolbarSeparator } from "@/components/ui/floating-toolbar";
+import { GROUP_COLORS } from "@/components/nodes/GroupNode";
 
 const GROUP_PADDING = 24;
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
@@ -20,30 +22,6 @@ function getAbsoluteBounds(nodes: Node[]) {
     maxY = Math.max(maxY, n.position.y + h);
   }
   return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
-}
-
-function Btn({
-  onClick, title, danger, children,
-}: {
-  onClick: () => void; title: string; danger?: boolean; children: React.ReactNode;
-}) {
-  return (
-    <button
-      onMouseDown={(e) => e.stopPropagation()}
-      onClick={(e) => { e.stopPropagation(); onClick(); }}
-      title={title}
-      className={`w-7 h-7 flex items-center justify-center rounded-full transition-colors duration-150 ${
-        danger ? "text-white hover:text-red-400 hover:bg-red-400/10"
-               : "text-white hover:bg-white/10"
-      }`}
-    >
-      {children}
-    </button>
-  );
-}
-
-function Sep() {
-  return <span className="w-px h-4 bg-white/[0.08] mx-0.5 shrink-0" />;
 }
 
 // Runs inside the ReactFlow provider
@@ -107,7 +85,7 @@ export default function SelectionToolbar() {
       type:     "groupNode",
       position: { x: gx, y: gy },
       style:    { width: gw, height: gh, zIndex: -1 },
-      data:     { label: `Group #${groupCount}`, color: "#3b82f6", locked: false, memberIds } as NodeData,
+      data:     { label: `Group #${groupCount}`, color: GROUP_COLORS[0], locked: false, memberIds } as NodeData,
       selected: true,
       zIndex:   -1,
     };
@@ -171,69 +149,32 @@ export default function SelectionToolbar() {
 
   return (
     <div
+      className="transition-[opacity,transform] duration-200 ease-[var(--ease-out)]"
       style={{
         position: "fixed",
         left:     screenPos.x,
         top:      screenPos.y - 52,
         transform: `translateX(-50%) translateY(${shown ? "0px" : "6px"})`,
         opacity:   shown ? 1 : 0,
-        transition: "opacity 180ms ease, transform 180ms ease",
         zIndex:    9998,
         pointerEvents: shown ? "auto" : "none",
       }}
     >
-      <div
-        className="flex items-center gap-0.5 px-1.5 py-1"
-        style={{
-          borderRadius: 999,
-          background:   "rgba(16, 16, 16, 0.96)",
-          backdropFilter: "blur(12px)",
-          border:       "1px solid rgba(255,255,255,0.07)",
-          boxShadow:    "0 4px 24px rgba(0,0,0,0.65), 0 1px 4px rgba(0,0,0,0.4)",
-          whiteSpace:   "nowrap",
-        }}
-      >
-        {/* Arrange */}
-        <Btn onClick={handleArrange} title="Auto-arrange selected nodes">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <rect x="3" y="3" width="7" height="7" rx="1" />
-            <rect x="14" y="3" width="7" height="7" rx="1" />
-            <rect x="3" y="14" width="7" height="7" rx="1" />
-            <rect x="14" y="14" width="7" height="7" rx="1" />
-          </svg>
-        </Btn>
-
-        <Sep />
-
-        {/* Group */}
-        <Btn onClick={handleGroup} title="Group selected nodes">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <rect x="2" y="7" width="8" height="8" rx="1.5" />
-            <rect x="14" y="7" width="8" height="8" rx="1.5" />
-            <path d="M6 7V5a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v2" />
-          </svg>
-        </Btn>
-
-        <Sep />
-
-        {/* Duplicate */}
-        <Btn onClick={handleDuplicate} title="Duplicate selection">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
-            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-          </svg>
-        </Btn>
-
-        {/* Delete */}
-        <Btn onClick={handleDelete} title="Delete selection" danger>
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <polyline points="3 6 5 6 21 6" />
-            <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
-            <path d="M10 11v6M14 11v6" />
-            <path d="M9 6V4h6v2" />
-          </svg>
-        </Btn>
-      </div>
+      <FloatingBar>
+        <ToolbarButton onClick={handleArrange} tooltip="Tidy up">
+          <LayoutGrid strokeWidth={1.75} />
+        </ToolbarButton>
+        <ToolbarButton onClick={handleGroup} tooltip="Group">
+          <Group strokeWidth={1.75} />
+        </ToolbarButton>
+        <ToolbarSeparator />
+        <ToolbarButton onClick={handleDuplicate} tooltip="Duplicate">
+          <Copy strokeWidth={1.75} />
+        </ToolbarButton>
+        <ToolbarButton onClick={handleDelete} tooltip="Delete" shortcut="⌫" danger>
+          <Trash2 strokeWidth={1.75} />
+        </ToolbarButton>
+      </FloatingBar>
     </div>
   );
 }

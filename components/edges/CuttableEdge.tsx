@@ -7,17 +7,16 @@ import {
   useNodes,
   type EdgeProps,
 } from "@xyflow/react";
-import { edgeStyle, getSourceHandleColor } from "@/lib/edgeStyles";
+import { Scissors } from "lucide-react";
+import { edgeStrokeWidth } from "@/lib/edgeStyles";
 
 export default function CuttableEdge({
-  id,
   source,
   sourceX, sourceY,
   targetX, targetY,
   sourcePosition, targetPosition,
   sourceHandleId,
   targetHandleId,
-  markerEnd,
   data,
 }: EdgeProps) {
   const edgeData = data as Record<string, unknown> | undefined;
@@ -29,7 +28,7 @@ export default function CuttableEdge({
   const [visible, setVisible] = useState(false);
   const [pos, setPos] = useState({ x: 0, y: 0 });
   const [pathLength, setPathLength] = useState(0);
-  const leaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const leaveTimer = useRef<number | null>(null);
   const pathRef = useRef<SVGPathElement>(null);
   const { screenToFlowPosition } = useReactFlow();
 
@@ -40,20 +39,7 @@ export default function CuttableEdge({
     !!(srcNode?.data.extractingFrame as boolean | undefined) &&
     (sourceHandleId === "startFrameOut" || sourceHandleId === "endFrameOut" || sourceHandleId === "imagePickOut");
 
-  const tgtStyle   = edgeStyle(colorKey ?? targetHandleId);
-  const tgtColor   = (tgtStyle.stroke as string) ?? "#555";
-  const srcColor   = getSourceHandleColor(srcNode?.type, sourceHandleId);
-  const strokeWidth = (tgtStyle.strokeWidth as number) ?? 2;
-
-  // Per-edge gradient ID — unique within the SVG document
-  const gradId     = `eg-${id}`;
-  const useGradient = srcColor !== tgtColor;
-  // stroke value: URL ref for gradient, solid color otherwise
-  const strokeValue = useGradient ? `url(#${gradId})` : tgtColor;
-  // --edge-color used by the error-blink keyframe; must be a resolvable stroke value
-  const edgeColorVar = strokeValue;
-  // Scissor badge uses mid-point color (average of both ends for simplicity)
-  const badgeColor = useGradient ? tgtColor : tgtColor;
+  const strokeWidth = edgeStrokeWidth(colorKey ?? targetHandleId);
 
   const [edgePath] = getBezierPath({
     sourceX, sourceY, sourcePosition,
@@ -100,7 +86,7 @@ export default function CuttableEdge({
   }
 
   function handleMouseLeave() {
-    leaveTimer.current = setTimeout(() => setVisible(false), 80);
+    leaveTimer.current = window.setTimeout(() => setVisible(false), 80);
   }
 
   function handleBadgeEnter() {
@@ -109,39 +95,21 @@ export default function CuttableEdge({
 
   return (
     <>
-      {/* Gradient definition — userSpaceOnUse so it follows the edge direction */}
-      {useGradient && (
-        <defs>
-          <linearGradient
-            id={gradId}
-            gradientUnits="userSpaceOnUse"
-            x1={sourceX} y1={sourceY}
-            x2={targetX} y2={targetY}
-          >
-            <stop offset="0%"   stopColor={srcColor} />
-            <stop offset="100%" stopColor={tgtColor} />
-          </linearGradient>
-        </defs>
-      )}
-
-      {/* Visible edge line — animates out right-to-left when dying */}
+      {/* Visible wire — ink at rest, lapis when selected/extracting (globals.css .canvas-edge).
+          Animates out right-to-left when dying. */}
       <path
         ref={pathRef}
         d={edgePath}
         fill="none"
+        className={`canvas-edge${isExtractingEdge ? " canvas-edge-active" : ""}`}
         strokeWidth={strokeWidth}
         strokeLinecap="round"
         strokeDasharray={isExtractingEdge ? "6 6" : pathLength > 0 ? pathLength : undefined}
         strokeDashoffset={isExtractingEdge ? undefined : dying ? pathLength : 0}
         style={{
-          stroke: strokeValue,
-          ["--edge-color" as string]: edgeColorVar,
           pointerEvents: "none",
-          opacity: dimmed ? 0.15 : isExtractingEdge ? 0.7 : 1,
-          transition: [
-            dying  ? "stroke-dashoffset 0.42s ease-in" : null,
-            "opacity 150ms",
-          ].filter(Boolean).join(", "),
+          opacity: dimmed ? 0.15 : 1,
+          transition: dying ? "stroke-dashoffset 0.42s ease-in, opacity 150ms" : undefined,
           animation: error
             ? "edge-error-blink 1.4s ease 1 forwards"
             : isExtractingEdge
@@ -163,43 +131,24 @@ export default function CuttableEdge({
 
       <EdgeLabelRenderer>
         <div
+          className="absolute transition-opacity duration-150 ease-[var(--ease-out)]"
           style={{
-            position: "absolute",
             transform: `translate(-50%, -50%) translate(${pos.x}px, ${pos.y}px)`,
             pointerEvents: visible && !dying ? "all" : "none",
             zIndex: 10,
             opacity: visible && !dying ? 1 : 0,
-            transition: "opacity 180ms ease",
           }}
           onMouseEnter={handleBadgeEnter}
           onMouseLeave={handleMouseLeave}
         >
-          <div style={{
-            width: 28,
-            height: 28,
-            borderRadius: "50%",
-            background: "#0B0E14",
-            border: `2px solid ${badgeColor}`,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            cursor: "pointer",
-            boxShadow: `0 2px 12px rgba(0,0,0,0.6), 0 0 8px ${badgeColor}44`,
-          }}>
-            <ScissorIcon color={badgeColor} />
+          <div
+            title="Cut wire"
+            className="flex size-[26px] cursor-pointer items-center justify-center rounded-full bg-surface-raised text-ink-2 shadow-[var(--shadow-md)] transition-colors duration-150 hover:text-sanguine"
+          >
+            <Scissors className="size-3.5" strokeWidth={1.75} />
           </div>
         </div>
       </EdgeLabelRenderer>
     </>
-  );
-}
-
-function ScissorIcon({ color }: { color: string }) {
-  return (
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="6" cy="6" r="3" />
-      <circle cx="6" cy="18" r="3" />
-      <path d="M20 4 8.12 15.88M14.47 14.48 20 20M8.12 8.12 12 12" />
-    </svg>
   );
 }

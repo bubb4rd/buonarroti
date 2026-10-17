@@ -1,95 +1,78 @@
 import { NextRequest } from "next/server";
-import { jobStore, type JobResult } from "@/lib/jobStore";
 import { jobEvents } from "@/lib/jobEvents";
-import { resumeKieJob } from "@/lib/kieJobPoller";
-import * as guestDb from "@/lib/guest/db";
+import { checkJob } from "@/lib/kieJobPoller";
+import type { JobResult } from "@/lib/jobStore";
 
 const SSE_HEADERS = {
   "Content-Type": "text/event-stream",
-  "Cache-Control": "no-cache",
+  "Cache-Control": "no-cache, no-store",
   "Connection": "keep-alive",
 };
 
-const TIMEOUT_MS = 12 * 60 * 1000; // 12 min hard cap
+/**
+ * How long one stream stays open. Unrelated to the job's own cap (which the
+ * poller enforces): when this elapses the stream just closes and EventSource
+ * reconnects, re-checking the job.
+ */
+const STREAM_MAX_MS = 10 * 60_000;
+/** Reconnect delay advertised to EventSource. */
+const RETRY_MS = 3_000;
 
-function immediate(payload: JobResult): Response {
-  return new Response(`data: ${JSON.stringify(payload)}\n\n`, { headers: SSE_HEADERS });
+function event(payload: JobResult): string {
+  return `data: ${JSON.stringify(payload)}\n\n`;
 }
 
-function recoverJob(taskId: string): JobResult | null {
-  const gen = guestDb.recoverJob(taskId);
-  if (gen?.status === "done") {
-    return gen.video_url
-      ? { status: "done", videoUrl: gen.video_url }
-      : { status: "done", imageUrl: gen.image_url ?? undefined, imageUrls: gen.image_urls ?? undefined };
-  }
-  if (gen?.status === "error") {
-    return { status: "error", error: gen.error_msg ?? "Generation failed" };
-  }
-  return null;
-}
-
+/**
+ * GET /api/job-stream?taskId= (SSE). Emits the same payloads as
+ * `/api/job-status` and closes after a terminal one (`done`, `error`,
+ * `not_found`).
+ */
 export async function GET(req: NextRequest) {
   const taskId = req.nextUrl.searchParams.get("taskId");
   if (!taskId) return new Response("taskId required", { status: 400 });
 
-  // Already settled in jobStore — respond immediately, no stream needed
-  const existing = jobStore.get(taskId);
-  if (existing && existing.status !== "pending") {
-    return immediate(existing);
-  }
+  const enc = new TextEncoder();
+  const channel = `job:${taskId}`;
 
-  if (!existing) {
-    const recovered = recoverJob(taskId);
-    if (recovered) {
-      jobStore.set(taskId, recovered);
-      return immediate(recovered);
-    }
-    // No DB record either — truly not found
-    return immediate({ status: "error", error: "Job not found" });
-  }
-
-  // Restart the kie.ai poller if a server restart lost it.
-  if (!taskId.startsWith("azure-")) {
-    resumeKieJob(taskId, existing.type === "video" ? "video" : "image");
-  }
-
-  // Job is pending — open an SSE stream and wait for the poller/callback to fire
-  const stream = new ReadableStream({
-    start(controller) {
-      const enc = new TextEncoder();
+  const stream = new ReadableStream<Uint8Array>({
+    async start(controller) {
       let closed = false;
 
       const close = () => {
         if (closed) return;
         closed = true;
         clearInterval(heartbeat);
-        clearTimeout(timeout);
-        controller.close();
+        clearTimeout(cap);
+        jobEvents.off(channel, send);
+        req.signal.removeEventListener("abort", close);
+        try { controller.close(); } catch { /* already closed by the client */ }
       };
 
+      // Only terminal results are sent; while pending the stream stays quiet
+      // apart from heartbeats.
       const send = (payload: JobResult) => {
-        if (closed) return;
-        controller.enqueue(enc.encode(`data: ${JSON.stringify(payload)}\n\n`));
+        if (closed || payload.status === "pending") return;
+        controller.enqueue(enc.encode(event(payload)));
         close();
       };
+
+      // Listen before checking, so a result that lands in between isn't missed.
+      jobEvents.on(channel, send);
+      req.signal.addEventListener("abort", close);
 
       // Keepalive comment every 25 s (proxies drop idle SSE connections)
       const heartbeat = setInterval(() => {
         if (!closed) controller.enqueue(enc.encode(": ping\n\n"));
       }, 25_000);
+      const cap = setTimeout(close, STREAM_MAX_MS);
 
-      // Hard cap — emit error if callback never arrives
-      const timeout = setTimeout(() => {
-        send({ status: "error", error: "Generation timed out" });
-      }, TIMEOUT_MS);
-
-      jobEvents.once(`job:${taskId}`, send);
-
-      req.signal.addEventListener("abort", () => {
-        jobEvents.off(`job:${taskId}`, send);
-        close();
-      });
+      controller.enqueue(enc.encode(`retry: ${RETRY_MS}\n\n`));
+      try {
+        send(await checkJob(taskId));
+      } catch (e) {
+        console.error(`[job-stream] ${taskId} status check failed:`, e);
+        close(); // EventSource reconnects and checks again
+      }
     },
   });
 

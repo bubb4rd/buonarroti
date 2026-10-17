@@ -23,6 +23,7 @@ export function db(): DatabaseSync {
   const database = new DatabaseSync(DB_PATH);
   database.exec("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;");
   createSchema(database);
+  addJobColumns(database);
   _db = database;
   migrateFromJson(database);
   return _db;
@@ -72,6 +73,32 @@ function createSchema(d: DatabaseSync): void {
     CREATE TABLE IF NOT EXISTS spaces (
       id TEXT PRIMARY KEY, name TEXT, data TEXT, updated_at INTEGER
     );
+  `);
+}
+
+/**
+ * Job-tracking columns on `generations` (the table is the single source of truth
+ * for generation status, `pending` included):
+ * - `provider`: which backend owns the task — "kie" (jobs API), "kie-veo"
+ *   (Veo record-info API), "azure" or "codex" (run in this process).
+ * - `client_request_id`: the client's idempotency key, so a retried POST
+ *   returns the existing task instead of paying for a second one.
+ * - `error_code`: machine-readable failure class ("credits", "interrupted",
+ *   "timeout", "failed", "rejected").
+ * - `artifact_json` / `request_json`: character-pipeline step output, and the
+ *   step request (minus keys) so a step interrupted by a restart can resume.
+ */
+function addJobColumns(d: DatabaseSync): void {
+  const cols = new Set(
+    (d.prepare("PRAGMA table_info(generations)").all() as { name: string }[]).map((c) => c.name),
+  );
+  for (const col of ["provider", "client_request_id", "error_code", "artifact_json", "request_json"]) {
+    if (!cols.has(col)) d.exec(`ALTER TABLE generations ADD COLUMN ${col} TEXT`);
+  }
+  d.exec(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_gen_client_request
+      ON generations (client_request_id) WHERE client_request_id IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS idx_gen_status ON generations (status);
   `);
 }
 
