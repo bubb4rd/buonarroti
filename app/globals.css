@@ -47,6 +47,11 @@
   --ochre: #a8741f;          /* warning, pending                           */
   --ochre-rgb: 168 116 31;
   --gilt: #a08442;           /* rare flourish: credits, premium marks      */
+  /* Generate: deep ultramarine, lit from above, paper type (both themes) */
+  --generate-top: #3b5cc8;
+  --generate-bottom: #26419d;
+  --generate-ink: #fdfcf8;
+  --generate-glow-rgb: 45 77 176;
 
   /* Scrim & shadows (warm, never pure black) */
   --scrim: rgb(38 33 26 / 0.32);
@@ -97,6 +102,10 @@
   --ochre: #d9a650;
   --ochre-rgb: 217 166 80;
   --gilt: #c9ad6e;
+  --generate-top: #4d6ddb;
+  --generate-bottom: #3553bd;
+  --generate-ink: #fdfcf8;
+  --generate-glow-rgb: 77 109 219;
 
   --scrim: rgb(0 0 0 / 0.55);
   --shadow-rgb: 0 0 0;
@@ -375,6 +384,86 @@ body {
   to { background-position: -120% 0, 0 0; }
 }
 
+/* ── Generate: the one action the app exists for (DESIGN.md § Generate). ──
+   Ground ultramarine lit from above; the glow is the pigment's own colour.
+   The tre cerchi part on hover, turn a third on send, orbit while busy. */
+.generate-button {
+  color: var(--generate-ink);
+  background: linear-gradient(180deg, var(--generate-top), var(--generate-bottom));
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.22),
+    inset 0 -1px 0 rgb(0 0 0 / 0.14),
+    0 1px 2px rgb(var(--generate-glow-rgb) / 0.35),
+    0 6px 16px -6px rgb(var(--generate-glow-rgb) / 0.55);
+  transition:
+    box-shadow var(--dur) var(--ease-out),
+    filter var(--dur) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out);
+}
+.generate-button:hover:not(:disabled) {
+  filter: brightness(1.07) saturate(1.06);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.26),
+    inset 0 -1px 0 rgb(0 0 0 / 0.14),
+    0 1px 2px rgb(var(--generate-glow-rgb) / 0.4),
+    0 10px 24px -8px rgb(var(--generate-glow-rgb) / 0.7);
+}
+.generate-button:active:not(:disabled) {
+  transform: scale(0.98);
+}
+.generate-button:focus-visible {
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.22),
+    0 6px 16px -6px rgb(var(--generate-glow-rgb) / 0.55),
+    var(--focus-ring);
+}
+.generate-button[aria-busy="true"] {
+  cursor: progress;
+}
+/* Not yet runnable: a quiet wash, not a faded blue. */
+.generate-button:disabled:not([aria-busy="true"]) {
+  color: var(--ink-3);
+  background: var(--wash-strong);
+  box-shadow: inset 0 0 0 1px var(--rule);
+}
+.generate-button [data-slot="kbd"] {
+  color: rgb(255 255 255 / 0.82);
+  background: rgb(0 0 0 / 0.2);
+  box-shadow: inset 0 1px 1px rgb(0 0 0 / 0.18);
+}
+.generate-button:disabled:not([aria-busy="true"]) [data-slot="kbd"] {
+  color: var(--ink-4);
+  background: var(--wash);
+  box-shadow: inset 0 0 0 1px var(--rule);
+}
+
+.generate-rings {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.generate-rings circle {
+  transition: transform var(--dur) var(--ease-out);
+}
+/* SVG user units: the viewBox is 64 wide, so 4 units ≈ 1px at 17px. */
+.generate-button:hover:not(:disabled) .generate-rings circle:nth-child(1) { transform: translate(0, -5px); }
+.generate-button:hover:not(:disabled) .generate-rings circle:nth-child(2) { transform: translate(-4.3px, 2.5px); }
+.generate-button:hover:not(:disabled) .generate-rings circle:nth-child(3) { transform: translate(4.3px, 2.5px); }
+.generate-rings[data-launch] {
+  animation: generate-rings-turn 520ms var(--ease-out);
+}
+.generate-rings[data-busy] {
+  animation: generate-rings-orbit 1.6s linear infinite;
+}
+@keyframes generate-rings-turn {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(120deg); }
+}
+@keyframes generate-rings-orbit {
+  to { transform: rotate(360deg); }
+}
+
 /* ── Desktop shell: Tauri overlay title bar drag strip ────────────────── */
 .titlebar-drag {
   -webkit-app-region: drag;
@@ -420,9 +509,15 @@ body {
 :root,
 [data-theme="paper"] {
   --pigment-violet: #6a5a9a;
+  --pigment-rose: #a4506a;
+  --pigment-umber: #7a5a3a;
+  --pigment-slate: #5b6b7a;
 }
 [data-theme="ink"] {
   --pigment-violet: #a397d2;
+  --pigment-rose: #d98ba3;
+  --pigment-umber: #c09a72;
+  --pigment-slate: #9aabbb;
 }
 
 :root {
@@ -434,6 +529,10 @@ body {
   --handle-audio: var(--ochre);
   --handle-assistant: var(--verdigris);
   --handle-character: var(--pigment-violet);
+  --handle-style: var(--pigment-rose);
+  --handle-surface: var(--pigment-slate);
+  --handle-map: var(--verdigris);
+  --handle-prop: var(--pigment-umber);
 
   /* Wires */
   --edge-stroke: rgb(var(--ink-rgb) / 0.35);
@@ -584,9 +683,9 @@ body {
   --handle-color: var(--handle-character);
 }
 
-/* Game-character pipeline: artifact handles, one chain turnaround → … → gltf. */
+/* Game pipelines: artifact handles take their family's pigment from the node (--game-accent). */
 .node-handle-icon-game {
-  --handle-color: var(--handle-character);
+  --handle-color: var(--game-accent, var(--handle-character));
 }
 
 /* Assistant output also carries .node-handle-icon-out-text; this wins by order. */
@@ -702,10 +801,7 @@ body {
 .react-flow[data-connecting-type="video"] .react-flow__handle-left.node-handle-icon-videoref,
 .react-flow[data-connecting-type="video"] .react-flow__handle-left.node-handle-icon-refvideo,
 .react-flow[data-connecting-type="audio"] .react-flow__handle-left.node-handle-icon-audioref,
-.react-flow[data-connecting-type="game-turnaround"] .react-flow__handle-left.node-handle-icon-game-in-turnaround,
-.react-flow[data-connecting-type="game-mesh"] .react-flow__handle-left.node-handle-icon-game-in-mesh,
-.react-flow[data-connecting-type="game-skeleton"] .react-flow__handle-left.node-handle-icon-game-in-skeleton,
-.react-flow[data-connecting-type="game-animclip"] .react-flow__handle-left.node-handle-icon-game-in-animclip {
+.react-flow[data-connecting-type^="game-"] .react-flow__handle-left.node-handle-compatible {
   transform: translate(-100%, -50%) !important;
   opacity: 1 !important;
   pointer-events: auto !important;

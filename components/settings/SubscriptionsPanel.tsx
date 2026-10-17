@@ -6,7 +6,7 @@ import { useAgents } from "@/lib/useAgents";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { HintText } from "@/components/chat/ModelPicker";
-import { Hint, SettingsGroup, SettingsRow, SettingsSection, StatusChip } from "./primitives";
+import { AgentBrandIcon, Hint, SettingsGroup, SettingsRow, SettingsSection, StatusChip } from "./primitives";
 
 /** Shown until the server has answered once (no cached probe yet). */
 const PLACEHOLDER: Record<AgentId, Pick<AgentInfo, "name" | "via">> = {
@@ -88,7 +88,7 @@ export function SubscriptionsPanel() {
           return (
             <SettingsRow
               key={id}
-              icon={<span className="font-serif text-[15px] leading-none text-ink-2">{name.charAt(0)}</span>}
+              icon={<AgentBrandIcon id={id} size={15} />}
               label={name}
               description={
                 <>

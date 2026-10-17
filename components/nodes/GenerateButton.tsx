@@ -1,6 +1,7 @@
 "use client";
-import { Loader2, Send } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { GenerateButton as GenerateAction } from "@/components/ui/generate-button";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -11,37 +12,44 @@ interface Props {
   warningMessages?: string[];
 }
 
-/** The node's primary action. Lapis when ready, sanguine outline when inputs are missing. */
+/** The node's primary action: the shared Generate button, or a sanguine outline when an input is broken. */
 export default function GenerateButton({ onClick, busy, disabled, extracting, warningMessages }: Props) {
   const hasWarning = !!warningMessages?.length;
+
+  if (!hasWarning && !extracting) {
+    return (
+      <GenerateAction
+        size="sm"
+        busy={busy}
+        disabled={disabled}
+        onMouseDown={(e) => e.stopPropagation()}
+        onClick={(e) => { e.stopPropagation(); onClick(); }}
+      />
+    );
+  }
 
   return (
     <div className="group/generate relative shrink-0">
       <Button
         size="sm"
-        variant={hasWarning || extracting ? "outline" : "primary"}
+        variant="outline"
         onMouseDown={(e) => e.stopPropagation()}
         onClick={(e) => { e.stopPropagation(); onClick(); }}
         disabled={disabled || busy || extracting}
-        aria-busy={busy || extracting}
+        aria-busy={extracting}
         className={cn(
           "h-7 gap-1.5 px-3 text-[12px]",
           hasWarning && "cursor-not-allowed text-sanguine shadow-[inset_0_0_0_1px_rgb(var(--sanguine-rgb)/0.45)]",
           extracting && "text-ochre",
         )}
       >
-        {busy ? (
-          <Loader2 className="size-3 animate-spin" />
-        ) : extracting ? (
+        {extracting ? (
           <>
             <Loader2 className="size-3 animate-spin" />
             Extracting…
           </>
         ) : (
-          <>
-            <Send className="size-3" strokeWidth={2} />
-            Generate
-          </>
+          "Generate"
         )}
       </Button>
 

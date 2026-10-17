@@ -1,7 +1,9 @@
 "use client";
 import React from "react";
+import Link from "next/link";
 import { setThemePreference, useTheme, type ThemePreference } from "@/lib/theme";
 import { useWorkflowStore } from "@/lib/store";
+import { buttonVariants } from "@/components/ui/button";
 import { Segmented } from "@/components/ui/segmented";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
@@ -37,6 +39,7 @@ const THEME_CHOICES: { value: ThemePreference; label: string; hint: string }[] =
 
 export function AppearancePanel() {
   const { preference } = useTheme();
+  const setSettingsOpen = useWorkflowStore((s) => s.setSettingsOpen);
 
   return (
     <SettingsSection title="Appearance" description="Choose how Buonarroti looks. Changes apply right away.">
@@ -90,6 +93,21 @@ export function AppearancePanel() {
             })}
           </div>
         </SettingsRow>
+      </SettingsGroup>
+      <SettingsGroup>
+        <SettingsRow
+          label="Design specimen"
+          description="Every colour, type style and component, live in the current theme."
+          control={
+            <Link
+              href="/specimen"
+              onClick={() => setSettingsOpen(false)}
+              className={buttonVariants({ variant: "outline", size: "sm" })}
+            >
+              Open
+            </Link>
+          }
+        />
       </SettingsGroup>
     </SettingsSection>
   );

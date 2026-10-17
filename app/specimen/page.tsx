@@ -1,8 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { Check, Download, ImageIcon, Plus, Sparkles, Video, Wand2 } from "lucide-react";
+import { Check, Download, ImageIcon, Plus, Video, Wand2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { GenerateButton } from "@/components/ui/generate-button";
 import { Kbd } from "@/components/ui/kbd";
 import { Input, Textarea } from "@/components/ui/input";
 import { Segmented } from "@/components/ui/segmented";
@@ -116,15 +117,22 @@ export default function SpecimenPage() {
         {/* Controls */}
         <section>
           <SectionHeader title="Controls" meta="Buttons carry their shortcut" />
+          <div className="mb-5 flex flex-wrap items-center gap-3">
+            <GenerateButton outcome="4 images" shortcut="⌘↵" />
+            <GenerateButton outcome="video" />
+            <GenerateButton size="sm" />
+            <GenerateButton size="sm" busy />
+            <GenerateButton disabled blockedReason="Describe what to make first" outcome="image" shortcut="⌘↵" />
+          </div>
           <div className="flex flex-wrap items-center gap-2.5">
             <Button variant="primary">
-              <Sparkles /> Generate <Kbd>⌘↵</Kbd>
+              <Plus /> New workflow <Kbd>N</Kbd>
             </Button>
             <Button variant="ink">
               <Download /> Export <Kbd>E</Kbd>
             </Button>
             <Button>
-              <Plus /> New workflow <Kbd>N</Kbd>
+              <Download /> Import <Kbd>I</Kbd>
             </Button>
             <Button variant="ghost">
               <Wand2 /> Improve prompt

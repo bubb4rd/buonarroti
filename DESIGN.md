@@ -122,6 +122,7 @@ Rules:
 | Primitive | Notes |
 |---|---|
 | `Button` | Variants: `primary` (lapis, one per view), `ink`, `outline` (default), `ghost`, `danger`, `link`. Sizes: `sm`, `default`, `lg`, `icon`, `icon-sm`, `icon-lg`. A `<Kbd>` child sits at the right edge and inverts itself on filled buttons. |
+| `GenerateButton` (`generate-button.tsx`) | The one generative action, never `Button variant="primary"`. Ground ultramarine (`--generate-top` → `--generate-bottom`) with paper type in both themes, the *tre cerchi* as its glyph. Says what it makes (`outcome`: "4 images", "video"); disabled is a neutral wash with `blockedReason` as a tooltip; `busy` reads "Generating". Sizes: `default` (h-9, composer) and `sm` (h-7, nodes). |
 | `Kbd`, `KbdGroup` | Shortcut hints. Use them generously on primary actions. |
 | `Input`, `Textarea`, `fieldClass` | Raised paper, `rule-strong` border, lapis focus ring. |
 | `Dialog*` | Base UI dialog: warm scrim, raised sheet, serif title, footer on `paper/60`. |
@@ -147,7 +148,8 @@ Prefer these over hand-built divs. If you need a new primitive (Select, Tabs), b
   - Running: ink-2 with an animated dot.
 - **Chips and tags:** `rounded-full` hairline (`shadow-[inset_0_0_0_1px_var(--rule-strong)]`), 12.5px ink-2. A suggested chip uses a dashed border. A selected chip uses `bg-lapis-soft text-lapis`.
 - **Empty states:** a serif headline plus one ink-2 sentence plus one primary action, optionally over `.fresco` and `.paper-grain`. The signature artwork is `/art/the-touch.webp` (the hands from Michelangelo's *Creation of Adam*, public domain), framed with crop marks.
-- **Composer (prompt box):** `bg-surface-raised rounded-[var(--radius-xl)] shadow-[var(--shadow-md)]`. The textarea is 15px with no inner border. The control row below is ghost buttons and segmented pills. The primary Generate button sits at the right with a `⌘↵` Kbd hint.
+- **Composer (prompt box):** `bg-surface-raised rounded-[var(--radius-xl)] shadow-[var(--shadow-md)]`. The textarea is 15px with no inner border. The control row below is ghost buttons and segmented pills. The `GenerateButton` sits at the right with its outcome ("Generate 4 images") and a `⌘↵` Kbd hint.
+- **Generate motion:** the rings part on hover (200ms), turn a third of a circle when a generation is sent, and orbit while one is in flight. Besides the shared 0.98 press, nothing else on the button moves.
 - **Toasts:** raised paper with `--shadow-lg`, a 3px left bar in the status pigment, the mark as the app icon, and a serif-free 13px body.
 - **Banners:** don't use full-width red or amber bars. Prefer an inline card in the page header area with a pigment dot and an action.
 - **Highlights:** use `--highlight` (`rgb(var(--ochre-rgb) / 0.22)`) as a marker-pen background behind changed or matched text.
