@@ -48,6 +48,8 @@ next-env.d.ts
 /data/*.db
 /data/*.db-shm
 /data/*.db-wal
+# Unreal check project: a copy of the engine's mannequin content, made on first run
+/data/unreal/
 /public/generated/**
 !/public/generated/.gitkeep
 
