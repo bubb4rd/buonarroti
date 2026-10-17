@@ -340,18 +340,12 @@ def texture_vs_sheet(proj, want_rgba, head_band, res=512):
             float((wrong & head).sum() / max(1, head.sum())))
 
 
-def main():
-    args = C.load_args()
-    t = C.Timer()
-    C.reset_scene()
-    C.import_glb(args["raw"])
-    obj = C.join_meshes()
-    raw = C.mesh_stats(obj)
-    t.mark("import")
+def clean(obj):
+    """Spikes, then floaters; returns the number of spike faces removed.
 
-    # Spikes: marching-cubes output can carry a few huge triangles reaching to a
-    # far vertex; they wreck the bounding box (and so scaling and alignment).
-    # Then floaters: keep components with at least 1% of the vertices.
+    Spikes: marching-cubes output can carry a few huge triangles reaching to a
+    far vertex; they wreck the bounding box (and so scaling and alignment).
+    Then floaters: keep components with at least 1% of the vertices."""
     bm = bmesh.new()
     bm.from_mesh(obj.data)
     lengths = np.array([e.calc_length() for e in bm.edges])
@@ -360,7 +354,6 @@ def main():
     bmesh.ops.delete(bm, geom=spikes, context="FACES")
     loose = [v for v in bm.verts if not v.link_faces]
     bmesh.ops.delete(bm, geom=loose, context="VERTS")
-    spike_count = len(spikes)
     keep_min = max(1, int(0.01 * len(bm.verts)))
     bm.verts.index_update()
     bm.verts.ensure_lookup_table()
@@ -385,13 +378,13 @@ def main():
     bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=1e-5)
     bm.to_mesh(obj.data)
     bm.free()
-    t.mark("floaters")
+    return len(spikes)
 
-    views = {k: C.load_image_rgba(p) for k, p in args["views"].items()}
-    view_masks = {k: view_silhouette(v) for k, v in views.items()}
 
-    # Orientation: the side view is a left profile facing screen-left (-Y when the
-    # character faces -Y). If the flipped mesh matches better, turn it 180 degrees.
+def orient(obj, view_masks):
+    """The side view is a left profile facing screen-left (-Y when the subject
+    faces -Y). If the mesh turned 180 degrees matches it better, turn it.
+    Returns (turned, score as is, score flipped)."""
     co = C.world_coords(obj)
     tris = C.triangles(obj)
     side_mask = view_masks["side"][0]
@@ -402,30 +395,27 @@ def main():
     if turned:
         obj.rotation_euler = (0, 0, math.pi)
         bpy.ops.object.transform_apply(rotation=True)
+    return turned, score_as_is, score_flip
 
-    co = C.world_coords(obj)
-    lo, hi = co.min(0), co.max(0)
-    scale = args["height_m"] / (hi[2] - lo[2])
-    obj.location = (-(lo[0] + hi[0]) / 2 * scale, -(lo[1] + hi[1]) / 2 * scale, -lo[2] * scale)
-    obj.scale = (scale, scale, scale)
-    bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
-    t.mark("orient")
 
-    # Decimate.
+def decimate(obj, target_tris):
     obj.data.calc_loop_triangles()
     n_tris = len(obj.data.loop_triangles)
-    if n_tris > args["target_tris"]:
+    if n_tris > target_tris:
         dec = obj.modifiers.new("decimate", "DECIMATE")
         dec.decimate_type = "COLLAPSE"
-        dec.ratio = args["target_tris"] / n_tris
+        dec.ratio = target_tris / n_tris
         dec.use_collapse_triangulate = True
         bpy.ops.object.modifier_apply(modifier=dec.name)
     tri = obj.modifiers.new("triangulate", "TRIANGULATE")
     bpy.ops.object.modifier_apply(modifier=tri.name)
     bpy.ops.object.shade_smooth()
-    t.mark("decimate")
 
-    # Silhouettes after decimation: these are the drift numbers that gate the mesh.
+
+def fit_projections(obj, views, view_masks):
+    """Silhouette IoU per view (the drift numbers that gate a mesh) and, per
+    view, the orthographic projection of the drawing onto the mesh, honouring
+    the alignment shift, with the drawing conformed to the mesh's outline."""
     co = C.world_coords(obj)
     tris = C.triangles(obj)
     projections = []
@@ -435,7 +425,7 @@ def main():
         vmask, vgeo = view_masks[name]
         score, dx, dy = best_alignment(mmask, vmask)
         sil[name] = round(score, 4)
-        # Texture mapping: mesh (u, z) -> view pixel -> image UV, honouring the alignment shift.
+        # Texture mapping: mesh (u, z) -> view pixel -> image UV.
         k = vgeo["hp"] / mgeo["height"]                 # px per meter
         px_per_cell = vgeo["size_px"] / RES
         shift_x, shift_y = -dx * px_per_cell, -dy * px_per_cell
@@ -452,14 +442,19 @@ def main():
         p["conformed"] = conform(views[name], mesh_mask_in_view(co, tris, p, w_img))
         p["image"] = new_image(f"view_{name}", dilate_rgba(p["conformed"]))
         projections.append(p)
-    t.mark("silhouettes")
+    return projections, sil
 
-    # UVs and bake.
+
+def unwrap(obj):
     bpy.ops.object.mode_set(mode="EDIT")
     bpy.ops.mesh.select_all(action="SELECT")
     bpy.ops.uv.smart_project(angle_limit=math.radians(66), island_margin=0.004)
     bpy.ops.object.mode_set(mode="OBJECT")
-    size = args["texture_size"]
+
+
+def bake(obj, projections, size, out_png):
+    """Bake the projections into one `size` albedo saved as `out_png`, then give
+    the object its final material with that albedo."""
     albedo = bpy.data.images.new("albedo", size, size, alpha=False)
     build_projection_material(obj, projections, albedo)
     scene = bpy.context.scene
@@ -472,14 +467,51 @@ def main():
     bpy.context.view_layer.objects.active = obj
     bpy.ops.object.bake(type="EMIT")
     albedo.file_format = "PNG"
-    albedo.filepath_raw = os.path.join(os.path.dirname(args["out_glb"]), "albedo.png")
+    albedo.filepath_raw = out_png
     albedo.save()
     final_material(obj, albedo)
-    t.mark("bake")
+
+
+def texture_checks(projections):
     tex = {}
     for p in projections:
         err, wrong, wrong_head = texture_vs_sheet(p, p["conformed"], HEAD_BAND)
         tex[p["view"]] = {"mean_err": round(err, 4), "wrong": round(wrong, 4), "wrong_head": round(wrong_head, 4)}
+    return tex
+
+
+def main():
+    args = C.load_args()
+    t = C.Timer()
+    C.reset_scene()
+    C.import_glb(args["raw"])
+    obj = C.join_meshes()
+    raw = C.mesh_stats(obj)
+    t.mark("import")
+    spike_count = clean(obj)
+    t.mark("floaters")
+
+    views = {k: C.load_image_rgba(p) for k, p in args["views"].items()}
+    view_masks = {k: view_silhouette(v) for k, v in views.items()}
+    turned, score_as_is, score_flip = orient(obj, view_masks)
+    co = C.world_coords(obj)
+    lo, hi = co.min(0), co.max(0)
+    scale = args["height_m"] / (hi[2] - lo[2])
+    obj.location = (-(lo[0] + hi[0]) / 2 * scale, -(lo[1] + hi[1]) / 2 * scale, -lo[2] * scale)
+    obj.scale = (scale, scale, scale)
+    bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
+    t.mark("orient")
+
+    decimate(obj, args["target_tris"])
+    t.mark("decimate")
+    projections, sil = fit_projections(obj, views, view_masks)
+    t.mark("silhouettes")
+
+    unwrap(obj)
+    size = args["texture_size"]
+    bake(obj, projections, size, os.path.join(os.path.dirname(args["out_glb"]), "albedo.png"))
+    t.mark("bake")
+    tex = texture_checks(projections)
     t.mark("texture_check")
 
     obj.name = "Character"

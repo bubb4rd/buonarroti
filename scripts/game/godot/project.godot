@@ -1,5 +1,5 @@
 ; Godot 4 project used only to check pipeline output: characters/*.glb are
-; imported with default settings and played by check_walk.gd.
+; imported with default settings and played by check_character.gd.
 config_version=5
 
 [application]

@@ -14,6 +14,7 @@
     "desktop:icon": "tauri icon",
     "tauri": "tauri",
     "game:character": "tsx scripts/game/run-character.mts",
+    "game:step": "tsx scripts/game/run-step.mts",
     "game:verify": "tsx scripts/game/verify.mts"
   },
   "dependencies": {

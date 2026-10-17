@@ -90,7 +90,12 @@ def fit_line(points):
     return c, vt[0]
 
 
-def estimate_joints(co, tris):
+# Wrist position as a fraction of shoulder-to-hand-tip, back from the tip: an
+# open hand (sheets drawn before fist templates) reaches further than a fist.
+HAND_FRAC = {"open": 0.25, "fist": 0.12}
+
+
+def estimate_joints(co, tris, hands="open"):
     H = float(co[:, 2].max())
     gap = 0.004 * H
     zs = np.linspace(0.02 * H, 0.97 * H, 300)
@@ -176,7 +181,7 @@ def estimate_joints(co, tris):
         t_sh = (z_sh - c[2]) / d[2]
         shoulder = c + t_sh * d
         arm_len = float(np.linalg.norm(tip - shoulder))
-        wrist = tip - 0.25 * arm_len * d
+        wrist = tip - HAND_FRAC[hands] * arm_len * d
         elbow = shoulder + 0.54 * (wrist - shoulder) + np.array([0, 0.008 * H, 0])
         joints[f"{side}UpperArm"] = shoulder
         joints[f"{side}LowerArm"] = elbow
@@ -585,7 +590,7 @@ def main():
     checks = []
     report = {"checks": checks}
     try:
-        joints, arm_angles, found = estimate_joints(co, tris)
+        joints, arm_angles, found = estimate_joints(co, tris, args.get("hands", "open"))
     except RigError as e:
         checks.append(C.check("rig.joints", False, detail=str(e)))
         C.write_report(args, report)

@@ -1,6 +1,6 @@
 extends Node3D
-## Every res://characters/*.glb side by side, each playing its first (looping)
-## animation. Rendered with --write-movie for a visual record of the walk.
+## Every res://characters/*.glb side by side, each playing its "walk" clip
+## (else its first). Rendered with --write-movie for a visual record of the walk.
 
 func _ready() -> void:
 	var files := Array(DirAccess.get_files_at("res://characters")).filter(func(f): return f.ends_with(".glb"))
@@ -13,7 +13,7 @@ func _ready() -> void:
 		var players := inst.find_children("*", "AnimationPlayer", true, false)
 		if not players.is_empty():
 			var p: AnimationPlayer = players[0]
-			p.play(p.get_animation_list()[0])
+			p.play(&"walk" if p.has_animation(&"walk") else p.get_animation_list()[0])
 	var cam := Camera3D.new()
 	cam.position = Vector3(2.2, 1.4, 4.2 + files.size() * 0.4)
 	add_child(cam)

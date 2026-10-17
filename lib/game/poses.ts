@@ -14,8 +14,9 @@ export type Build = keyof typeof builds;
 export const BUILDS = Object.entries(builds).map(([id, b]) => ({ id: id as Build, label: b.label }));
 export const DEFAULT_BUILD: Build = "average";
 
-/** Upper-arm angle below horizontal (inside CHARACTER_BUDGET.aPoseArmDeg) and feet distance / height. */
-export const POSE = { armDeg: 45, stance: 0.2 } as const;
+/** Upper-arm angle below horizontal (inside CHARACTER_BUDGET.aPoseArmDeg), feet distance / height,
+ *  and the hand shape: closed fists, the grip an equipped weapon is attached to. */
+export const POSE = { armDeg: 45, stance: 0.2, hands: "fist" } as const;
 
 export function isBuild(v: unknown): v is Build {
   return typeof v === "string" && Object.hasOwn(builds, v);

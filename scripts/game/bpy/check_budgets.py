@@ -62,18 +62,31 @@ def main():
         d = head(f"{side}LowerArm") - head(f"{side}UpperArm")
         angles[side] = math.degrees(math.atan2(-d.z, math.hypot(d.x, d.y)))
 
-    anim = arm.animation_data.action if arm.animation_data else None
-    seam = None
-    if anim:
-        # The importer maps glTF seconds to frames at the scene fps, so the clip end
-        # is generally fractional; sample it exactly rather than a rounded frame.
-        f0, f1 = anim.frame_range
+    # One action per glTF animation; the importer also stacks them as NLA tracks,
+    # which are muted so only the clip under test is evaluated.
+    ad = arm.animation_data
+    clips = sorted(a.name for a in bpy.data.actions) if ad else []
+    seams = {}
+    if ad:
+        for track in ad.nla_tracks:
+            track.mute = True
         scene = bpy.context.scene
-        scene.frame_set(int(f0), subframe=f0 - int(f0))
-        a = {pb.name: pb.matrix.to_quaternion() for pb in arm.pose.bones}
-        scene.frame_set(int(f1), subframe=f1 - int(f1))
-        z = {pb.name: pb.matrix.to_quaternion() for pb in arm.pose.bones}
-        seam = max(math.degrees(C.quat_angle(a[n], z[n])) for n in a)
+        for name in clips:
+            if not name.endswith("-loop"):
+                continue
+            act = bpy.data.actions[name]
+            ad.action = act
+            if ad.action_slot is None and act.slots:
+                ad.action_slot = act.slots[0]
+            # The importer maps glTF seconds to frames at the scene fps, so the clip end
+            # is generally fractional; sample it exactly rather than a rounded frame.
+            f0, f1 = act.frame_range
+            scene.frame_set(int(f0), subframe=f0 - int(f0))
+            a = {pb.name: pb.matrix.to_quaternion() for pb in arm.pose.bones}
+            scene.frame_set(int(f1), subframe=f1 - int(f1))
+            z = {pb.name: pb.matrix.to_quaternion() for pb in arm.pose.bones}
+            seams[name] = max(math.degrees(C.quat_angle(a[n], z[n])) for n in a)
+    seam = max(seams.values()) if seams else None
 
     checks += [
         C.check("budget.triangles", b["minTriangles"] <= tris <= b["maxTriangles"], tris, [b["minTriangles"], b["maxTriangles"]]),
@@ -91,14 +104,15 @@ def main():
         C.check("budget.apose.right", b["aPoseArmDeg"][0] <= angles["Right"] <= b["aPoseArmDeg"][1], round(angles["Right"], 2), b["aPoseArmDeg"]),
         C.check("budget.apose.symmetry", abs(angles["Left"] - angles["Right"]) <= b["aPoseSymmetryDeg"],
                 round(abs(angles["Left"] - angles["Right"]), 2), b["aPoseSymmetryDeg"]),
-        C.check("budget.animation", anim is not None, anim.name if anim else None, "one clip"),
+        C.check("budget.animation", bool(clips), len(clips), None, ", ".join(clips) or "no clip"),
         C.check("budget.loop_seam", seam is not None and seam <= b["maxLoopSeamDeg"],
-                round(seam, 3) if seam is not None else None, b["maxLoopSeamDeg"]),
+                round(seam, 3) if seam is not None else None, b["maxLoopSeamDeg"],
+                "worst first-vs-last pose over the -loop clips: " + ", ".join(f"{k} {v:.3f}°" for k, v in seams.items())),
     ]
     C.write_report(args, {"checks": checks, "measured": {
         "triangles": tris, "texture": tex, "materials": mats, "height_m": round(height, 4), "bones": len(bones),
         "max_influences": infl, "arm_angle_deg": {k: round(v, 2) for k, v in angles.items()},
-        "clip": anim.name if anim else None, "seam_deg": seam}})
+        "clips": clips, "seam_deg": seams}})
 
 
 if __name__ == "__main__":

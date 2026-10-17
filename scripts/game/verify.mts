@@ -6,10 +6,10 @@
  *
  * 1. Khronos glTF-Validator: 0 errors (warnings/infos/hints are listed).
  * 2. godot --headless --import of all files in one project: no WARNING/ERROR lines.
- * 3. check_walk.gd: each character loads, its clip loops, and CPU skinning of
- *    every frame from Godot's imported Skin/Skeleton3D shows no tearing.
+ * 3. check_character.gd: each character loads, every clip plays, and CPU skinning
+ *    of every frame from Godot's imported Skin/Skeleton3D shows no tearing or cracks.
  * 4. Blender check_budgets.py: triangles, texture, materials, height, bones,
- *    influences, weights, A-pose, loop seam against lib/game/artifacts.ts budgets.
+ *    influences, weights, A-pose, loop seam of every -loop clip against lib/game/artifacts.ts budgets.
  * --movie additionally renders preview.tscn with Godot's movie writer (PNG frames).
  */
 import { execFile } from "child_process";
@@ -19,7 +19,7 @@ import { basename, join, resolve } from "path";
 import { promisify } from "util";
 import { validateBytes } from "gltf-validator";
 import { BPY_BUDGET } from "../../lib/game/artifacts";
-import { blenderBin, godotBin } from "../../lib/game/tools";
+import { blenderBin, godotBin, type GodotCharacterResult } from "../../lib/game/tools";
 
 const run = promisify(execFile);
 const here = resolve("scripts/game");
@@ -41,7 +41,7 @@ for (const f of files) {
 
 const proj = await mkdtemp(join(tmpdir(), "bnr-verify-"));
 try {
-  for (const f of ["project.godot", "check_walk.gd", "preview.gd", "preview.tscn"]) await copyFile(join(here, "godot", f), join(proj, f));
+  for (const f of ["project.godot", "check_character.gd", "preview.gd", "preview.tscn"]) await copyFile(join(here, "godot", f), join(proj, f));
   await mkdir(join(proj, "characters"));
   for (const f of files) await copyFile(f, join(proj, "characters", basename(f)));
   const godot = godotBin();
@@ -52,15 +52,18 @@ try {
   console.log(`  ${files.length} files imported, ${noisy.length} warning/error lines`);
   for (const l of noisy) fail(l.trim());
 
-  console.log("== check_walk.gd (load, loop, CPU-skin every frame)");
-  const walk = await run(godot, ["--headless", "--path", proj, "-s", "res://check_walk.gd"], { maxBuffer: 1 << 26 })
+  console.log("== check_character.gd (load, play every clip, CPU-skin every frame)");
+  const play = await run(godot, ["--headless", "--path", proj, "-s", "res://check_character.gd"], { maxBuffer: 1 << 26 })
     .catch((e) => e as { stdout: string; stderr: string });
-  const rows = `${walk.stdout}`.split("\n").filter((l) => l.startsWith("{")).map((l) => JSON.parse(l));
-  if (rows.length !== files.length) fail(`check_walk.gd reported ${rows.length}/${files.length} characters`);
+  const rows: GodotCharacterResult[] = `${play.stdout}`.split("\n").filter((l) => l.startsWith("{")).map((l) => JSON.parse(l));
+  if (rows.length !== files.length) fail(`check_character.gd reported ${rows.length}/${files.length} characters`);
   for (const r of rows) {
-    console.log(`  ${r.file}: clip "${r.animation}" loop=${r.loop} ${r.frames} frames, ${r.bones} bones, ` +
-      `≤${r.max_influences} influences, max edge stretch ${r.max_stretch?.toFixed(3)} (${r.edges_over_2x} edges >2x), ` +
-      `max seam gap ${(100 * r.max_seam_gap).toFixed(3)}% of height (${r.seam_pairs} seam pairs), min y ${r.min_y?.toFixed(4)}`);
+    console.log(`  ${r.file}: ${r.clips.length} clips, ${r.bones} bones, ≤${r.max_influences} influences, ${r.seam_pairs} seam pairs`);
+    for (const c of r.clips) {
+      console.log(`    ${c.animation}: loop=${c.loop} ${c.frames} frames, max edge stretch ${c.max_stretch.toFixed(3)} (${c.edges_over_2x} edges >2x), ` +
+        `max seam gap ${(100 * c.max_seam_gap).toFixed(3)}% of height, loop seam ${c.loop_seam_deg.toFixed(3)}°, min y ${c.min_y.toFixed(4)}`);
+    }
+    if (!r.clips.some((c) => c.loop)) fail(`${r.file}: no looping clip`);
     if (!r.ok) fail(`${r.file}: ${r.problems.join("; ")}`);
   }
 

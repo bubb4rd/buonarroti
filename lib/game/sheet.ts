@@ -12,7 +12,7 @@ import { writeFile } from "fs/promises";
 import { join } from "path";
 import { CHARACTER_BUDGET, SHEET_BUDGET, type Check, type SheetView, type SheetViewName } from "./artifacts";
 
-interface Mask {
+export interface Mask {
   w: number;
   h: number;
   /** 1 = foreground (character), 0 = background. */
@@ -21,12 +21,15 @@ interface Mask {
   label: Int32Array;
 }
 
-interface Component { id: number; area: number; x0: number; x1: number; y0: number; y1: number }
+export interface Component { id: number; area: number; x0: number; x1: number; y0: number; y1: number }
+
+/** A layout-template mark (colour, pixel box) that counts as background if the model copied it. */
+export interface Guide { rgb: [number, number, number]; x0: number; x1: number; y0: number; y1: number }
 
 const VIEW_ORDER: SheetViewName[] = ["front", "side", "back"];
 
 /** 8-connected foreground components; boxes are [x0, x1) × [y0, y1). */
-function components(mask: Mask): Component[] {
+export function components(mask: Mask): Component[] {
   const { w, h, fg, label } = mask;
   label.fill(-1);
   const out: Component[] = [];
@@ -65,9 +68,9 @@ function components(mask: Mask): Component[] {
  * Background = pixels connected to the border whose colour is near the border
  * median. Long horizontal strokes (a drawn ground line spanning several views)
  * are made passable so they neither join the figures nor close the gap between
- * the legs.
+ * the legs; so are pixels of a copied template `guide` inside its box.
  */
-function segment(rgb: Buffer, w: number, h: number): { mask: Mask; bg: [number, number, number]; bgNoise: number; strokeRows: number } {
+export function segment(rgb: Buffer, w: number, h: number, guides: Guide[] = []): { mask: Mask; bg: [number, number, number]; bgNoise: number; strokeRows: number } {
   const border: number[][] = [[], [], []];
   const push = (i: number) => { for (let c = 0; c < 3; c++) border[c].push(rgb[i * 3 + c]); };
   for (let x = 0; x < w; x++) { push(x); push((h - 1) * w + x); }
@@ -84,6 +87,15 @@ function segment(rgb: Buffer, w: number, h: number): { mask: Mask; bg: [number, 
   for (let i = 0; i < w * h; i++) {
     const d = Math.abs(rgb[i * 3] - bg[0]) + Math.abs(rgb[i * 3 + 1] - bg[1]) + Math.abs(rgb[i * 3 + 2] - bg[2]);
     if (d < SHEET_BUDGET.bgTolerance) passable[i] = 1;
+  }
+  for (const g of guides) {
+    for (let y = Math.max(0, g.y0); y < Math.min(h, g.y1); y++) {
+      for (let x = Math.max(0, g.x0); x < Math.min(w, g.x1); x++) {
+        const i = y * w + x;
+        const d = Math.abs(rgb[i * 3] - g.rgb[0]) + Math.abs(rgb[i * 3 + 1] - g.rgb[1]) + Math.abs(rgb[i * 3 + 2] - g.rgb[2]);
+        if (d < SHEET_BUDGET.bgTolerance) passable[i] = 1;
+      }
+    }
   }
   // A stroke pixel is solid with background STROKE_GAP rows above and below
   // (a line at most ~2*STROKE_GAP px thick). A row is a drawn line when such
@@ -124,9 +136,9 @@ function segment(rgb: Buffer, w: number, h: number): { mask: Mask; bg: [number, 
   return { mask: { w, h, fg, label: new Int32Array(w * h) }, bg, bgNoise, strokeRows: strokes.size };
 }
 
-interface Box { x0: number; x1: number; y0: number; y1: number }
+export interface Box { x0: number; x1: number; y0: number; y1: number }
 
-function bbox(mask: Mask, x0: number, x1: number): Box | null {
+export function bbox(mask: Mask, x0: number, x1: number): Box | null {
   let y0 = mask.h, y1 = -1, bx0 = x1, bx1 = x0;
   for (let y = 0; y < mask.h; y++) {
     for (let x = x0; x < x1; x++) {
@@ -157,7 +169,7 @@ function longestSpan(mask: Mask, box: Box, from: number, to: number, ok: (n: num
 }
 
 /** Foreground runs [x0, x1) along row `y` inside the box, ignoring specks narrower than `minRun`. */
-function runsOf(mask: Mask, box: Box, y: number, minRun: number): [number, number][] {
+export function runsOf(mask: Mask, box: Box, y: number, minRun: number): [number, number][] {
   const out: [number, number][] = [];
   let start = -1;
   for (let x = box.x0; x <= box.x1; x++) {
@@ -215,7 +227,7 @@ function armAngles(mask: Mask, box: Box): { left: number; right: number } | null
 }
 
 /** Mean luminance asymmetry between the left half and the mirrored right half of the silhouette. */
-function lightingAsymmetry(rgb: Buffer, mask: Mask, box: Box): number {
+export function lightingAsymmetry(rgb: Buffer, mask: Mask, box: Box): number {
   const cx = (box.x0 + box.x1) / 2;
   let diff = 0, n = 0;
   for (let y = box.y0; y < box.y1; y += 2) {
@@ -237,7 +249,7 @@ function lightingAsymmetry(rgb: Buffer, mask: Mask, box: Box): number {
  * `mirror` flips b. `band` limits the comparison to rows [from, to) as fractions
  * of the height measured from the top (head = [0, 0.2]).
  */
-function silhouetteIoU(mask: Mask, a: Box, b: Box, mirror: boolean, band: [number, number] = [0, 1]): number {
+export function silhouetteIoU(mask: Mask, a: Box, b: Box, mirror: boolean, band: [number, number] = [0, 1]): number {
   const H = 256;
   const sample = (box: Box, u: number, v: number, flip: boolean) => {
     const bh = box.y1 - box.y0;
@@ -355,31 +367,38 @@ export async function analyzeSheet(sheetPath: string, outDir: string): Promise<S
   checks.push({ id: "sheet.lighting.flat", pass: asym <= SHEET_BUDGET.maxLightAsymmetry, value: +asym.toFixed(3), limit: SHEET_BUDGET.maxLightAsymmetry, detail: "left/right luminance asymmetry of the front view (directional light)" });
 
   const views: SheetView[] = [];
-  for (let k = 0; k < 3; k++) {
-    const box = boxes[k];
-    const bw = box.x1 - box.x0, bh = box.y1 - box.y0;
-    const pad = Math.round(bh * 0.06);
-    const size = Math.max(bw, bh) + 2 * pad;
-    const rgba = Buffer.alloc(bw * bh * 4);
-    for (let y = 0; y < bh; y++) {
-      for (let x = 0; x < bw; x++) {
-        const si = (box.y0 + y) * w + box.x0 + x;
-        const di = (y * bw + x) * 4;
-        rgba[di] = data[si * 3]; rgba[di + 1] = data[si * 3 + 1]; rgba[di + 2] = data[si * 3 + 2];
-        rgba[di + 3] = mask.fg[si] ? 255 : 0;
-      }
-    }
-    const file = `${VIEW_ORDER[k]}.png`;
-    const png = await sharp(rgba, { raw: { width: bw, height: bh, channels: 4 } })
-      .extend({
-        top: Math.floor((size - bh) / 2), bottom: Math.ceil((size - bh) / 2),
-        left: Math.floor((size - bw) / 2), right: Math.ceil((size - bw) / 2),
-        background: { r: 0, g: 0, b: 0, alpha: 0 },
-      })
-      .png()
-      .toBuffer();
-    await writeFile(join(outDir, file), png);
-    views.push({ name: VIEW_ORDER[k], file, box: { x: box.x0, y: box.y0, w: bw, h: bh } });
-  }
+  for (let k = 0; k < 3; k++) views.push(await writeView(data, mask, boxes[k], VIEW_ORDER[k], outDir));
   return { width: w, height: h, views, checks };
+}
+
+/**
+ * Crop one view out of the sheet as `<name>.png` in `outDir`: RGBA, background
+ * (mask 0) transparent, padded to a square with the figure centred, which is
+ * what the image-to-3D step takes.
+ */
+export async function writeView(data: Buffer, mask: Mask, box: Box, name: SheetViewName, outDir: string): Promise<SheetView> {
+  const w = mask.w;
+  const bw = box.x1 - box.x0, bh = box.y1 - box.y0;
+  const pad = Math.round(bh * 0.06);
+  const size = Math.max(bw, bh) + 2 * pad;
+  const rgba = Buffer.alloc(bw * bh * 4);
+  for (let y = 0; y < bh; y++) {
+    for (let x = 0; x < bw; x++) {
+      const si = (box.y0 + y) * w + box.x0 + x;
+      const di = (y * bw + x) * 4;
+      rgba[di] = data[si * 3]; rgba[di + 1] = data[si * 3 + 1]; rgba[di + 2] = data[si * 3 + 2];
+      rgba[di + 3] = mask.fg[si] ? 255 : 0;
+    }
+  }
+  const file = `${name}.png`;
+  const png = await sharp(rgba, { raw: { width: bw, height: bh, channels: 4 } })
+    .extend({
+      top: Math.floor((size - bh) / 2), bottom: Math.ceil((size - bh) / 2),
+      left: Math.floor((size - bw) / 2), right: Math.ceil((size - bw) / 2),
+      background: { r: 0, g: 0, b: 0, alpha: 0 },
+    })
+    .png()
+    .toBuffer();
+  await writeFile(join(outDir, file), png);
+  return { name, file, box: { x: box.x0, y: box.y0, w: bw, h: bh } };
 }

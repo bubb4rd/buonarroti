@@ -1,14 +1,19 @@
 extends SceneTree
-## Loads every res://characters/*.glb as Godot imported it, plays its looping
-## clip and skins the mesh on the CPU from Godot's own data (Skin bind poses,
-## Skeleton3D poses after AnimationPlayer.seek, ARRAY_BONES / ARRAY_WEIGHTS),
-## frame by frame. Prints one JSON line per character:
-##   {"file", "animation", "loop", "length", "frames", "bones", "max_influences",
-##    "weight_sum_err", "max_stretch", "edges_over_2x", "max_seam_gap", "min_y", "ok", "problems"}
+## Loads every res://characters/*.glb as Godot imported it, plays every clip and
+## skins the mesh on the CPU from Godot's own data (Skin bind poses, Skeleton3D
+## poses after AnimationPlayer.seek, ARRAY_BONES / ARRAY_WEIGHTS), frame by
+## frame. Prints one JSON line per character:
+##   {"file", "bones", "max_influences", "weight_sum_err", "seam_pairs", "ok", "problems",
+##    "clips": [{"animation", "loop", "length", "frames", "max_stretch", "edges_over_2x",
+##               "max_seam_gap", "min_y", "loop_seam_deg", "loop_seam_m"}]}
 ## Tearing shows up as edges that grow far beyond their rest length. Cracks
 ## show up as vertices that share a rest position (glTF splits vertices at UV
 ## and normal seams) drifting apart; max_seam_gap is that distance / height.
-## usage: godot --headless --path scripts/game/godot -s res://check_walk.gd
+## loop_seam_* compare each imported track's first and last key (what Godot
+## blends across when it wraps a looping clip).
+## Which clips must loop is the caller's knowledge (names ending "-loop" in the
+## file, which Godot imports looping and without the suffix).
+## usage: godot --headless --path scripts/game/godot -s res://check_character.gd
 
 const FPS := 30.0
 const MAX_STRETCH := 2.5
@@ -34,6 +39,24 @@ func find_all(node: Node, cls: String, out: Array) -> Array:
 	return out
 
 
+## Bone global poses composed from the local poses the AnimationPlayer just
+## wrote. Skeleton3D.get_bone_global_pose() is refreshed lazily (Godot 4.7
+## returns a stale pose right after seek(), even after
+## force_update_all_bone_transforms()), so it cannot be sampled in a loop.
+func global_poses(skel: Skeleton3D) -> Array[Transform3D]:
+	var out: Array[Transform3D] = []
+	out.resize(skel.get_bone_count())
+	var stack := Array(skel.get_parentless_bones())
+	for b in stack:
+		out[b] = skel.get_bone_pose(b)
+	while not stack.is_empty():
+		var b: int = stack.pop_back()
+		for c in skel.get_bone_children(b):
+			out[c] = out[b] * skel.get_bone_pose(c)
+			stack.append(c)
+	return out
+
+
 func skinned_positions(mi: MeshInstance3D, skel: Skeleton3D, verts: PackedVector3Array,
 		bones: PackedInt32Array, weights: PackedFloat32Array, per_vertex: int) -> PackedVector3Array:
 	var skin: Skin = mi.skin
@@ -42,9 +65,10 @@ func skinned_positions(mi: MeshInstance3D, skel: Skeleton3D, verts: PackedVector
 	for b in skin.get_bind_count():
 		var name := skin.get_bind_name(b)
 		bind_to_bone.append(skel.find_bone(name) if name != "" else skin.get_bind_bone(b))
+	var pose := global_poses(skel)
 	var mats: Array[Transform3D] = []
 	for b in skin.get_bind_count():
-		mats.append(skel.get_bone_global_pose(bind_to_bone[b]) * skin.get_bind_pose(b))
+		mats.append(pose[bind_to_bone[b]] * skin.get_bind_pose(b))
 	var out := PackedVector3Array()
 	out.resize(verts.size())
 	for v in verts.size():
@@ -57,6 +81,25 @@ func skinned_positions(mi: MeshInstance3D, skel: Skeleton3D, verts: PackedVector
 	return out
 
 
+## Largest first-vs-last key difference over the rotation (degrees) and position
+## (meters) tracks of one animation.
+func loop_seam(anim: Animation) -> Dictionary:
+	var deg := 0.0
+	var m := 0.0
+	for t in anim.get_track_count():
+		var n := anim.track_get_key_count(t)
+		if n < 2:
+			continue
+		var a = anim.track_get_key_value(t, 0)
+		var z = anim.track_get_key_value(t, n - 1)
+		match anim.track_get_type(t):
+			Animation.TYPE_ROTATION_3D:
+				deg = max(deg, rad_to_deg((a as Quaternion).angle_to(z as Quaternion)))
+			Animation.TYPE_POSITION_3D:
+				m = max(m, (a as Vector3).distance_to(z as Vector3))
+	return {"deg": deg, "m": m}
+
+
 func check(path: String) -> Dictionary:
 	var problems: Array[String] = []
 	var scene: Node = (load(path) as PackedScene).instantiate()
@@ -64,25 +107,18 @@ func check(path: String) -> Dictionary:
 	var players := find_all(scene, "AnimationPlayer", [])
 	var skels := find_all(scene, "Skeleton3D", [])
 	var meshes := find_all(scene, "MeshInstance3D", [])
-	var result := {"file": path.get_file(), "ok": false, "problems": problems}
+	var result := {"file": path.get_file(), "ok": false, "problems": problems, "clips": []}
 	if players.is_empty() or skels.is_empty() or meshes.is_empty():
 		problems.append("missing AnimationPlayer / Skeleton3D / MeshInstance3D")
 		return result
 	var player: AnimationPlayer = players[0]
 	var skel: Skeleton3D = skels[0]
 	var mi: MeshInstance3D = meshes[0]
-	var anims := player.get_animation_list()
+	var anims := Array(player.get_animation_list()).filter(func(a): return a != &"RESET")
 	if anims.is_empty():
 		problems.append("no animation")
 		return result
-	var anim_name: StringName = anims[0]
-	var anim := player.get_animation(anim_name)
-	result["animation"] = String(anim_name)
-	result["loop"] = anim.loop_mode == Animation.LOOP_LINEAR
-	result["length"] = anim.length
 	result["bones"] = skel.get_bone_count()
-	if not result["loop"]:
-		problems.append("clip does not loop")
 
 	var arrays := mi.mesh.surface_get_arrays(0)
 	var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
@@ -143,43 +179,47 @@ func check(path: String) -> Dictionary:
 			seams.append(v)
 		else:
 			first[key] = v
-
-	var frames := int(round(anim.length * FPS))
-	var max_stretch := 0.0
-	var max_gap := 0.0
-	var over := {}
-	var min_y := INF
-	player.play(anim_name)
-	for f in frames + 1:
-		player.seek(f / FPS, true)
-		var pos := skinned_positions(mi, skel, verts, bones, weights, per_vertex)
-		for p in pos:
-			min_y = min(min_y, p.y)
-		for i in range(0, edges.size(), 2):
-			var l0 := rest_len[i / 2]
-			if l0 < min_len:
-				continue
-			var r := pos[edges[i]].distance_to(pos[edges[i + 1]]) / l0
-			if r > max_stretch:
-				max_stretch = r
-			if r > 2.0:
-				over[i / 2] = true
-		for i in range(0, seams.size(), 2):
-			max_gap = max(max_gap, pos[seams[i]].distance_to(pos[seams[i + 1]]))
-	result["frames"] = frames + 1
-	result["max_stretch"] = max_stretch
-	result["edges_over_2x"] = over.size()
 	result["seam_pairs"] = seams.size() / 2
-	result["max_seam_gap"] = max_gap / height
-	result["min_y"] = min_y
+
+	for anim_name in anims:
+		var anim := player.get_animation(anim_name)
+		var frames := int(round(anim.length * FPS))
+		var max_stretch := 0.0
+		var max_gap := 0.0
+		var over := {}
+		var min_y := INF
+		player.play(anim_name)
+		for f in frames + 1:
+			player.seek(f / FPS, true)
+			var pos := skinned_positions(mi, skel, verts, bones, weights, per_vertex)
+			for p in pos:
+				min_y = min(min_y, p.y)
+			for i in range(0, edges.size(), 2):
+				var l0 := rest_len[i / 2]
+				if l0 < min_len:
+					continue
+				var r := pos[edges[i]].distance_to(pos[edges[i + 1]]) / l0
+				if r > max_stretch:
+					max_stretch = r
+				if r > 2.0:
+					over[i / 2] = true
+			for i in range(0, seams.size(), 2):
+				max_gap = max(max_gap, pos[seams[i]].distance_to(pos[seams[i + 1]]))
+		player.stop()
+		var seam := loop_seam(anim)
+		result["clips"].append({
+			"animation": String(anim_name), "loop": anim.loop_mode == Animation.LOOP_LINEAR, "length": anim.length,
+			"frames": frames + 1, "max_stretch": max_stretch, "edges_over_2x": over.size(),
+			"max_seam_gap": max_gap / height, "min_y": min_y, "loop_seam_deg": seam["deg"], "loop_seam_m": seam["m"],
+		})
+		if max_stretch > MAX_STRETCH:
+			problems.append("%s: edge stretch %.2f > %.1f (tearing)" % [anim_name, max_stretch, MAX_STRETCH])
+		if max_gap / height > MAX_SEAM_GAP:
+			problems.append("%s: seams open %.2f%% of height > %.1f%% (cracks)" % [anim_name, 100 * max_gap / height, 100 * MAX_SEAM_GAP])
 	if max_infl > 4:
 		problems.append("more than 4 influences")
 	if sum_err > 1e-3:
 		problems.append("weights not normalised")
-	if max_stretch > MAX_STRETCH:
-		problems.append("edge stretch %.2f > %.1f (tearing)" % [max_stretch, MAX_STRETCH])
-	if max_gap / height > MAX_SEAM_GAP:
-		problems.append("seams open %.2f%% of height > %.1f%% (cracks)" % [100 * max_gap / height, 100 * MAX_SEAM_GAP])
 	result["ok"] = problems.is_empty()
 	scene.queue_free()
 	return result

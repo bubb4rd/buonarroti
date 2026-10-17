@@ -176,8 +176,9 @@ def quat_angle(a, b):
     return min(d, 2 * np.pi - d)
 
 
-def export_character(path, animations):
-    """Export Skeleton + Character as a .glb.
+def export_character(path, animations, extra=()):
+    """Export Skeleton + Character (+ `extra` object names, e.g. a prop parented
+    to a bone) as a .glb.
 
     The mesh is unparented first (armature modifier kept): a skinned mesh node
     under the armature node is ignored for transforms by the glTF spec and the
@@ -187,12 +188,14 @@ def export_character(path, animations):
     mesh.parent = None
     mesh.matrix_world = world
     bpy.ops.object.select_all(action="DESELECT")
-    for name in ("Character", "Skeleton"):
+    for name in ("Character", "Skeleton", *extra):
         bpy.data.objects[name].select_set(True)
     kwargs = {}
     if animations:
+        # Every action on its own frame range (the clips differ in length); the
+        # scene range would clip or pad them.
         kwargs = dict(
-            export_animation_mode="ACTIONS", export_force_sampling=True, export_frame_range=True,
+            export_animation_mode="ACTIONS", export_force_sampling=True, export_frame_range=False,
             export_anim_slide_to_zero=True, export_optimize_animation_size=False,
         )
     bpy.ops.export_scene.gltf(

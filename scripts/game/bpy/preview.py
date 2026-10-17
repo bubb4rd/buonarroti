@@ -1,6 +1,6 @@
 """Orthographic front / left-side / back preview strip of a .glb (textured, unlit).
 
-args: glb, out_png, report, [pose_frame]
+args: glb, out_png, report, [frame], [action]
 Renders with Workbench (texture colour, flat lighting) so the preview shows the
 albedo exactly as baked; one PNG, three views side by side, same layout as the sheet.
 """
@@ -19,7 +19,17 @@ def main():
     args = C.load_args()
     C.reset_scene()
     C.import_glb(args["glb"])
+    # Godot's "-colonly" / "-convcolonly" nodes are collision shapes, never drawn.
+    for o in C.mesh_objects():
+        if o.name.endswith("colonly"):
+            bpy.data.objects.remove(o)
     scene = bpy.context.scene
+    if "action" in args:
+        # A multi-clip .glb imports one action per clip, stacked as NLA tracks.
+        arm = next(o for o in bpy.data.objects if o.type == "ARMATURE")
+        for track in arm.animation_data.nla_tracks:
+            track.mute = True
+        arm.animation_data.action = bpy.data.actions[args["action"]]
     if "frame" in args:
         scene.frame_set(int(args["frame"]))
     scene.render.engine = "BLENDER_WORKBENCH"

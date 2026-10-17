@@ -24,7 +24,10 @@ import common as C  # noqa: E402
 
 # build: fractions of height. head: head height; hip / shoulder: joint heights;
 # shoulder_x: half shoulder width; arm: shoulder to wrist; girth / limb: radius scales.
-HAND = 0.3  # wrist to fingertip, as a fraction of the arm (shoulder to wrist)
+# Hands are closed fists: a fist gives every character the same grip for
+# equipping a weapon, which the rig (no finger bones) could not close an open
+# hand around. FIST_REACH: wrist to knuckles, in height units at limb scale 1.
+FIST_REACH = 0.045
 
 
 def mannequin(b, arm_deg, stance):
@@ -79,11 +82,11 @@ def mannequin(b, arm_deg, stance):
     hh = b["head"]
     blob((0, 0, 1 - hh / 2), (0.4 * hh, 0.42 * hh, hh / 2))                  # head
     blob((0, -0.4 * hh, 1 - 0.55 * hh), (0.07 * hh, 0.08 * hh, 0.09 * hh))  # nose: which way it faces
-    hand = HAND * b["arm"]
     for sgn in (1, -1):
         w = Vector((sgn * wrist.x, 0, wrist.z))
-        # Hand continues the forearm, palm facing the thigh.
-        blob(tuple(w + 0.4 * hand * Vector((sgn * arm.x, 0, arm.z))), (0.016 * lm, 0.026 * lm, 0.5 * hand),
+        # Fist continues the forearm, palm facing the thigh; it overlaps the
+        # wrist because the subsurf rounds the skin's arm end inward.
+        blob(tuple(w + 0.015 * lm * Vector((sgn * arm.x, 0, arm.z))), (0.026 * lm, 0.034 * lm, 0.03 * lm),
              tilt_y=-sgn * (math.pi / 2 - a))
         blob((sgn * fx, -0.03, 0.025), (0.035 * lm, 0.075 * lm, 0.028))  # foot, toes forward
     return parts
@@ -100,7 +103,7 @@ def main():
     # the narrow profile in the middle.
     fig_h = 0.72
     world_w = 1 / fig_h * W / Hpx  # sheet width in figure heights
-    reach = b["arm"] * (1 + HAND)
+    reach = b["arm"] + FIST_REACH * b["limb"]
     half_span = b["shoulder_x"] + reach * math.cos(math.radians(args["arm_deg"]))
     slots = (-(world_w / 2 - half_span - 0.03), 0.0, world_w / 2 - half_span - 0.03)
     for slot, rot in zip(slots, (0, -90, 180)):  # front, left profile facing screen-left, back
