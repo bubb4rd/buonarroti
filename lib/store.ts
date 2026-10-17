@@ -86,6 +86,8 @@ export interface NodeData extends Record<string, unknown> {
   heightM?: number;
   /** Turnaround step: mannequin build the character is drawn over (lib/game/poses.ts). */
   build?: string;
+  /** Prop sheet step: what the item is for (lib/game/artifacts.ts PROP_CATEGORIES). */
+  category?: string;
 }
 
 export const INTERRUPTED_MESSAGE = "This generation was interrupted. Retry?";

@@ -3,7 +3,7 @@ import { useEffect, useRef } from "react";
 import { useReactFlow, Node, Edge } from "@xyflow/react";
 import { useWorkflowStore, NodeData } from "@/lib/store";
 import { edgeStyle } from "@/lib/edgeStyles";
-import { NODES, NODE_SIZE, FALLBACK_SIZE, NODE_META, TypeBadge, getLastNodeSettings, getDefaultNodeSize, nextNodeLabel, gameStepOf, gameNodeTypeFor, gameNextTypes, gameOutHandle } from "@/lib/nodeTypes";
+import { NODES, NODE_SIZE, FALLBACK_SIZE, NODE_META, TypeBadge, getLastNodeSettings, getDefaultNodeSize, nextNodeLabel, gameStepOf, gameOutHandle, gamePortFor, gamePortSources, GAME_NODES, GAME_NODE_TYPES } from "@/lib/nodeTypes";
 import { STEP_IO } from "@/lib/game/artifacts";
 import { floatingPanelClass } from "@/components/ui/floating-toolbar";
 import { cn } from "@/lib/utils";
@@ -34,8 +34,13 @@ function closestRatio(ratioFloat: number, candidates: string[]): string | null {
   });
 }
 
-// Node types whose OUTPUT can feed a given input handle
-function sourceNodeTypesFor(targetHandle: string | null): string[] {
+// Node types whose OUTPUT can feed a given input handle (of a node of `targetNodeType`)
+function sourceNodeTypesFor(targetHandle: string | null, targetNodeType: string | undefined): string[] {
+  const step = gameStepOf(targetNodeType);
+  if (step) {
+    const port = STEP_IO[step].inputs.find((p) => p.id === targetHandle);
+    return port ? gamePortSources(port) : [];
+  }
   switch (targetHandle) {
     case "prompt":                         return ["promptNode", "assistantNode"];
     case "image":
@@ -44,11 +49,6 @@ function sourceNodeTypesFor(targetHandle: string | null): string[] {
     case "resource":                       return ["imageInputNode", "generateNode"];
     case "videoRef":
     case "referenceVideo":                 return ["videoInputNode"];
-    // Game-character inputs: only the previous step's node
-    case "turnaround":
-    case "mesh":
-    case "skeleton":
-    case "animclip":                       return [gameNodeTypeFor(targetHandle)];
     default:                               return [];
   }
 }
@@ -87,13 +87,9 @@ function targetHandleFor(
   targetNodeType: string,
   sourceHandleId: string | null,
 ): string | null {
-  // Game nodes: a strict chain — prompt into turnaround, `${kind}Out` into the next step
+  // Game nodes: the target step's port that takes this source, if any
   const targetStep = gameStepOf(targetNodeType);
-  if (targetStep) {
-    const need = STEP_IO[targetStep].input;
-    if (need === "prompt") return sourceNodeType === "promptNode" || sourceNodeType === "assistantNode" ? "prompt" : null;
-    return sourceHandleId === `${need}Out` ? need : null;
-  }
+  if (targetStep) return gamePortFor(targetStep, sourceNodeType, sourceHandleId)?.id ?? null;
   if (gameStepOf(sourceNodeType)) return null;
   // Typed output handles take priority
   if (sourceHandleId) {
@@ -273,15 +269,11 @@ export default function NodePickerMenu({ dropState, onClose }: Props) {
   // ── Node list ────────────────────────────────────────────────────────────────
   const HANDLE_ONLY_VIDEO_GEN = new Set(["videoRefOut", "audioRefOut"]);
   const sourceStep = gameStepOf(dropState.sourceNodeType);
-  // Game nodes appear only where the chain allows: after a text source (turnaround) or after the previous step.
-  const gameTargetTypes: string[] = sourceStep
-    ? gameNextTypes(sourceStep)
-    : dropState.sourceNodeType === "promptNode" || dropState.sourceNodeType === "assistantNode"
-      ? [gameNodeTypeFor("turnaround")]
-      : [];
+  // Game nodes appear only where one of their ports takes this source.
+  const gameTargetTypes: string[] = GAME_NODE_TYPES.filter((t) => gamePortFor(GAME_NODES[t].step, dropState.sourceNodeType, dropState.sourceHandleId));
   const linkable = isInput
     ? (() => {
-        const allowed = new Set(sourceNodeTypesFor(dropState.sourceHandleId));
+        const allowed = new Set(sourceNodeTypesFor(dropState.sourceHandleId, dropState.sourceNodeType));
         return NODES.filter((n) => allowed.has(n.type));
       })()
     : NODES.filter((n) => {

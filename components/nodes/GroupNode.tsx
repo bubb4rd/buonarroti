@@ -3,8 +3,8 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { NodeProps, Node, useReactFlow, NodeResizeControl, NodeToolbar, Position } from "@xyflow/react";
 import { useWorkflowStore, NodeData } from "@/lib/store";
 import { RUNNABLE_NODE_TYPES } from "@/lib/executor";
-import { NODE_LABELS, gameStepOf, gameSourceTypes } from "@/lib/nodeTypes";
-import { STEP_IO, accepts } from "@/lib/game/artifacts";
+import { NODE_LABELS, gameStepOf } from "@/lib/nodeTypes";
+import { STEP_IO, accepts, isArtifactPort } from "@/lib/game/artifacts";
 import { useReadOnly } from "@/lib/readOnlyContext";
 import { arrangeNodes } from "@/lib/arrangeNodes";
 import { usePipelineRunner } from "@/lib/usePipelineRunner";
@@ -201,14 +201,19 @@ export default function GroupNode({ id, data, selected }: NodeProps<GroupNodeTyp
       const promptConnected = incomingEdges.some((e) => e.targetHandle === "prompt");
       const gameStep = gameStepOf(genNode.type);
       if (gameStep) {
-        const need = STEP_IO[gameStep].input;
-        const src = allSources[0];
-        if (!src) {
-          missingInputs.push(need === "prompt" ? "A text node is required" : `Connect a ${NODE_LABELS[gameSourceTypes(gameStep)[0]]} node`);
-        } else if (need !== "prompt" && !memberIds.includes(src.id)) {
+        for (const port of STEP_IO[gameStep].inputs) {
+          const wired = incomingEdges.filter((e) => e.targetHandle === port.id);
+          if (!wired.length) {
+            if (!port.optional) missingInputs.push(`Connect ${port.label}`);
+            continue;
+          }
+          if (!isArtifactPort(port)) continue;
           // Upstream outside the group won't run: its current artifact must already be usable.
-          const ok = accepts(src.data.artifact, need);
-          if (!ok.ok) missingInputs.push(ok.reason);
+          const src = allNodes.find((n) => n.id === wired[0].source);
+          if (src && !memberIds.includes(src.id)) {
+            const ok = accepts(src.data.artifact, port.kind);
+            if (!ok.ok) missingInputs.push(ok.reason);
+          }
         }
       } else if (genNode.type === "generateNode") {
         if (!promptConnected) missingInputs.push("A text node is required");

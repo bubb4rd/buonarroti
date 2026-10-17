@@ -1,16 +1,12 @@
 import { Node, Edge } from "@xyflow/react";
 import { NodeData } from "./store";
+import { GAME_NODE_TYPES } from "./nodeTypes";
 
 /** Node types a pipeline Run triggers (via `pendingGenerate`). */
 export const RUNNABLE_NODE_TYPES: Record<string, true> = {
   generateNode: true,
   videoGeneratorNode: true,
-  gameTurnaroundNode: true,
-  gameMeshNode: true,
-  gameSkeletonNode: true,
-  gameAnimNode: true,
-  gameGltfNode: true,
-  gameUnrealNode: true,
+  ...Object.fromEntries(GAME_NODE_TYPES.map((t) => [t, true as const])),
 };
 
 /** Topological sort — returns node ids in execution order */
@@ -86,7 +82,7 @@ function resolveVideoNodeFrameUrl(src: Node<NodeData>, sourceHandle: string | nu
 /** Resolves the image URL for a connection, always honouring the source handle.
  *  Frame-specific handles (startFrameOut / endFrameOut / imagePickOut) return only
  *  their designated frame — no fallback to unrelated image fields. */
-function resolveImageUrl(src: Node<NodeData>, sourceHandle: string | null | undefined): string | undefined {
+export function resolveImageUrl(src: Node<NodeData>, sourceHandle: string | null | undefined): string | undefined {
   if (FRAME_OUT_HANDLES.has(sourceHandle ?? "")) {
     return resolveVideoNodeFrameUrl(src, sourceHandle);
   }

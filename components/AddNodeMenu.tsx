@@ -3,7 +3,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useReactFlow } from "@xyflow/react";
 import { useWorkflowStore, NodeData } from "@/lib/store";
-import { NODES, NODE_SIZE, FALLBACK_SIZE, NODE_META, TypeBadge, getLastNodeSettings, getDefaultNodeSize, nextNodeLabel, GAME_NODE_TYPES, gameStepOf } from "@/lib/nodeTypes";
+import { NODES, NODE_SIZE, FALLBACK_SIZE, NODE_META, TypeBadge, getLastNodeSettings, getDefaultNodeSize, nextNodeLabel, GAME_GROUPS, GAME_NODES, GAME_NODE_TYPES, gameStepOf, type GameGroup } from "@/lib/nodeTypes";
 import { getToken } from "@/lib/galleryUtils";
 import { MediaPickerModal } from "@/components/MediaPickerModal";
 import { Kbd } from "@/components/ui/kbd";
@@ -29,11 +29,11 @@ const SECTIONS: Array<{ id: string; label: string; nodeTypes: string[] }> = [
     label: "Inputs",
     nodeTypes: ["promptNode"],
   },
-  {
-    id: "game",
-    label: "Game character",
-    nodeTypes: GAME_NODE_TYPES,
-  },
+  ...(Object.keys(GAME_GROUPS) as GameGroup[]).map((g) => ({
+    id: `game-${g}`,
+    label: GAME_GROUPS[g].label,
+    nodeTypes: GAME_NODE_TYPES.filter((t) => GAME_NODES[t].group === g),
+  })),
   {
     id: "annotate",
     label: "Annotate",

@@ -17,6 +17,8 @@ import { useWorkflowStore } from "@/lib/store";
 import type { Space } from "@/lib/store";
 import { makeUGCTemplate } from "@/lib/templates";
 import { timeAgo } from "@/lib/useSpaceSync";
+import { workflowActivity } from "@/lib/workflowActivity";
+import { StatusChip } from "@/components/nodes/JobSlot";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
@@ -137,6 +139,12 @@ function SpaceCard({ space, onOpen }: { space: Space; onOpen: () => void }) {
 
   const nodeCount = space.nodes.length;
   const ts = space.updatedAt ?? space.createdAt;
+  const activity = workflowActivity(space.nodes);
+  const attentionLabel = activity.attention === 1 ? "Needs attention" : `${activity.attention} need attention`;
+  const statusLabel = [
+    activity.generating ? "generating" : null,
+    activity.attention ? attentionLabel.toLowerCase() : null,
+  ].filter(Boolean).join(", ");
 
   const startRename = () => {
     setDraft(space.name);
@@ -160,8 +168,18 @@ function SpaceCard({ space, onOpen }: { space: Space; onOpen: () => void }) {
       >
         <span className={FRAME_MARKS}>
           {/* Keyboard entry point; its click bubbles to the card. */}
-          <button type="button" aria-label={`Open ${space.name}`} className={cn(FRAME, "w-full outline-none")}>
+          <button
+            type="button"
+            aria-label={`Open ${space.name}${statusLabel ? `, ${statusLabel}` : ""}`}
+            className={cn(FRAME, "w-full outline-none")}
+          >
             <Mosaic media={collectMedia(space)} />
+            {(activity.generating > 0 || activity.attention > 0) && (
+              <span className="absolute top-2 left-2 flex flex-wrap gap-1.5">
+                {activity.attention > 0 && <StatusChip tone="failed">{attentionLabel}</StatusChip>}
+                {activity.generating > 0 && <StatusChip tone="running">Generating</StatusChip>}
+              </span>
+            )}
           </button>
         </span>
 

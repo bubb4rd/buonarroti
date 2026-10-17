@@ -1,52 +1,104 @@
 // Shared node type definitions — imported by both Sidebar and NodePickerMenu
 import React from "react";
-import { MessageSquare, Image, Film, Sparkles, Bot, Clapperboard, StickyNote, PersonStanding, Box, Bone, Footprints, PackageCheck, Gamepad2 } from "lucide-react";
-import { STEP_IO, type ArtifactKind } from "./game/artifacts";
+import { MessageSquare, Image, Film, Sparkles, Bot, Clapperboard, StickyNote, PersonStanding, Box, Bone, Footprints, PackageCheck, Gamepad2, Palette, BrickWall, Map as MapIcon, CloudSun, Swords, Hammer, Gem, Grab, type LucideIcon } from "lucide-react";
+import { STEP_IO, type ArtifactKind, type Port } from "./game/artifacts";
 
 export type NodeCategory = "generators" | "resources";
 
-// ── Game-character pipeline: one node type per step ─────────────────────────
+// ── Game-asset pipelines: one node type per step ────────────────────────────
 
-/** Node type → the pipeline step it runs (lib/game/artifacts.ts STEP_IO). */
-export const GAME_NODE_STEP = {
-  gameTurnaroundNode: "turnaround",
-  gameMeshNode:       "mesh",
-  gameSkeletonNode:   "skeleton",
-  gameAnimNode:       "animclip",
-  gameGltfNode:       "gltf",
-  gameUnrealNode:     "unreal",
-} as const satisfies Record<string, ArtifactKind>;
+/** Menu section and handle pigment (globals.css) of each family of game nodes. */
+export const GAME_GROUPS = {
+  style: { label: "Game style", accent: "var(--handle-style)" },
+  character: { label: "Game character", accent: "var(--handle-character)" },
+  surface: { label: "Game surfaces", accent: "var(--handle-surface)" },
+  maps: { label: "Game maps", accent: "var(--handle-map)" },
+  prop: { label: "Game props", accent: "var(--handle-prop)" },
+} as const satisfies Record<string, { label: string; accent: string }>;
 
-export type GameNodeType = keyof typeof GAME_NODE_STEP;
+export type GameGroup = keyof typeof GAME_GROUPS;
 
-export const GAME_NODE_TYPES = Object.keys(GAME_NODE_STEP) as GameNodeType[];
+interface GameNodeSpec {
+  /** The pipeline step it runs (lib/game/artifacts.ts STEP_IO). */
+  step: ArtifactKind;
+  group: GameGroup;
+  label: string;
+  description: string;
+  /** The output in words: "The {noun} will appear here.", "{noun} output". */
+  noun: string;
+  icon: LucideIcon;
+  /** Placement footprint for new nodes. */
+  size: { w: number; h: number };
+}
+
+export const GAME_NODES = {
+  gameStyleNode:      { step: "style",      group: "style",     label: "Style guide",      description: "Reference pictures every game asset is drawn to match", noun: "style guide", icon: Palette, size: { w: 300, h: 440 } },
+  gameTurnaroundNode: { step: "turnaround", group: "character", label: "Turnaround sheet", description: "Front, side and back views from a concept", noun: "turnaround sheet", icon: PersonStanding, size: { w: 300, h: 420 } },
+  gameMeshNode:       { step: "mesh",       group: "character", label: "Image to 3D mesh", description: "A textured mesh from the turnaround sheet", noun: "mesh", icon: Box, size: { w: 300, h: 440 } },
+  gameSkeletonNode:   { step: "skeleton",   group: "character", label: "Auto-rig",         description: "A humanoid skeleton bound to the mesh", noun: "rigged mesh", icon: Bone, size: { w: 300, h: 420 } },
+  gameAnimNode:       { step: "animclip",   group: "character", label: "Animation set",    description: "Idle, walk, run and jump retargeted onto the rig", noun: "animation set", icon: Footprints, size: { w: 300, h: 420 } },
+  gameGltfNode:       { step: "gltf",       group: "character", label: "glTF export",      description: "A validated .glb that plays in Godot", noun: "glTF asset", icon: PackageCheck, size: { w: 300, h: 460 } },
+  gameUnrealNode:     { step: "unreal",     group: "character", label: "Unreal export",    description: "An FBX on the UE5 mannequin skeleton", noun: "Unreal FBX", icon: Gamepad2, size: { w: 300, h: 460 } },
+  gameSurfaceNode:    { step: "surface",    group: "surface",   label: "Seamless material", description: "A tiling PBR ground or wall material, checked in Godot", noun: "material", icon: BrickWall, size: { w: 300, h: 460 } },
+  gameWorldMapNode:   { step: "worldmap",   group: "maps",      label: "World map",        description: "An illustrated map for the map screen, coastlines from a seed or sketch, no baked text", noun: "world map", icon: MapIcon, size: { w: 300, h: 460 } },
+  gameSkyboxNode:     { step: "skybox",     group: "maps",      label: "Skybox",           description: "A seamless 360° sky panorama, checked in Godot", noun: "skybox", icon: CloudSun, size: { w: 300, h: 460 } },
+  gamePropSheetNode:  { step: "propsheet",  group: "prop",      label: "Prop sheet",       description: "Front, side and back of an item, drawn to a ruler and a grip box", noun: "prop sheet", icon: Swords, size: { w: 300, h: 440 } },
+  gamePropNode:       { step: "prop",       group: "prop",      label: "Prop mesh",        description: "A game-ready item with a collision hull, checked in Godot", noun: "prop", icon: Hammer, size: { w: 300, h: 460 } },
+  gameIconNode:       { step: "icon",       group: "prop",      label: "Inventory icon",   description: "A 512 and 64 px icon rendered from the prop's mesh", noun: "icon", icon: Gem, size: { w: 300, h: 440 } },
+  gameEquipNode:      { step: "equip",      group: "prop",      label: "Equip",            description: "A handheld prop in a character's right fist, walked in Godot", noun: "equipped character", icon: Grab, size: { w: 300, h: 460 } },
+} as const satisfies Record<string, GameNodeSpec>;
+
+export type GameNodeType = keyof typeof GAME_NODES;
+
+export const GAME_NODE_TYPES = Object.keys(GAME_NODES) as GameNodeType[];
 
 /** The step a node type runs, or undefined for non-game nodes. */
 export function gameStepOf(type: string | null | undefined): ArtifactKind | undefined {
-  return type && type in GAME_NODE_STEP ? GAME_NODE_STEP[type as GameNodeType] : undefined;
+  return type && type in GAME_NODES ? GAME_NODES[type as GameNodeType].step : undefined;
 }
 
 /** The node type that runs `step`. */
 export function gameNodeTypeFor(step: ArtifactKind): GameNodeType {
-  return GAME_NODE_TYPES.find((t) => GAME_NODE_STEP[t] === step)!;
+  return GAME_NODE_TYPES.find((t) => GAME_NODES[t].step === step)!;
 }
 
-/** Source handle id of a game node: `${outputKind}Out`; the export steps have none. */
+/** Spec of the node that runs `step`. */
+export function gameSpecFor(step: ArtifactKind): GameNodeSpec {
+  return GAME_NODES[gameNodeTypeFor(step)];
+}
+
+/** Source handle id of a game node: `${outputKind}Out`; steps nothing consumes (exports) have none. */
 export function gameOutHandle(step: ArtifactKind): string | undefined {
   return gameNextTypes(step).length ? `${STEP_IO[step].output}Out` : undefined;
 }
 
-/** Node types allowed to feed a game node's single input. */
-export function gameSourceTypes(step: ArtifactKind): string[] {
-  const need = STEP_IO[step].input;
-  return need === "prompt" ? ["promptNode", "assistantNode"] : [gameNodeTypeFor(need)];
+/** Node types allowed to feed `port`: text nodes, image nodes, or the node that makes its artifact. */
+export function gamePortSources(port: Port): string[] {
+  if (port.kind === "prompt") return ["promptNode", "assistantNode"];
+  if (port.kind === "image") return ["imageInputNode", "generateNode"];
+  return [gameNodeTypeFor(port.kind)];
 }
 
-/** The game node types that consume `step`'s output (the walk feeds both exports). */
+/** The game node types with a port that takes `step`'s output (the walk feeds both exports). */
 export function gameNextTypes(step: ArtifactKind): GameNodeType[] {
-  return (Object.keys(STEP_IO) as ArtifactKind[])
-    .filter((k) => STEP_IO[k].input === STEP_IO[step].output)
-    .map(gameNodeTypeFor);
+  const out = STEP_IO[step].output;
+  return GAME_NODE_TYPES.filter((t) => STEP_IO[GAME_NODES[t].step].inputs.some((p) => p.kind === out));
+}
+
+/**
+ * The port of `targetStep` a wire from `sourceType` (out of `sourceHandle`)
+ * lands on, or undefined if none takes it. Game sources must leave by their
+ * artifact handle.
+ */
+export function gamePortFor(targetStep: ArtifactKind, sourceType: string | null | undefined, sourceHandle: string | null | undefined): Port | undefined {
+  const srcStep = gameStepOf(sourceType);
+  if (srcStep && sourceHandle !== gameOutHandle(srcStep)) return undefined;
+  return STEP_IO[targetStep].inputs.find((p) => gamePortSources(p).includes(sourceType ?? ""));
+}
+
+/** One entry per game node type, for the per-type tables below. */
+function gameEntries<T>(make: (spec: GameNodeSpec) => T): Record<string, T> {
+  return Object.fromEntries(GAME_NODE_TYPES.map((t) => [t, make(GAME_NODES[t])]));
 }
 
 /** Per-type accent (a categorical handle pigment from globals.css) + picker icon. */
@@ -58,12 +110,7 @@ export const NODE_META: Record<string, { accent: string; bigIcon: React.ReactNod
   assistantNode:      { accent: "var(--handle-assistant)", bigIcon: <Bot           size={18} strokeWidth={1.7} /> },
   videoGeneratorNode: { accent: "var(--handle-video)",     bigIcon: <Clapperboard  size={18} strokeWidth={1.7} /> },
   commentNode:        { accent: "var(--handle-audio)",     bigIcon: <StickyNote    size={18} strokeWidth={1.7} /> },
-  gameTurnaroundNode: { accent: "var(--handle-character)", bigIcon: <PersonStanding size={18} strokeWidth={1.7} /> },
-  gameMeshNode:       { accent: "var(--handle-character)", bigIcon: <Box            size={18} strokeWidth={1.7} /> },
-  gameSkeletonNode:   { accent: "var(--handle-character)", bigIcon: <Bone           size={18} strokeWidth={1.7} /> },
-  gameAnimNode:       { accent: "var(--handle-character)", bigIcon: <Footprints     size={18} strokeWidth={1.7} /> },
-  gameGltfNode:       { accent: "var(--handle-character)", bigIcon: <PackageCheck   size={18} strokeWidth={1.7} /> },
-  gameUnrealNode:     { accent: "var(--handle-character)", bigIcon: <Gamepad2       size={18} strokeWidth={1.7} /> },
+  ...gameEntries((s) => ({ accent: GAME_GROUPS[s.group].accent, bigIcon: <s.icon size={18} strokeWidth={1.7} /> })),
 };
 
 export const NODES: Array<{
@@ -170,55 +217,11 @@ export const NODES: Array<{
       description: "A sticky note you can place anywhere",
     },
 
-    /* ── Game character ─────────────────────────────────────────────────────── */
-    {
-      type: "gameTurnaroundNode",
-      category: "generators",
-      canReceiveConnection: true,
-      icon: <PersonStanding size={14} strokeWidth={1.5} />,
-      label: "Turnaround sheet",
-      description: "Front, side and back views from a concept",
-    },
-    {
-      type: "gameMeshNode",
-      category: "generators",
-      canReceiveConnection: true,
-      icon: <Box size={14} strokeWidth={1.5} />,
-      label: "Image to 3D mesh",
-      description: "A textured mesh from the turnaround sheet",
-    },
-    {
-      type: "gameSkeletonNode",
-      category: "generators",
-      canReceiveConnection: true,
-      icon: <Bone size={14} strokeWidth={1.5} />,
-      label: "Auto-rig",
-      description: "A humanoid skeleton bound to the mesh",
-    },
-    {
-      type: "gameAnimNode",
-      category: "generators",
-      canReceiveConnection: true,
-      icon: <Footprints size={14} strokeWidth={1.5} />,
-      label: "Walk cycle",
-      description: "A looping in-place walk on the rig",
-    },
-    {
-      type: "gameGltfNode",
-      category: "generators",
-      canReceiveConnection: true,
-      icon: <PackageCheck size={14} strokeWidth={1.5} />,
-      label: "glTF export",
-      description: "A validated .glb that plays in Godot",
-    },
-    {
-      type: "gameUnrealNode",
-      category: "generators",
-      canReceiveConnection: true,
-      icon: <Gamepad2 size={14} strokeWidth={1.5} />,
-      label: "Unreal export",
-      description: "An FBX on the UE5 mannequin skeleton",
-    },
+    /* ── Game assets ────────────────────────────────────────────────────────── */
+    ...GAME_NODE_TYPES.map((type) => {
+      const s: GameNodeSpec = GAME_NODES[type];
+      return { type, category: "generators" as const, canReceiveConnection: true, icon: <s.icon size={14} strokeWidth={1.5} />, label: s.label, description: s.description };
+    }),
   ];
 
 /** Sentence-case display name per node type; new nodes are labelled "Image generator #2". */
@@ -230,12 +233,7 @@ export const NODE_LABELS: Record<string, string> = {
   videoGeneratorNode: "Video generator",
   assistantNode: "Assistant",
   commentNode: "Comment",
-  gameTurnaroundNode: "Turnaround sheet",
-  gameMeshNode: "Image to 3D mesh",
-  gameSkeletonNode: "Auto-rig",
-  gameAnimNode: "Walk cycle",
-  gameGltfNode: "glTF export",
-  gameUnrealNode: "Unreal export",
+  ...gameEntries((s) => s.label),
 };
 
 /** Label for a new node of `type`: its display name plus the next per-type count. */
@@ -297,12 +295,7 @@ export const NODE_SIZE: Record<string, { w: number; h: number }> = {
   imageInputNode: { w: 200, h: 160 },
   videoInputNode: { w: 220, h: 180 },
   commentNode: { w: 260, h: 160 },
-  gameTurnaroundNode: { w: 300, h: 420 },
-  gameMeshNode: { w: 300, h: 440 },
-  gameSkeletonNode: { w: 300, h: 420 },
-  gameAnimNode: { w: 300, h: 420 },
-  gameGltfNode: { w: 300, h: 460 },
-  gameUnrealNode: { w: 300, h: 460 },
+  ...gameEntries((s) => s.size),
 };
 
 export const FALLBACK_SIZE = { w: 280, h: 280 };

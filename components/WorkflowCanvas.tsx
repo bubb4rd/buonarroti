@@ -21,8 +21,7 @@ import { useWorkflowStore, NodeData } from "@/lib/store";
 import { requestWorkflowSync } from "@/lib/workflowSyncBus";
 import { IMAGE_MODELS, VIDEO_MODELS } from "@/lib/modelConfig";
 import CuttableEdge from "@/components/edges/CuttableEdge";
-import { NODE_SIZE, FALLBACK_SIZE, NODE_META, TypeBadge, getLastNodeSettings, getDefaultNodeSize, nextNodeLabel, gameStepOf, gameSourceTypes, gameOutHandle, gameNextTypes } from "@/lib/nodeTypes";
-import { STEP_IO } from "@/lib/game/artifacts";
+import { NODE_SIZE, FALLBACK_SIZE, NODE_META, TypeBadge, getLastNodeSettings, getDefaultNodeSize, nextNodeLabel, gameStepOf, gamePortFor, GAME_NODE_TYPES } from "@/lib/nodeTypes";
 import { edgeStyle } from "@/lib/edgeStyles";
 import { sha256Hex } from "@/lib/assetHash";
 import { imageFilesFromClipboard } from "@/lib/clipboardImages";
@@ -62,12 +61,7 @@ const nodeTypes = {
   assistantNode: AssistantNode,
   groupNode: GroupNode,
   commentNode: CommentNode,
-  gameTurnaroundNode: GameStepNode,
-  gameMeshNode: GameStepNode,
-  gameSkeletonNode: GameStepNode,
-  gameAnimNode: GameStepNode,
-  gameGltfNode: GameStepNode,
-  gameUnrealNode: GameStepNode,
+  ...Object.fromEntries(GAME_NODE_TYPES.map((t) => [t, GameStepNode])),
 };
 
 const edgeTypes = {
@@ -1073,16 +1067,16 @@ export default function WorkflowCanvas() {
       const source = nodes.find((n) => n.id === connection.source);
       const target = nodes.find((n) => n.id === connection.target);
 
-      // Game-character pipeline: a strict chain. Each step takes exactly one input —
-      // the prompt (turnaround) or the previous step's `${kind}Out` — and feeds only the next step.
+      // Game pipelines: a wire lands on the target step's port that takes the
+      // source (text, images, or the step that makes that port's artifact); a
+      // game node's output feeds only game ports. One wire per port unless it takes many.
       const srcStep = gameStepOf(source?.type);
       const tgtStep = gameStepOf(target?.type);
       if (srcStep || tgtStep) {
-        if (srcStep && (!(gameNextTypes(srcStep) as string[]).includes(target?.type ?? "") || connection.sourceHandle !== gameOutHandle(srcStep))) return false;
         if (!tgtStep) return false;
-        if (!gameSourceTypes(tgtStep).includes(source?.type ?? "")) return false;
-        if (connection.targetHandle !== STEP_IO[tgtStep].input) return false;
-        return !edges.some((e) => e.target === connection.target);
+        const port = gamePortFor(tgtStep, source?.type, connection.sourceHandle);
+        if (!port || connection.targetHandle !== port.id) return false;
+        return port.many || !edges.some((e) => e.target === connection.target && e.targetHandle === port.id);
       }
 
       // Ref nodes are pure sources — nothing functional can connect into them.
@@ -1195,7 +1189,11 @@ export default function WorkflowCanvas() {
     else if (handle.classList.contains("node-handle-icon-out-image")) type = "image";
     else if (handle.classList.contains("node-handle-icon-out-video")) type = "video";
     else if (handle.classList.contains("node-handle-icon-out-audio")) type = "audio";
-    else if (handle.classList.contains("node-handle-icon-out-game")) type = `game-${handle.dataset.gameKind}`;
+    else if (handle.classList.contains("node-handle-icon-out-game")) {
+      type = `game-${handle.dataset.gameKind}`;
+      // Game artifact kinds are open-ended: mark the inputs that take this one instead of a CSS rule per kind.
+      document.querySelectorAll(`.node-handle-icon-game-in-${handle.dataset.gameKind}`).forEach((el) => el.classList.add("node-handle-compatible"));
+    }
     rf.setAttribute("data-connecting-type", type);
     setConnectingHandleType(type);
     setIsConnecting(true);
@@ -1213,6 +1211,7 @@ export default function WorkflowCanvas() {
       const rf = (event.target as HTMLElement)?.closest?.(".react-flow") as HTMLElement | null;
       rf?.removeAttribute("data-connecting-type");
       document.querySelectorAll(".node-handle-connecting").forEach((el) => el.classList.remove("node-handle-connecting"));
+      document.querySelectorAll(".node-handle-compatible").forEach((el) => el.classList.remove("node-handle-compatible"));
       setConnectingHandleType(null);
       setIsConnecting(false);
 
