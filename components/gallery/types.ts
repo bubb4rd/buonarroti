@@ -80,9 +80,8 @@ export interface DownloadTask {
   status: "preparing" | "ready" | "error";
 }
 
+/** Settings a generation was made with, restored alongside its prompt. */
+export interface ReuseMeta { model?: string; aspectRatio?: string; quality?: string; azureResolution?: string }
+
 /** Signature of the "reuse prompt" action (lightbox, cards, failed tiles). */
-export type ReusePromptFn = (
-  prompt: string,
-  refUrls?: string[],
-  meta?: { model?: string; aspectRatio?: string; quality?: string; azureResolution?: string },
-) => void;
+export type ReusePromptFn = (prompt: string, refUrls?: string[], meta?: ReuseMeta) => void;

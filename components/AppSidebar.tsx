@@ -3,7 +3,10 @@
 import * as React from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useShallow } from "zustand/react/shallow";
 import { useWorkflowStore } from "@/lib/store";
+import { workflowActivity } from "@/lib/workflowActivity";
+import { markTabSeen, resumePending, usePendingGenerations } from "@/components/gallery/generationStore";
 import { isEmptySession, useChatSessionStore, type ChatSession } from "@/lib/chatSessionStore";
 import { useFolderStore, type Folder as FolderT } from "@/lib/folderStore";
 import {
@@ -20,7 +23,6 @@ import {
   LayoutGrid,
   ChevronRight,
   SquarePen,
-  SwatchBook,
   type LucideIcon,
 } from "lucide-react";
 
@@ -36,6 +38,9 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Kbd } from "@/components/ui/kbd";
 import { Mark, Wordmark } from "@/components/brand/Mark";
+import { AgentBrandIcon, ProviderBrandIcon } from "@/components/settings/primitives";
+import { AGENT_IDS } from "@/lib/agentModels";
+import { useAgents } from "@/lib/useAgents";
 
 const KIE_TOP_UP_URL = "https://kie.ai?ref=25abb3f2236cbff9780ab9c2f84479ec";
 
@@ -487,6 +492,44 @@ const AllAssetsRow = React.memo(function AllAssetsRow({
   );
 });
 
+// ── Nav-row activity: what is generating, and what needs the user ────────────
+interface NavActivity {
+  generating: number;
+  attention: number;
+  /** Results arrived while the user was elsewhere. */
+  fresh?: boolean;
+  /** What the counts count, for the summary ("2 workflows generating"). */
+  noun: string;
+}
+
+type ActivityTone = "attention" | "generating" | "fresh";
+
+/** One tone per row: what needs the user outranks what is still running. */
+function activityTone(a: NavActivity | undefined): ActivityTone | null {
+  if (!a) return null;
+  if (a.attention) return "attention";
+  if (a.generating) return "generating";
+  return a.fresh ? "fresh" : null;
+}
+
+function activitySummary(a: NavActivity | undefined): string | null {
+  if (!a) return null;
+  const n = (count: number) => `${count} ${a.noun}${count === 1 ? "" : "s"}`;
+  const parts: string[] = [];
+  if (a.generating) parts.push(`${n(a.generating)} generating`);
+  if (a.attention) parts.push(`${n(a.attention)} ${a.attention === 1 ? "needs" : "need"} attention`);
+  if (a.fresh) parts.push("new results");
+  return parts.length ? parts.join(" · ") : null;
+}
+
+const TONE_LABEL: Record<ActivityTone, string> = { attention: "Needs attention", generating: "Generating", fresh: "New" };
+const TONE_TEXT: Record<ActivityTone, string> = { attention: "text-sanguine", generating: "text-ink-3", fresh: "text-lapis" };
+const TONE_DOT: Record<ActivityTone, string> = { attention: "bg-sanguine", generating: "animate-pulse bg-ink-2", fresh: "bg-lapis" };
+
+/** `useSyncExternalStore` subscribe for a value that never changes after hydration. */
+const noopSubscribe = () => () => {};
+const NO_IDS: string[] = [];
+
 // ── Primary nav row: full row when expanded, a tooltip'd square when collapsed ──
 function NavRow({
   label,
@@ -495,6 +538,7 @@ function NavRow({
   active,
   onClick,
   hint,
+  activity,
 }: {
   label: string;
   icon: LucideIcon;
@@ -502,30 +546,55 @@ function NavRow({
   active?: boolean;
   onClick?: () => void;
   hint?: React.ReactNode;
+  activity?: NavActivity;
 }) {
   const { state, isMobile } = useSidebar();
   const collapsed = state === "collapsed" && !isMobile;
+  const tone = activityTone(activity);
+  const summary = activitySummary(activity);
   const cls = cn(
     rowBase, rowState(!!active),
-    "h-[30px] px-2 text-[13.5px]",
+    "relative h-[30px] px-2 text-[13.5px]",
     "group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:size-9 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0",
   );
   const body = (
     <>
       <Icon className="size-4 shrink-0" strokeWidth={1.75} />
       <span className="flex-1 truncate group-data-[collapsible=icon]:hidden">{label}</span>
+      {tone && (
+        <>
+          {/* Expanded: dot and word. Collapsed: the dot alone, on the icon's corner. */}
+          <span
+            aria-hidden
+            title={summary ?? undefined}
+            className={cn("flex shrink-0 items-center gap-1.5 text-[11.5px] group-data-[collapsible=icon]:hidden", TONE_TEXT[tone])}
+          >
+            <span className={cn("size-1.5 rounded-full", TONE_DOT[tone])} />
+            {TONE_LABEL[tone]}
+          </span>
+          <span
+            aria-hidden
+            className={cn("absolute top-1.5 right-1.5 hidden size-1.5 rounded-full group-data-[collapsible=icon]:block", TONE_DOT[tone])}
+          />
+          <span className="sr-only">({summary})</span>
+        </>
+      )}
       {hint && <span className="group-data-[collapsible=icon]:hidden">{hint}</span>}
     </>
   );
+  const name = collapsed ? (summary ? `${label}, ${summary}` : label) : undefined;
   const el = href
-    ? <Link href={href} aria-current={active ? "page" : undefined} aria-label={collapsed ? label : undefined} className={cls}>{body}</Link>
-    : <button type="button" onClick={onClick} aria-label={collapsed ? label : undefined} className={cls}>{body}</button>;
+    ? <Link href={href} aria-current={active ? "page" : undefined} aria-label={name} className={cls}>{body}</Link>
+    : <button type="button" onClick={onClick} aria-label={name} className={cls}>{body}</button>;
 
   if (!collapsed) return el;
   return (
     <Tooltip>
       <TooltipTrigger render={el} />
-      <TooltipContent side="right">{label}</TooltipContent>
+      <TooltipContent side="right">
+        {label}
+        {summary && <span className="opacity-70"> · {summary}</span>}
+      </TooltipContent>
     </Tooltip>
   );
 }
@@ -542,40 +611,58 @@ function SectionHeader({ label, action }: { label: string; action?: React.ReactN
 const sectionAction =
   "inline-flex size-6 items-center justify-center rounded-[var(--radius-sm)] text-ink-3 transition-colors duration-150 hover:bg-wash-strong hover:text-ink";
 
-// ── kie.ai status line ────────────────────────────────────────────────────────
-function KieStatus({ balance, onOpenSettings }: { balance: number | null; onOpenSettings: () => void }) {
+// ── Connections: signed-in subscriptions and keys, then kie.ai credits ───────
+function ConnectionsStatus({ balance, onOpenSettings }: { balance: number | null; onOpenSettings: () => void }) {
   const kieKeySet = useWorkflowStore((s) => s.kieKeySet);
+  const azureKeySet = useWorkflowStore((s) => s.azureKeySet);
+  const { agents } = useAgents();
   const { state, isMobile } = useSidebar();
   const collapsed = state === "collapsed" && !isMobile;
 
-  const connected = kieKeySet === true;
-  const text =
-    kieKeySet === false ? "kie.ai · add your key"
-    : kieKeySet === null ? "kie.ai · checking"
-    : balance !== null ? `kie.ai · connected · ${balance.toLocaleString()} credits`
-    : "kie.ai · connected";
-  const dot = (
-    <span
-      aria-hidden
-      className={cn(
-        "size-1.5 shrink-0 rounded-full",
-        kieKeySet === false ? "bg-ochre" : connected ? "bg-verdigris" : "bg-ink-4",
-      )}
-    />
-  );
+  const connected = [
+    ...AGENT_IDS.flatMap((id) => {
+      const agent = agents.find((a) => a.id === id && a.status === "ready");
+      return agent ? [{ key: id, name: agent.name, icon: <AgentBrandIcon id={id} size={13} /> }] : [];
+    }),
+    ...(azureKeySet === true ? [{ key: "azure", name: "Azure Foundry", icon: <ProviderBrandIcon id="azure" size={13} /> }] : []),
+  ];
+
+  const kieConnected = kieKeySet === true;
+  const kieText =
+    kieKeySet === false ? "Add your key"
+    : kieKeySet === null ? "Checking"
+    : balance !== null ? `${balance.toLocaleString()} credits`
+    : "Connected";
+  const text = [...connected.map((c) => c.name), `kie.ai · ${kieText.toLowerCase()}`].join(" · ");
 
   const line = (
     <button
       type="button"
       onClick={onOpenSettings}
-      aria-label={collapsed ? text : undefined}
+      aria-label={text}
       className={cn(
         "flex h-7 min-w-0 flex-1 items-center gap-2 rounded-[var(--radius-sm)] px-2 text-left text-[12px] text-ink-3 transition-colors duration-150 hover:bg-wash hover:text-ink-2",
         "group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:size-9 group-data-[collapsible=icon]:flex-none group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0",
       )}
     >
-      {dot}
-      <span className="truncate tabular-nums group-data-[collapsible=icon]:hidden">{text}</span>
+      {connected.length > 0 && (
+        <>
+          <span aria-hidden className="flex shrink-0 items-center gap-1.5 group-data-[collapsible=icon]:hidden">
+            {connected.map((c) => (
+              <span key={c.key} title={c.name} className="flex">{c.icon}</span>
+            ))}
+          </span>
+          <span aria-hidden className="h-3 w-px shrink-0 bg-rule group-data-[collapsible=icon]:hidden" />
+        </>
+      )}
+      <span
+        aria-hidden
+        title="kie.ai"
+        className={cn("flex shrink-0", kieKeySet === false ? "text-ochre" : kieConnected ? undefined : "text-ink-4")}
+      >
+        <ProviderBrandIcon id="kie" size={14} />
+      </span>
+      <span aria-hidden className="truncate tabular-nums group-data-[collapsible=icon]:hidden">{kieText}</span>
     </button>
   );
 
@@ -590,12 +677,12 @@ function KieStatus({ balance, onOpenSettings }: { balance: number | null; onOpen
   return (
     <div className="group/status flex items-center gap-1">
       {line}
-      {connected && (
+      {kieConnected && (
         <a
           href={KIE_TOP_UP_URL}
           target="_blank"
           rel="noreferrer"
-          className="shrink-0 rounded-[var(--radius-xs)] px-1.5 py-0.5 text-[11.5px] text-ink-3 opacity-0 transition-opacity duration-150 group-hover/status:opacity-100 hover:text-lapis focus-visible:opacity-100"
+          className="hidden shrink-0 rounded-[var(--radius-xs)] px-1.5 py-0.5 text-[11.5px] text-ink-3 group-focus-within/status:block group-hover/status:block hover:text-lapis"
         >
           Top up
         </a>
@@ -689,6 +776,44 @@ export function AppSidebar() {
     loadFromServer();
   }, [loadFromServer]);
 
+  // Gallery generations run at module scope: pick up any that were in flight
+  // before a reload, whichever page opened first, so the nav status is live.
+  React.useEffect(() => {
+    resumePending();
+  }, []);
+
+  React.useEffect(() => {
+    if (pathname === "/gallery") markTabSeen(tab === "videos" ? "videos" : "images");
+  }, [pathname, tab]);
+
+  // Activity comes from localStorage, which the server render can't see: show it
+  // only after hydration so the first client render matches the server HTML.
+  const hydrated = React.useSyncExternalStore(noopSubscribe, () => true, () => false);
+
+  // Workflows count once each, however many of their nodes are busy or failed.
+  const workflows = useWorkflowStore(useShallow((s) => {
+    let generating = 0;
+    let attention = 0;
+    for (const sp of s.spaces) {
+      const a = workflowActivity(sp.nodes);
+      if (a.generating) generating++;
+      if (a.attention) attention++;
+    }
+    return { generating, attention };
+  }));
+
+  const gallery = usePendingGenerations(useShallow((s) => {
+    const c = { images: 0, imagesFailed: 0, videos: 0, videosFailed: 0 };
+    for (const pg of s.pending) {
+      if (pg.tab === "videos") {
+        if (pg.error) c.videosFailed++;
+        else c.videos++;
+      } else if (pg.error) c.imagesFailed++;
+      else c.images++;
+    }
+    return { ...c, unseenImages: s.unseenTabs.includes("images"), unseenVideos: s.unseenTabs.includes("videos") };
+  }));
+
   function handleDeleteChat(id: string, isActive: boolean) {
     deleteSession(id);
     if (isActive) {
@@ -738,10 +863,19 @@ export function AppSidebar() {
   const handleColor = React.useCallback((id: string, color: string | null) => updateFolder(id, { color }), [updateFolder]);
 
   const folderParam = selectedFolderId ? `&folder=${selectedFolderId}` : "";
-  const navItems: { label: string; href: string; icon: LucideIcon; active: boolean }[] = [
-    { label: "Images", href: `/gallery?tab=images${folderParam}`, icon: ImageIcon, active: pathname === "/gallery" && tab === "images" },
-    { label: "Video", href: `/gallery?tab=videos${folderParam}`, icon: Clapperboard, active: pathname === "/gallery" && tab === "videos" },
-    { label: "Workflows", href: "/workflow", icon: Workflow, active: pathname === "/workflow" || pathname.startsWith("/workflow/") },
+  const navItems: { label: string; href: string; icon: LucideIcon; active: boolean; activity?: NavActivity }[] = [
+    {
+      label: "Images", href: `/gallery?tab=images${folderParam}`, icon: ImageIcon, active: pathname === "/gallery" && tab === "images",
+      activity: hydrated ? { generating: gallery.images, attention: gallery.imagesFailed, fresh: gallery.unseenImages, noun: "image" } : undefined,
+    },
+    {
+      label: "Video", href: `/gallery?tab=videos${folderParam}`, icon: Clapperboard, active: pathname === "/gallery" && tab === "videos",
+      activity: hydrated ? { generating: gallery.videos, attention: gallery.videosFailed, fresh: gallery.unseenVideos, noun: "video" } : undefined,
+    },
+    {
+      label: "Workflows", href: "/workflow", icon: Workflow, active: pathname === "/workflow" || pathname.startsWith("/workflow/"),
+      activity: hydrated ? { ...workflows, noun: "workflow" } : undefined,
+    },
     { label: "Chat", href: "/chat", icon: MessageSquare, active: pathname === "/chat" },
   ];
 
@@ -798,8 +932,8 @@ export function AppSidebar() {
               isActive={selectedFolderId === null}
               count={pathname === "/gallery" ? (tab === "videos" ? galleryVideoCount : galleryImageCount) : 0}
               onSelect={() => selectFolder(null)}
-              isGenerating={generatingAllAssets}
-              hasUnseen={unseenAllAssets}
+              isGenerating={hydrated && generatingAllAssets}
+              hasUnseen={hydrated && unseenAllAssets}
             />
 
             {/* Recursive tree — root folders here, children rendered inside FolderRow */}
@@ -824,8 +958,8 @@ export function AppSidebar() {
                 onNameBlur={confirmCreateFolder}
                 inputRef={newFolderInputRef}
                 getCount={folderItemCount}
-                generatingFolderIds={generatingFolderIds}
-                unseenFolderIds={unseenFolderIds}
+                generatingFolderIds={hydrated ? generatingFolderIds : NO_IDS}
+                unseenFolderIds={hydrated ? unseenFolderIds : NO_IDS}
               />
             ))}
 
@@ -873,12 +1007,11 @@ export function AppSidebar() {
         </section>
       </SidebarContent>
 
-      {/* ── Footer: settings, specimen, status ── */}
+      {/* ── Footer: settings, status ── */}
       <SidebarFooter className="gap-px px-2 pt-2 pb-3">
         <NavRow label="Settings" icon={Settings} onClick={() => setSettingsOpen(true)} hint={<Kbd>⌘,</Kbd>} />
-        <NavRow label="Specimen" icon={SwatchBook} href="/specimen" active={pathname === "/specimen"} />
         <div className="mx-2 my-1.5 h-px bg-rule group-data-[collapsible=icon]:mx-3" />
-        <KieStatus balance={balance} onOpenSettings={() => setSettingsOpen(true, "api-keys")} />
+        <ConnectionsStatus balance={balance} onOpenSettings={() => setSettingsOpen(true, "api-keys")} />
       </SidebarFooter>
 
     </Sidebar>

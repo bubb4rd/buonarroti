@@ -218,13 +218,19 @@ export function useComposer({ tab, folderId }: { tab: Tab; folderId: string | nu
     setVidElements(d.vidElements);
   }
 
-  // Prompts handed over from other surfaces (chat "Use as prompt").
+  // Prompts handed over from other surfaces (chat "Use as prompt"). One that carries its generation's
+  // setup loads like "Reuse"; a bare prompt replaces only the text and keeps the references.
+  const reuseRef = useRef<ReusePromptFn | null>(null);
   useEffect(() => {
     const consume = () => {
       const h = takeHandoff(tab);
       if (!h) return;
       setPromptTextMode("text");
       setMultiPromptMode(false);
+      if (h.setup && reuseRef.current) {
+        reuseRef.current(h.prompt, h.setup.refUrls, h.setup.meta);
+        return;
+      }
       setTaggedImages([]);
       setPrompt(h.prompt);
     };
@@ -268,7 +274,20 @@ export function useComposer({ tab, folderId }: { tab: Tab; folderId: string | nu
     hasRef: vidResources.length > 0 || vidRefVideos.length > 0 || vidRefAudios.length > 0,
   });
   const vidRequiresPrompt = isVideo && !!vidModel?.apiInput.promptMaxLength;
-  const canGenerate = kieKeySet !== false && !promptOverLimit && (vidRequiresPrompt || !isVideo ? prompt.trim().length > 0 : true);
+  const needsPrompt = vidRequiresPrompt || !isVideo;
+  const canGenerate = kieKeySet !== false && !promptOverLimit && (needsPrompt ? prompt.trim().length > 0 : true);
+  /** Why Generate can't run yet, in the user's terms; null when it can. */
+  const blockedReason = kieKeySet === false
+    ? "Add your kie.ai key in Settings to generate"
+    : promptOverLimit
+      ? "The prompt is longer than this model allows"
+      : needsPrompt && !prompt.trim()
+        ? "Describe what to make first"
+        : null;
+  /** How many generations one click sends (mirrors `generate`). */
+  const generationCount = multiPromptMode
+    ? prompt.split(/\n\n+/).filter(p => p.trim()).length
+    : isVideo ? 1 : count;
   const hasContent = !!prompt || refImages.length > 0 || explicitTags.length > 0 || vidElements.length > 0
     || !!vidStartFrame || !!vidEndFrame || !!vidVideoRef || vidResources.length > 0 || vidRefVideos.length > 0 || vidRefAudios.length > 0;
 
@@ -602,6 +621,7 @@ export function useComposer({ tab, folderId }: { tab: Tab; folderId: string | nu
     if (meta?.quality) setQuality(meta.quality);
     if (meta?.azureResolution) setAzureResolution(meta.azureResolution);
   };
+  useEffect(() => { reuseRef.current = reuse; });
 
   // ── Generate ───────────────────────────────────────────────────────────────
 
@@ -767,7 +787,7 @@ export function useComposer({ tab, folderId }: { tab: Tab; folderId: string | nu
     vidStartFrame, vidEndFrame, vidResources, vidVideoRef, vidRefVideos, vidRefAudios, vidElements, setVidElements,
     providerId, isAzureProvider,
     maxImgs, canAddImgs, promptMaxLength, promptOverLimit, ratios, supportsQuality, qualityOpts, azureResolutionOpts,
-    canGenerate, hasContent, mentionableAssets, maxImageCount: MAX_IMAGE_COUNT,
+    canGenerate, blockedReason, generationCount, hasContent, mentionableAssets, maxImageCount: MAX_IMAGE_COUNT,
     addReference, handleFilePick, addFiles, removeRefImage, handleVidFilePick, addVidRefUrl, removeVidRef, removeByUrl,
     vidSlotLimit, visibleVidTargets, reorder, clearAll, reuse, generate,
   };

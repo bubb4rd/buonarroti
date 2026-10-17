@@ -66,6 +66,7 @@ export function GenerationGrid({
   onToggleSelect,
   onAddReference,
   onReuse,
+  onAskAssistant,
   onDownload,
   onDelete,
   onMarkSeen,
@@ -85,6 +86,7 @@ export function GenerationGrid({
   onToggleSelect: (id: string) => void;
   onAddReference: (url: string) => void;
   onReuse: ReusePromptFn;
+  onAskAssistant: (item: GalleryItem, shownUrl: string) => void;
   onDownload: (url: string, isVideo: boolean) => void;
   onDelete: (id: string, source: "generation" | "upload") => void;
   onMarkSeen: (id: string) => void;
@@ -169,6 +171,7 @@ export function GenerationGrid({
                   onOpen={thumb => onOpen(item, thumb)}
                   onAddReference={item.mediaType === "image" && canAddReference ? onAddReference : undefined}
                   onReuse={onReuse}
+                  onAskAssistant={shownUrl => onAskAssistant(item, shownUrl)}
                   onDownload={onDownload}
                   onDelete={onDelete}
                   videoMuted={videoMuted}

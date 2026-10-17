@@ -8,12 +8,13 @@ import { galleryCache, getToken, thumbSrc } from "@/lib/galleryUtils";
 import { useWorkflowStore } from "@/lib/store";
 import { useUiPref } from "@/lib/uiPrefs";
 import { cn } from "@/lib/utils";
+import { askAboutItem } from "./askAssistant";
 import { Composer } from "./Composer";
 import { DownloadToast } from "./DownloadToast";
 import { EmptyState } from "./EmptyState";
 import { GalleryHeader, ZOOM_MAX, ZOOM_MIN } from "./GalleryHeader";
 import { GenerationGrid, GRID_GAP } from "./GenerationGrid";
-import { GENERATIONS_ARRIVED, mergeByNewest, randomUUID, resumePending, usePendingGenerations, type GenerationsArrivedDetail } from "./generationStore";
+import { GENERATIONS_ARRIVED, mergeByNewest, randomUUID, usePendingGenerations, type GenerationsArrivedDetail } from "./generationStore";
 import { Lightbox } from "./Lightbox";
 import { persistLoadedImages } from "./media";
 import { SelectionBar } from "./SelectionBar";
@@ -149,8 +150,6 @@ function Studio() {
     return () => window.removeEventListener(GENERATIONS_ARRIVED, onArrived);
   }, []);
 
-  // Pick up generations that were in flight before a reload. Idempotent.
-  useEffect(() => { resumePending(); }, []);
   useEffect(() => () => persistLoadedImages(), []);
 
   const folderScope = useMemo(() => {
@@ -376,6 +375,7 @@ function Studio() {
                 onToggleSelect={toggleSelect}
                 onAddReference={composer.addReference}
                 onReuse={composer.reuse}
+                onAskAssistant={askAboutItem}
                 onDownload={download}
                 onDelete={deleteOne}
                 onMarkSeen={id => setNewItemIds(prev => { if (!prev.has(id)) return prev; const n = new Set(prev); n.delete(id); return n; })}
@@ -420,6 +420,7 @@ function Studio() {
           thumbUrl={lightbox.thumb}
           onClose={() => setLightbox(null)}
           onReuse={composer.reuse}
+          onAskAssistant={askAboutItem}
           onDownload={download}
           onPrev={lightboxIdx > 0 ? () => openAt(lightboxIdx - 1) : undefined}
           onNext={lightboxIdx >= 0 && lightboxIdx < ordered.length - 1 ? () => openAt(lightboxIdx + 1) : undefined}

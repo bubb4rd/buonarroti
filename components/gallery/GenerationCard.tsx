@@ -5,12 +5,13 @@ import {
   Check,
   ChevronLeft,
   ChevronRight,
-  Copy,
   Download,
   ImageOff,
   ImagePlus,
   LoaderCircle,
+  MessageCircleQuestion,
   Play,
+  RefreshCcw,
   Trash2,
   Volume2,
   VolumeX,
@@ -38,6 +39,8 @@ export interface GenerationCardProps {
   onOpen?: (thumbUrl: string) => void;
   onAddReference?: (url: string) => void;
   onReuse?: ReusePromptFn;
+  /** Opens the assistant on this item; receives the image on screen (multi-image items page). */
+  onAskAssistant?: (shownUrl: string) => void;
   onDownload?: (url: string, isVideo: boolean) => void | Promise<void>;
   onDelete?: (id: string, source: "generation" | "upload") => void;
   videoMuted?: boolean;
@@ -71,6 +74,7 @@ export function GenerationCard({
   onOpen,
   onAddReference,
   onReuse,
+  onAskAssistant,
   onDownload,
   onDelete,
   videoMuted,
@@ -365,7 +369,18 @@ export function GenerationCard({
                 aria-label={reused ? "Prompt reused" : "Reuse prompt"}
                 onClick={handleReuse}
               >
-                {reused ? <Check {...ICON} /> : <Copy {...ICON} />}
+                {reused ? <Check {...ICON} /> : <RefreshCcw {...ICON} />}
+              </button>
+            )}
+            {onAskAssistant && !(isVideo && item.source === "upload") && (
+              <button
+                type="button"
+                className={mediaIconBtn}
+                title="Ask the assistant about this"
+                aria-label="Ask the assistant about this"
+                onClick={e => { e.stopPropagation(); onAskAssistant(displayUrl); }}
+              >
+                <MessageCircleQuestion {...ICON} />
               </button>
             )}
             {onDownload && (

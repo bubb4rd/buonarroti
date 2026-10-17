@@ -1,10 +1,11 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ChevronLeft, ChevronRight, X } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, Copy, Download, MessageCircleQuestion, RefreshCcw, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { thumbSrc } from "@/lib/galleryUtils";
 import { naturalRatioCache, parseRatio, persistNaturalRatios } from "./media";
@@ -18,6 +19,8 @@ export interface LightboxProps {
   onClose: () => void;
   /** Puts the prompt, references and settings back into the composer. */
   onReuse?: ReusePromptFn;
+  /** Opens the assistant on this item (the lightbox closes so the assistant is visible). */
+  onAskAssistant?: (item: GalleryItem, shownUrl: string) => void;
   /** Routed through the parent so its download toast tracks progress. */
   onDownload: (url: string, isVideo: boolean) => void;
   onPrev?: () => void;
@@ -57,7 +60,19 @@ const ratioOf = (url: string, aspect?: string): number | null => {
 const ON_MEDIA_ROUND =
   "on-media flex size-9 items-center justify-center rounded-full transition-[opacity,background-color] duration-150 ease-[var(--ease-out)] hover:bg-black/60 disabled:pointer-events-none disabled:opacity-30";
 
-export function Lightbox({ item, thumbUrl, onClose, onReuse, onDownload, onPrev, onNext }: LightboxProps) {
+/** Icon-only panel action: the label and its shortcut live in the tooltip. */
+function IconAction({ label, kbd, ...props }: { label: string; kbd: string } & React.ComponentProps<typeof Button>) {
+  return (
+    <Tooltip>
+      <TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label={label} {...props} />} />
+      <TooltipContent side="bottom">
+        {label} <Kbd>{kbd}</Kbd>
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+export function Lightbox({ item, thumbUrl, onClose, onReuse, onAskAssistant, onDownload, onPrev, onNext }: LightboxProps) {
   const [visible, setVisible] = useState(false);
   const [imgIdx, setImgIdx] = useState(0);
   const [thumbLoaded, setThumbLoaded] = useState(false);
@@ -68,6 +83,9 @@ export function Lightbox({ item, thumbUrl, onClose, onReuse, onDownload, onPrev,
   const [copied, setCopied] = useState(false);
   const copiedTimer = useRef<number | undefined>(undefined);
   const closing = useRef(false);
+  const promptRef = useRef<HTMLDivElement>(null);
+  const [promptExpanded, setPromptExpanded] = useState(false);
+  const [promptOverflows, setPromptOverflows] = useState(false);
 
   const isVideo = item.mediaType === "video";
   const allUrls = item.imageUrls?.length ? item.imageUrls : [item.url];
@@ -82,6 +100,7 @@ export function Lightbox({ item, thumbUrl, onClose, onReuse, onDownload, onPrev,
     setShownItem(item.id);
     setImgIdx(0);
     setCopied(false);
+    setPromptExpanded(false);
   }
   // New media (item or page): reset load state, seed the frame ratio from what we know.
   const mediaKey = `${mediaUrl}|${item.aspect_ratio ?? ""}`;
@@ -99,6 +118,15 @@ export function Lightbox({ item, thumbUrl, onClose, onReuse, onDownload, onPrev,
     return () => cancelAnimationFrame(id);
   }, []);
   useEffect(() => () => clearTimeout(copiedTimer.current), []);
+
+  // The prompt is clamped; offer "Show more" only when the clamp actually hides text.
+  useLayoutEffect(() => {
+    const el = promptRef.current;
+    if (!el || promptExpanded) return;
+    const ro = new ResizeObserver(() => setPromptOverflows(el.scrollHeight > el.clientHeight + 1));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [item.prompt, promptExpanded]);
 
   const handleClose = useCallback(() => {
     if (closing.current) return;
@@ -136,6 +164,13 @@ export function Lightbox({ item, thumbUrl, onClose, onReuse, onDownload, onPrev,
     handleClose();
   }, [item, onReuse, handleClose]);
 
+  const canAsk = !!onAskAssistant && !(isVideo && item.source === "upload");
+  const ask = useCallback(() => {
+    if (!canAsk) return;
+    onAskAssistant?.(item, mediaUrl);
+    handleClose();
+  }, [canAsk, onAskAssistant, item, mediaUrl, handleClose]);
+
   // A game character's deliverable is its .glb; the image is only its preview.
   const download = useCallback(
     () => onDownload(item.modelUrl ?? mediaUrl, isVideo),
@@ -155,11 +190,12 @@ export function Lightbox({ item, thumbUrl, onClose, onReuse, onDownload, onPrev,
       const key = e.key.toLowerCase();
       if (key === "c" && item.prompt) { e.preventDefault(); copyPrompt(); }
       else if (key === "r" && item.prompt && onReuse) { e.preventDefault(); reuse(); }
+      else if (key === "a" && canAsk) { e.preventDefault(); ask(); }
       else if (key === "d") { e.preventDefault(); download(); }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [zoomed, handleClose, goPrev, goNext, copyPrompt, reuse, download, item.prompt, onReuse]);
+  }, [zoomed, handleClose, goPrev, goNext, copyPrompt, reuse, ask, canAsk, download, item.prompt, onReuse]);
 
   const learnRatio = (w: number, h: number) => {
     if (!w || !h) return;
@@ -343,17 +379,38 @@ export function Lightbox({ item, thumbUrl, onClose, onReuse, onDownload, onPrev,
           zoomed ? "hidden" : visible ? "translate-x-0 opacity-100" : "opacity-0 md:translate-x-3",
         )}
       >
-        <header className="px-5 pt-5 pb-4">
-          <h2 className="type-heading text-ink">{isVideo ? "Video" : "Image"}</h2>
-          <p className="type-label mt-0.5 tabular-nums">{formatDate(item.created_at)}</p>
-        </header>
+        {/* Actions first: they're why the panel is open. One labelled primary; the rest are icons with tooltips. */}
+        <div className="sticky top-0 z-10 flex items-center gap-1 rounded-t-[var(--radius-xl)] border-b border-rule bg-surface-raised px-3 py-3">
+          {onReuse && (
+            <IconAction label="Reuse prompt & settings" kbd="R" onClick={reuse} disabled={!item.prompt}>
+              <RefreshCcw />
+            </IconAction>
+          )}
+          {canAsk && (
+            <IconAction label="Ask assistant" kbd="A" onClick={ask}>
+              <MessageCircleQuestion />
+            </IconAction>
+          )}
+          <Button variant="ink" size="sm" className="ml-auto" onClick={download}>
+            <Download />
+            {item.modelUrl ? "Download .glb" : "Download"}
+            <Kbd>D</Kbd>
+          </Button>
+        </div>
 
         {item.prompt && format && (
-          <section className="border-t border-rule px-5 py-4">
-            <p className="type-label mb-2">Prompt</p>
+          <section className="px-5 py-4">
+            <div className="mb-2 flex items-center justify-between">
+              <p className="type-label">Prompt</p>
+              <IconAction label={copied ? "Copied" : "Copy prompt"} kbd="C" onClick={copyPrompt} className="-my-1.5 -mr-1.5 text-ink-3">
+                {copied ? <Check /> : <Copy />}
+              </IconAction>
+            </div>
             <div
+              ref={promptRef}
               className={cn(
-                "max-h-[40vh] overflow-y-auto break-words whitespace-pre-wrap",
+                "break-words whitespace-pre-wrap",
+                !promptExpanded && "line-clamp-8",
                 format.kind === "plain" ? "text-[13.5px] leading-[1.55] text-ink" : "font-mono text-[12px] leading-[1.6]",
               )}
             >
@@ -363,11 +420,20 @@ export function Lightbox({ item, thumbUrl, onClose, onReuse, onDownload, onPrev,
                   ? syntaxHighlightYaml(item.prompt)
                   : renderStoredPrompt(item.prompt, item.referenceImageUrls)}
             </div>
+            {(promptOverflows || promptExpanded) && (
+              <button
+                type="button"
+                onClick={() => setPromptExpanded(e => !e)}
+                className="mt-1.5 text-[12.5px] font-medium text-ink-3 transition-colors duration-150 ease-[var(--ease-out)] hover:text-ink"
+              >
+                {promptExpanded ? "Show less" : "Show more"}
+              </button>
+            )}
           </section>
         )}
 
         {item.referenceImageUrls && item.referenceImageUrls.length > 0 && (
-          <section className="border-t border-rule px-5 py-4">
+          <section className={cn("px-5 py-4", item.prompt && "border-t border-rule")}>
             <p className="type-label mb-2">References</p>
             <div className="flex flex-wrap gap-2">
               {item.referenceImageUrls.map((url, i) => (
@@ -383,34 +449,15 @@ export function Lightbox({ item, thumbUrl, onClose, onReuse, onDownload, onPrev,
           </section>
         )}
 
-        <dl className="border-t border-rule px-5">
-          {metaRows.map((row, i) => (
-            <div
-              key={row.label}
-              className={cn("flex items-baseline justify-between gap-4 py-2.5 text-[13px]", i > 0 && "border-t border-rule")}
-            >
-              <dt className="shrink-0 text-ink-3">{row.label}</dt>
-              <dd className="min-w-0 truncate text-right font-medium text-ink tabular-nums">{row.value}</dd>
+        {/* Two-up label-over-value grid: half the height of one row per fact */}
+        <dl className={cn("grid grid-cols-2 gap-x-4 gap-y-3 px-5 py-4 text-[13px]", (item.prompt || item.referenceImageUrls?.length) && "border-t border-rule")}>
+          {metaRows.map(row => (
+            <div key={row.label} className="min-w-0">
+              <dt className="type-label">{row.label}</dt>
+              <dd title={row.value} className="mt-0.5 truncate font-medium text-ink tabular-nums">{row.value}</dd>
             </div>
           ))}
         </dl>
-
-        <div className="mt-auto flex flex-wrap gap-2 border-t border-rule px-5 py-4">
-          <Button variant="outline" size="sm" onClick={copyPrompt} disabled={!item.prompt}>
-            {copied ? "Copied" : "Copy prompt"}
-            <Kbd>C</Kbd>
-          </Button>
-          {onReuse && (
-            <Button variant="outline" size="sm" onClick={reuse} disabled={!item.prompt}>
-              Reuse
-              <Kbd>R</Kbd>
-            </Button>
-          )}
-          <Button variant="ink" size="sm" className="ml-auto" onClick={download}>
-            {item.modelUrl ? "Download .glb" : "Download"}
-            <Kbd>D</Kbd>
-          </Button>
-        </div>
       </aside>
     </div>,
     document.body,

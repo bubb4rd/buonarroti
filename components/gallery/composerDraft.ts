@@ -1,4 +1,4 @@
-import type { KlingElement, TaggedImage, Tab } from "./types";
+import type { KlingElement, ReuseMeta, TaggedImage, Tab } from "./types";
 
 /**
  * Persisted composer drafts — everything the user has set up in the prompt box,
@@ -94,12 +94,18 @@ export function saveDraft(tab: Tab, folderId: string | null, draft: ComposerDraf
 
 // ── Hand-off from other surfaces (e.g. chat "Use as prompt") ────────────────
 
-export interface ComposerHandoff { tab: Tab; prompt: string; at: number }
+export interface ComposerHandoff {
+  tab: Tab;
+  prompt: string;
+  at: number;
+  /** Present when the prompt belongs to a known setup (a generation): load it the way "Reuse" does. */
+  setup?: { refUrls: string[]; meta: ReuseMeta };
+}
 
-/** Queues `prompt` for the gallery composer of `tab`; call before navigating there. */
-export function handOffPromptToComposer(tab: Tab, prompt: string) {
+/** Queues `prompt` (and optionally its setup) for the gallery composer of `tab`; call before navigating there. */
+export function handOffPromptToComposer(tab: Tab, prompt: string, setup?: ComposerHandoff["setup"]) {
   try {
-    localStorage.setItem(HANDOFF_KEY, JSON.stringify({ tab, prompt, at: Date.now() } satisfies ComposerHandoff));
+    localStorage.setItem(HANDOFF_KEY, JSON.stringify({ tab, prompt, at: Date.now(), setup } satisfies ComposerHandoff));
     window.dispatchEvent(new Event(HANDOFF_EVENT));
   } catch {}
 }

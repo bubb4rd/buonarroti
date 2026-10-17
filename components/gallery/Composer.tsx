@@ -2,10 +2,11 @@
 
 import React, { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Braces, ChevronDown, ChevronUp, Layers, Maximize2, Minimize2, Minus, Plus, Sparkles, Volume2, X } from "lucide-react";
+import { Braces, ChevronDown, ChevronUp, Layers, Maximize2, MessageCircleQuestion, Minimize2, Minus, Plus, Volume2, X } from "lucide-react";
 import { MediaPickerModal } from "@/components/MediaPickerModal";
 import { Button } from "@/components/ui/button";
-import { Kbd, KbdGroup } from "@/components/ui/kbd";
+import { GenerateButton } from "@/components/ui/generate-button";
+import { Kbd } from "@/components/ui/kbd";
 import { Segmented } from "@/components/ui/segmented";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { imageFilesFromClipboard } from "@/lib/clipboardImages";
@@ -13,6 +14,7 @@ import { thumbSrc } from "@/lib/galleryUtils";
 import { PROVIDERS, modelHasProviderChoice, setModelProvider, type ProviderId } from "@/lib/providers";
 import { setUiPref, useUiPref } from "@/lib/uiPrefs";
 import { cn } from "@/lib/utils";
+import { askAboutDraft } from "./askAssistant";
 import { AspectRatioPicker } from "./AspectRatioPicker";
 import { DurationPicker } from "./DurationPicker";
 import { ElementPickerModal } from "./ElementPickerModal";
@@ -55,13 +57,18 @@ export function Composer({ c, hidden }: { c: ComposerState; hidden: boolean }) {
   useEffect(() => {
     if (hidden) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "." || !(e.metaKey || e.ctrlKey) || e.shiftKey || e.altKey) return;
-      e.preventDefault();
-      setCollapsed(!collapsed);
+      if (!(e.metaKey || e.ctrlKey) || e.altKey) return;
+      if (e.key === "." && !e.shiftKey) {
+        e.preventDefault();
+        setCollapsed(!collapsed);
+      } else if (e.key.toLowerCase() === "k" && e.shiftKey) {
+        e.preventDefault();
+        askAboutDraft(c);
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [collapsed, hidden]);
+  }, [collapsed, hidden, c]);
 
   // Collapse the expanded sheet on an outside click (popups and overlays don't count).
   useEffect(() => {
@@ -321,19 +328,36 @@ export function Composer({ c, hidden }: { c: ComposerState; hidden: boolean }) {
               </div>
 
               <div className="flex shrink-0 items-center gap-3">
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        className="text-ink-3"
+                        aria-label="Ask the assistant about this draft"
+                        onClick={() => askAboutDraft(c)}
+                      />
+                    }
+                  >
+                    <MessageCircleQuestion />
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    Not sure? Talk it through with the assistant <Kbd>⇧⌘K</Kbd>
+                  </TooltipContent>
+                </Tooltip>
                 {c.promptMaxLength !== null && !c.multiPromptMode && (
                   <span aria-hidden className={cn("text-[11.5px] tabular-nums", c.promptOverLimit ? "text-sanguine" : "text-ink-4")}>
                     {c.prompt.length.toLocaleString()}/{c.promptMaxLength.toLocaleString()}
                   </span>
                 )}
-                <Button variant="primary" onClick={c.generate} disabled={!c.canGenerate}>
-                  <Sparkles />
-                  Generate
-                  <KbdGroup>
-                    <Kbd>⌘</Kbd>
-                    <Kbd>↵</Kbd>
-                  </KbdGroup>
-                </Button>
+                <GenerateButton
+                  onClick={c.generate}
+                  disabled={!c.canGenerate}
+                  blockedReason={c.blockedReason ?? undefined}
+                  outcome={generateOutcome(c)}
+                  shortcut="⌘↵"
+                />
               </div>
             </div>
           </div>
@@ -477,10 +501,12 @@ function ComposerPill({ c, onExpand }: { c: ComposerState; onExpand: () => void 
         <span className="shrink-0 text-[12px] text-ink-3">{c.activeModel.name}</span>
       </button>
       {c.hasContent && (
-        <Button variant="primary" size="sm" onClick={c.generate} disabled={!c.canGenerate}>
-          <Sparkles />
-          Generate
-        </Button>
+        <GenerateButton
+          onClick={c.generate}
+          disabled={!c.canGenerate}
+          blockedReason={c.blockedReason ?? undefined}
+          outcome={generateOutcome(c)}
+        />
       )}
       <Tooltip>
         <TooltipTrigger
@@ -496,4 +522,11 @@ function ComposerPill({ c, onExpand }: { c: ComposerState; onExpand: () => void 
       </Tooltip>
     </div>
   );
+}
+
+/** What one click makes, after the verb: "image", "4 images", "video". */
+function generateOutcome(c: ComposerState): string {
+  const n = Math.max(1, c.generationCount);
+  const noun = c.isVideo ? "video" : "image";
+  return n === 1 ? noun : `${n} ${noun}s`;
 }

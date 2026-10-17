@@ -57,9 +57,23 @@ function loadPersisted(): PendingGen[] {
   } catch { return []; }
 }
 
-export const usePendingGenerations = create<{ pending: PendingGen[] }>(() => ({
+export const usePendingGenerations = create<{ pending: PendingGen[]; unseenTabs: Tab[] }>(() => ({
   pending: typeof window === "undefined" ? [] : loadPersisted(),
+  /** Tabs that received results while the user was elsewhere; cleared by `markTabSeen`. */
+  unseenTabs: [],
 }));
+
+/** True while the user is looking at `tab` in the gallery. */
+function isViewingTab(tab: Tab): boolean {
+  if (window.location.pathname !== "/gallery") return false;
+  return (new URLSearchParams(window.location.search).get("tab") ?? "images") === tab;
+}
+
+export function markTabSeen(tab: Tab) {
+  usePendingGenerations.setState(s =>
+    s.unseenTabs.includes(tab) ? { unseenTabs: s.unseenTabs.filter(t => t !== tab) } : s,
+  );
+}
 
 function syncFolderIndicators(pending: PendingGen[]) {
   const live = pending.filter(pg => !pg.error);
@@ -70,7 +84,8 @@ function syncFolderIndicators(pending: PendingGen[]) {
 
 if (typeof window !== "undefined") {
   syncFolderIndicators(usePendingGenerations.getState().pending);
-  usePendingGenerations.subscribe(({ pending }) => {
+  usePendingGenerations.subscribe(({ pending }, prev) => {
+    if (pending === prev.pending) return;
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(pending)); } catch {}
     syncFolderIndicators(pending);
   });
@@ -249,6 +264,9 @@ async function settleDone(id: string) {
   }
   if (pg.folderId && pg.folderId !== folders.selectedFolderId) folders.addUnseenFolder(pg.folderId);
   if (!pg.folderId && folders.selectedFolderId !== null) folders.setUnseenAllAssets(true);
+  if (!isViewingTab(tab)) {
+    usePendingGenerations.setState(s => (s.unseenTabs.includes(tab) ? s : { unseenTabs: [...s.unseenTabs, tab] }));
+  }
 
   const freshIds = fresh.filter(i => !existingIds.has(i.id)).map(i => i.id);
   window.dispatchEvent(new CustomEvent<GenerationsArrivedDetail>(GENERATIONS_ARRIVED, { detail: { tab, freshIds } }));
