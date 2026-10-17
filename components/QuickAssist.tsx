@@ -3,8 +3,9 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ChevronDown, Maximize2, Minus, PenLine } from "lucide-react";
-import { useChatSessionStore, type StoredMessage } from "@/lib/chatSessionStore";
+import { useChatSessionStore, type AssistantContext, type ChatMode, type StoredMessage } from "@/lib/chatSessionStore";
 import { useChatStreamingStore, watchSession } from "@/lib/chatStreamingStore";
+import { ASSISTANT_LAUNCH_EVENT, type AssistantLaunch } from "@/lib/assistantLaunch";
 import { useDefaultChatModel } from "@/lib/useAgents";
 import { setUiPref, useUiPref } from "@/lib/uiPrefs";
 import { cn } from "@/lib/utils";
@@ -14,6 +15,7 @@ import { Kbd } from "@/components/ui/kbd";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Composer } from "@/components/chat/Composer";
 import { ChatThread } from "@/components/chat/ChatThread";
+import { ContextCard } from "@/components/chat/ContextCard";
 import { useImageAttachments } from "@/components/chat/useImageAttachments";
 
 const NO_MESSAGES: StoredMessage[] = [];
@@ -21,9 +23,16 @@ const NO_MESSAGES: StoredMessage[] = [];
 /** Portalled UI that belongs to the panel even though it renders outside it. */
 const PANEL_PORTALS = '[role="menu"], [data-slot="dialog-content"], [data-slot="dialog-backdrop"]';
 
+const CONTEXT_PLACEHOLDERS: Record<AssistantContext["source"], string> = {
+  composer: "Where are you stuck?",
+  result: "What should change?",
+  upload: "What would you like to make from it?",
+};
+
 /**
  * ⌘K assistant: a raised-paper command panel on the same sessions and streaming engine as /chat.
  * Closed, it is the "Assistant ⌘K" pill; hidden, a slim tab on the bottom edge. ⌘K opens it from either.
+ * Other surfaces open it on something (`launchAssistant`): a fresh explore chat with that context.
  */
 export function QuickAssist() {
   const router = useRouter();
@@ -32,6 +41,8 @@ export function QuickAssist() {
   const [input, setInput] = useState("");
   const attachments = useImageAttachments();
   const [pickedId, setSessionId] = useState<string | null>(null);
+  // The mode for the next new chat, until there is a session to hold it.
+  const [pendingMode, setPendingMode] = useState<ChatMode>("refine");
 
   const session = useChatSessionStore((s) => (pickedId ? s.sessions.find((x) => x.id === pickedId) : undefined));
   // A session deleted from the sidebar while open reads as no session: the next send starts fresh.
@@ -39,6 +50,8 @@ export function QuickAssist() {
   const defaultModel = useDefaultChatModel();
   const stream = useChatStreamingStore((s) => (sessionId ? s.streams[sessionId] : undefined));
   const model = session?.model ?? defaultModel;
+  const mode: ChatMode = session ? (session.mode ?? "refine") : pendingMode;
+  const context = session?.context;
   const messages = session?.messages ?? NO_MESSAGES;
   const isEmpty = messages.length === 0 && !stream;
 
@@ -48,7 +61,7 @@ export function QuickAssist() {
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === "k") {
         e.preventDefault();
         setOpen((o) => !o);
       } else if (e.key === "Escape" && open && !document.querySelector('[data-slot="dialog-content"]')) {
@@ -73,6 +86,23 @@ export function QuickAssist() {
     return () => clearTimeout(t);
   }, [open]);
 
+  // The images stay in this panel's draft (not the session's) so an unanswered launch leaves
+  // an empty session behind, which the sidebar hides and the next new chat reuses.
+  const { reset: resetAttachments } = attachments;
+  useEffect(() => {
+    function onLaunch(e: Event) {
+      const { images, context: launched } = (e as CustomEvent<AssistantLaunch>).detail;
+      const id = useChatSessionStore.getState().createSession(model, { mode: "explore", context: launched });
+      setSessionId(id);
+      setInput("");
+      resetAttachments(images);
+      setOpen(true);
+      window.setTimeout(() => textareaRef.current?.focus(), 60);
+    }
+    window.addEventListener(ASSISTANT_LAUNCH_EVENT, onLaunch);
+    return () => window.removeEventListener(ASSISTANT_LAUNCH_EVENT, onLaunch);
+  }, [model, resetAttachments]);
+
   useEffect(() => (open && sessionId ? watchSession(sessionId) : undefined), [open, sessionId]);
 
   useLayoutEffect(() => {
@@ -86,7 +116,7 @@ export function QuickAssist() {
     if (!text && images.length === 0) return;
     let id = sessionId;
     if (!id) {
-      id = useChatSessionStore.getState().ensureDraftSession(model, "");
+      id = useChatSessionStore.getState().ensureDraftSession(model, "", [], { mode });
       setSessionId(id);
     }
     setInput("");
@@ -98,6 +128,12 @@ export function QuickAssist() {
     const store = useChatSessionStore.getState();
     store.setPreferredModel(id);
     if (sessionId) store.setSessionModel(sessionId, id);
+  }
+
+  function changeMode(next: ChatMode) {
+    if (sessionId) useChatSessionStore.getState().setSessionMode(sessionId, next);
+    else setPendingMode(next);
+    textareaRef.current?.focus();
   }
 
   /** A reply still streaming keeps going into its own session; it shows up in the sidebar. */
@@ -220,11 +256,26 @@ export function QuickAssist() {
           </div>
 
           <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-4 py-5">
+            {context && sessionId && (
+              <div className="mb-4">
+                <ContextCard
+                  context={context}
+                  compact
+                  onDetach={() => useChatSessionStore.getState().setSessionContext(sessionId, undefined)}
+                />
+              </div>
+            )}
             {isEmpty ? (
-              <div className="flex flex-col items-center py-6 text-center">
-                <h2 className="type-heading text-ink">What shall we make?</h2>
-                <p className="mt-1.5 max-w-[280px] text-[13px] text-ink-2">
-                  Give me an idea, a prompt or an image, and I will make it richer.
+              <div className={cn("flex flex-col items-center text-center", context ? "py-2" : "py-6")}>
+                <h2 className="type-heading text-ink">
+                  {context ? "What would you like help with?" : mode === "explore" ? "What are you after?" : "What shall we make?"}
+                </h2>
+                <p className="mt-1.5 max-w-[300px] text-[13px] text-ink-2">
+                  {context
+                    ? "Say what feels off or where you're stuck, or just send and I'll start from what I can see."
+                    : mode === "explore"
+                      ? "Start with a feeling, a purpose or an image. I'll ask a few questions before writing the prompt."
+                      : "Give me an idea, a prompt or an image, and I will make it richer."}
                 </p>
               </div>
             ) : (
@@ -232,6 +283,8 @@ export function QuickAssist() {
                 messages={messages}
                 stream={stream}
                 onRetry={() => sessionId && useChatStreamingStore.getState().retry(sessionId)}
+                onReply={(text) => sessionId && useChatStreamingStore.getState().send(sessionId, text)}
+                context={context}
                 compact
               />
             )}
@@ -247,9 +300,19 @@ export function QuickAssist() {
               model={model}
               onModelChange={changeModel}
               textareaRef={textareaRef}
-              placeholder="Describe your idea…"
+              placeholder={
+                !isEmpty
+                  ? "Reply, or ask for another take…"
+                  : context
+                    ? CONTEXT_PLACEHOLDERS[context.source]
+                    : mode === "explore"
+                      ? "A feeling, a purpose, a half-idea…"
+                      : "Describe your idea…"
+              }
               compact
               attachments={attachments}
+              mode={mode}
+              onModeChange={changeMode}
             />
           </div>
         </div>

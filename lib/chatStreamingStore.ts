@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { getToken } from "./galleryUtils";
-import { SYSTEM_PROMPT } from "./systemPrompt";
+import { systemPromptFor } from "./systemPrompt";
 import { useChatSessionStore, newMessageId, type StoredMessage } from "./chatSessionStore";
 import { useWorkflowStore } from "./store";
 import { keyProviderFor } from "./models";
@@ -18,6 +18,7 @@ class AssistantError extends Error {}
  */
 async function streamAssistant(opts: {
   model: string;
+  system: string;
   messages: { role: "user" | "assistant"; content: string; images?: string[] }[];
   /** Chat session id; lets subscription (ACP) agents keep one warm session per chat. */
   conversationId: string;
@@ -44,7 +45,7 @@ async function streamAssistant(opts: {
       },
       body: JSON.stringify({
         model: opts.model,
-        messages: [{ role: "system", content: SYSTEM_PROMPT }, ...opts.messages],
+        messages: [{ role: "system", content: opts.system }, ...opts.messages],
         conversationId: opts.conversationId,
         ...azureConfig,
       }),
@@ -168,6 +169,7 @@ export const useChatStreamingStore = create<ChatStreamingState>()((set, get) => 
     const session = findSession(sessionId);
     if (!session) return;
     const model = session.model;
+    const mode = session.mode ?? "refine";
     const messageId = newMessageId();
     const controller = new AbortController();
     controllers.set(sessionId, controller);
@@ -176,7 +178,9 @@ export const useChatStreamingStore = create<ChatStreamingState>()((set, get) => 
 
     const saveAssistant = (content: string, extra?: Pick<StoredMessage, "status" | "error">) => {
       if (!findSession(sessionId)) return; // deleted mid-stream
-      sessions().setMessages(sessionId, [...base, { id: messageId, role: "assistant", content, ...extra }]);
+      const message: StoredMessage = { id: messageId, role: "assistant", content, ...extra };
+      if (mode === "explore") message.mode = "explore";
+      sessions().setMessages(sessionId, [...base, message]);
     };
 
     // Save partial output periodically, flagged "stopped", so a reload mid-reply keeps what arrived.
@@ -186,6 +190,7 @@ export const useChatStreamingStore = create<ChatStreamingState>()((set, get) => 
     try {
       const content = await streamAssistant({
         model,
+        system: systemPromptFor(mode, session.context),
         messages: base
           .filter((m) => m.status !== "error")
           .map((m) => ({ role: m.role, content: m.content, ...(m.images?.length ? { images: m.images } : {}) })),

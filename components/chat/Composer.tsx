@@ -1,11 +1,12 @@
 "use client";
 
 import { useLayoutEffect, useRef, useState, type RefObject } from "react";
-import { AlertCircle, ArrowUp, Paperclip, Square, X } from "lucide-react";
+import { AlertCircle, ArrowUp, Compass, Paperclip, Square, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useWorkflowStore } from "@/lib/store";
+import type { ChatMode } from "@/lib/chatSessionStore";
 import { imageFilesFromClipboard } from "@/lib/clipboardImages";
 import { keyProviderFor, type ModelId } from "@/lib/models";
 import { cn } from "@/lib/utils";
@@ -84,6 +85,8 @@ export function Composer({
   pickerSide = "top",
   autoFocus = false,
   attachments,
+  mode,
+  onModeChange,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -99,6 +102,9 @@ export function Composer({
   autoFocus?: boolean;
   /** Images riding along with the message: paste, drop, or the paperclip add them. */
   attachments?: ImageAttachments;
+  /** With `onModeChange`, shows the Explore toggle. */
+  mode?: ChatMode;
+  onModeChange?: (mode: ChatMode) => void;
 }) {
   const { ready, acp } = useModelReady(model);
   const setSettingsOpen = useWorkflowStore((s) => s.setSettingsOpen);
@@ -218,6 +224,29 @@ export function Composer({
                 }}
               />
             </>
+          )}
+          {mode && onModeChange && (
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    aria-pressed={mode === "explore"}
+                    className="text-ink-3 aria-pressed:bg-lapis-soft aria-pressed:text-lapis"
+                    onClick={() => onModeChange(mode === "explore" ? "refine" : "explore")}
+                  />
+                }
+              >
+                <Compass />
+                Explore
+              </TooltipTrigger>
+              <TooltipContent className="max-w-[260px]">
+                {mode === "explore"
+                  ? "On: the assistant asks questions and offers directions before writing prompts."
+                  : "Not sure yet? The assistant asks questions and offers directions before writing a prompt."}
+              </TooltipContent>
+            </Tooltip>
           )}
           <div className="ml-auto flex items-center gap-2">
             {!compact && !streaming && (

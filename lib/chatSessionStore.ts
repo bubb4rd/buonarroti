@@ -2,6 +2,37 @@ import { create } from "zustand";
 import { persist, createJSONStorage, type StateStorage } from "zustand/middleware";
 import { useWorkflowStore } from "./store";
 
+/**
+ * How the assistant works in a chat. "refine" (the default) answers with a
+ * finished prompt and never asks back; "explore" talks the idea through:
+ * questions, directions to pick from, then prompts in fenced `prompt` blocks.
+ */
+export type ChatMode = "refine" | "explore";
+
+/**
+ * What a chat was opened about, captured when it was launched from the
+ * gallery. A snapshot: later changes in the composer don't follow it.
+ */
+export interface AssistantContext {
+  /** "composer": the draft being set up; "result": a generation; "upload": an image the user added. */
+  source: "composer" | "result" | "upload";
+  tab: "images" | "videos";
+  /** Model id from `lib/modelConfig`. */
+  model?: string;
+  aspectRatio?: string;
+  quality?: string;
+  azureResolution?: string;
+  prompt?: string;
+  /** What each image attached to the first message is, in order ("the generated result", "@image1, reference 1"). */
+  imageRoles?: string[];
+  /** Images that belonged to the context but didn't fit in one message. */
+  omittedImages?: number;
+  /** "result" only: the generation is a video, which the assistant can't see. */
+  resultIsVideo?: boolean;
+  /** "result" only: the references it was made with, restored by "Use as prompt". */
+  refUrls?: string[];
+}
+
 export interface StoredMessage {
   id: string;
   role: "user" | "assistant";
@@ -12,6 +43,8 @@ export interface StoredMessage {
   status?: "stopped" | "error";
   /** Human-readable failure reason for `status: "error"`. */
   error?: string;
+  /** Assistant turns only: written in explore mode (the whole reply is not a prompt). */
+  mode?: "explore";
 }
 
 export interface ChatSession {
@@ -25,6 +58,15 @@ export interface ChatSession {
   draft?: string;
   /** Images attached to the unsent message (stored `/generated/...` URLs). */
   draftImages?: string[];
+  /** Absent = "refine". Applies to the next reply; switching mid-chat is allowed. */
+  mode?: ChatMode;
+  context?: AssistantContext;
+}
+
+/** Options for a new (or reused empty) session. */
+export interface SessionSetup {
+  mode?: ChatMode;
+  context?: AssistantContext;
 }
 
 /** kie.ai fallback for new chats when the user has never picked a model and no subscription is ready. */
@@ -48,9 +90,13 @@ export function isEmptySession(s: ChatSession): boolean {
   return s.messages.length === 0 && !s.draft?.trim() && !s.draftImages?.length;
 }
 
-/** Sidebar title for a turn; an image-only message still gets a name. */
-function titleForTurn(text: string, images?: string[]): string {
-  return titleFrom(text) || (images?.length ? (images.length > 1 ? "Images" : "Image") : "");
+/** Sidebar title while a chat has no text of its own: what it was opened about, else "Image(s)". */
+function titleForTurn(text: string, images?: string[], context?: AssistantContext): string {
+  return (
+    titleFrom(text) ||
+    (context ? titleFrom(context.prompt ?? "") || (context.tab === "videos" ? "Video" : "Image") : "") ||
+    (images?.length ? (images.length > 1 ? "Images" : "Image") : "")
+  );
 }
 
 const byRecent = (a: ChatSession, b: ChatSession) => b.updatedAt - a.updatedAt;
@@ -60,11 +106,14 @@ interface ChatSessionState {
   /** The model the user last picked; `null` until they pick one (see `useDefaultChatModel`). */
   preferredModel: string | null;
   setPreferredModel: (model: string) => void;
-  createSession: (model: string, opts?: { title?: string; draft?: string; draftImages?: string[] }) => string;
+  createSession: (model: string, opts?: { title?: string; draft?: string; draftImages?: string[] } & SessionSetup) => string;
   /** Reuses an existing session with no messages and no draft, or creates one. Returns its id. */
-  ensureDraftSession: (model: string, draft: string, draftImages?: string[]) => string;
+  ensureDraftSession: (model: string, draft: string, draftImages?: string[], setup?: SessionSetup) => string;
   setDraft: (id: string, draft: string, draftImages?: string[]) => void;
   setSessionModel: (id: string, model: string) => void;
+  setSessionMode: (id: string, mode: ChatMode) => void;
+  /** `undefined` detaches the context; the chat carries on without it. */
+  setSessionContext: (id: string, context: AssistantContext | undefined) => void;
   setMessages: (id: string, messages: StoredMessage[]) => void;
   deleteSession: (id: string) => void;
   clearSessions: () => void;
@@ -159,21 +208,23 @@ export const useChatSessionStore = create<ChatSessionState>()(
         const draftImages = opts?.draftImages ?? [];
         const session: ChatSession = {
           id,
-          title: opts?.title ?? titleForTurn(draft, draftImages),
+          title: opts?.title ?? titleForTurn(draft, draftImages, opts?.context),
           messages: [],
           model,
           createdAt: now,
           updatedAt: now,
           draft,
           ...(draftImages.length ? { draftImages } : {}),
+          ...(opts?.mode === "explore" ? { mode: opts.mode } : {}),
+          ...(opts?.context ? { context: opts.context } : {}),
         };
         set((s) => ({ sessions: [session, ...s.sessions] }));
         return id;
       },
 
-      ensureDraftSession: (model, draft, draftImages = []) => {
+      ensureDraftSession: (model, draft, draftImages = [], setup) => {
         const reusable = get().sessions.find(isEmptySession);
-        if (!reusable) return get().createSession(model, { draft, draftImages });
+        if (!reusable) return get().createSession(model, { draft, draftImages, ...setup });
         const now = Date.now();
         set((s) => ({
           sessions: patchSession(s.sessions, reusable.id, (sess) => ({
@@ -181,7 +232,10 @@ export const useChatSessionStore = create<ChatSessionState>()(
             model,
             draft,
             draftImages,
-            title: titleForTurn(draft, draftImages),
+            // A reused session starts over: nothing from what it was opened for before carries across.
+            mode: setup?.mode,
+            context: setup?.context,
+            title: titleForTurn(draft, draftImages, setup?.context),
             createdAt: now,
             updatedAt: now,
           })),
@@ -201,7 +255,7 @@ export const useChatSessionStore = create<ChatSessionState>()(
             draft,
             draftImages,
             // Untitled until the first message; the draft names it meanwhile.
-            title: sess.messages.length === 0 ? titleForTurn(draft, draftImages) : sess.title,
+            title: sess.messages.length === 0 ? titleForTurn(draft, draftImages, sess.context) : sess.title,
             updatedAt: Date.now(),
           })),
         }));
@@ -213,12 +267,34 @@ export const useChatSessionStore = create<ChatSessionState>()(
         }));
       },
 
+      setSessionMode: (id, mode) => {
+        set((s) => ({
+          sessions: s.sessions.map((sess) => (sess.id === id ? { ...sess, mode } : sess)),
+        }));
+      },
+
+      setSessionContext: (id, context) => {
+        set((s) => ({
+          sessions: s.sessions.map((sess) =>
+            sess.id === id
+              ? {
+                  ...sess,
+                  context,
+                  title: sess.messages.length === 0 ? titleForTurn(sess.draft ?? "", sess.draftImages, context) : sess.title,
+                }
+              : sess,
+          ),
+        }));
+      },
+
       setMessages: (id, messages) => {
         set((s) => ({
           sessions: patchSession(s.sessions, id, (sess) => {
             const firstUser = messages.find((m) => m.role === "user");
             const title =
-              sess.messages.length === 0 && firstUser ? titleForTurn(firstUser.content, firstUser.images) : sess.title;
+              sess.messages.length === 0 && firstUser
+                ? titleForTurn(firstUser.content, firstUser.images, sess.context)
+                : sess.title;
             return { ...sess, messages, title, updatedAt: Date.now() };
           }),
         }));

@@ -12,9 +12,10 @@ type Block =
   | { kind: "p"; text: string }
   | { kind: "h"; text: string }
   | { kind: "ul" | "ol"; items: string[]; start: number }
-  | { kind: "code"; text: string };
+  /** `closed` is false for a fence still streaming in. */
+  | { kind: "code"; text: string; lang: string; closed: boolean };
 
-const FENCE = /^\s*```/;
+const FENCE = /^\s*```\s*([\w-]*)/;
 const BULLET = /^\s*[-*+]\s+(.*)$/;
 const NUMBERED = /^\s*(\d+)[.)]\s+(.*)$/;
 const HEADING = /^\s*#{1,6}\s+(.*)$/;
@@ -32,13 +33,14 @@ function parseBlocks(source: string): Block[] {
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
 
-    if (FENCE.test(line)) {
+    const fence = FENCE.exec(line);
+    if (fence) {
       flushPara();
       const code: string[] = [];
       i++;
       // An unclosed fence (mid-stream) runs to the end.
       while (i < lines.length && !FENCE.test(lines[i])) code.push(lines[i++]);
-      blocks.push({ kind: "code", text: code.join("\n") });
+      blocks.push({ kind: "code", text: code.join("\n"), lang: fence[1].toLowerCase(), closed: i < lines.length });
       continue;
     }
 
@@ -127,8 +129,26 @@ export function toPlainText(source: string): string {
     .trim();
 }
 
+/** Contents of the finished fenced blocks tagged `lang` (e.g. "prompt"), trimmed, empty ones dropped. */
+export function fencedBlocks(source: string, lang: string): string[] {
+  return parseBlocks(source).flatMap((b) => (b.kind === "code" && b.closed && b.lang === lang && b.text.trim() ? [b.text.trim()] : []));
+}
+
+/** Draws a fenced block itself; `undefined` falls back to the plain code style. */
+export type FenceRenderer = (block: { lang: string; text: string; closed: boolean }) => ReactNode | undefined;
+
 /** `trailing` (e.g. a streaming caret) renders inline at the end of the last block. */
-export function Markdown({ text, className, trailing }: { text: string; className?: string; trailing?: ReactNode }) {
+export function Markdown({
+  text,
+  className,
+  trailing,
+  renderFence,
+}: {
+  text: string;
+  className?: string;
+  trailing?: ReactNode;
+  renderFence?: FenceRenderer;
+}) {
   const blocks = parseBlocks(text);
   const lastIdx = blocks.length - 1;
   return (
@@ -140,7 +160,9 @@ export function Markdown({ text, className, trailing }: { text: string; classNam
             return <p key={i}>{renderInline(b.text)}{tail}</p>;
           case "h":
             return <p key={i} className="font-semibold text-ink">{renderInline(b.text)}{tail}</p>;
-          case "code":
+          case "code": {
+            const custom = renderFence?.(b);
+            if (custom !== undefined) return <Fragment key={i}>{custom}</Fragment>;
             return (
               <pre
                 key={i}
@@ -150,6 +172,7 @@ export function Markdown({ text, className, trailing }: { text: string; classNam
                 {tail}
               </pre>
             );
+          }
           case "ul":
             return (
               <ul key={i} className="flex list-disc flex-col gap-1 pl-5 marker:text-ink-3">

@@ -6,11 +6,11 @@ import { Check, Copy, Wand2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { useWorkflowStore } from "@/lib/store";
-import type { StoredMessage } from "@/lib/chatSessionStore";
+import type { AssistantContext, StoredMessage } from "@/lib/chatSessionStore";
 import type { LiveStream } from "@/lib/chatStreamingStore";
 import { handOffPromptToComposer } from "@/components/gallery/composerDraft";
 import { cn } from "@/lib/utils";
-import { Markdown, toPlainText } from "./Markdown";
+import { Markdown, fencedBlocks, toPlainText, type FenceRenderer } from "./Markdown";
 
 function UserTurn({ message, compact }: { message: StoredMessage; compact: boolean }) {
   const [viewing, setViewing] = useState<string | null>(null);
@@ -82,7 +82,18 @@ function Thinking() {
   );
 }
 
-function AssistantActions({ content, compact }: { content: string; compact: boolean }) {
+/** Copy, and "Use as prompt" when there is a prompt to use. */
+function AssistantActions({
+  copyText,
+  prompt,
+  context,
+  className,
+}: {
+  copyText: string;
+  prompt?: string;
+  context?: AssistantContext;
+  className?: string;
+}) {
   const router = useRouter();
   const [copied, setCopied] = useState(false);
   const timer = useRef<number | undefined>(undefined);
@@ -90,7 +101,7 @@ function AssistantActions({ content, compact }: { content: string; compact: bool
 
   async function copy() {
     try {
-      await navigator.clipboard.writeText(content);
+      await navigator.clipboard.writeText(copyText);
       setCopied(true);
       clearTimeout(timer.current);
       timer.current = window.setTimeout(() => setCopied(false), 1500);
@@ -99,23 +110,111 @@ function AssistantActions({ content, compact }: { content: string; compact: bool
     }
   }
 
+  // A chat opened on a generation hands back that generation's references and settings too, like "Reuse".
   function sendToComposer() {
-    handOffPromptToComposer("images", toPlainText(content));
-    router.push("/gallery?tab=images");
+    if (!prompt) return;
+    const tab = context?.tab ?? "images";
+    handOffPromptToComposer(
+      tab,
+      prompt,
+      context?.source === "result"
+        ? {
+            refUrls: context.refUrls ?? [],
+            meta: {
+              model: context.model,
+              aspectRatio: context.aspectRatio,
+              quality: context.quality,
+              azureResolution: context.azureResolution,
+            },
+          }
+        : undefined,
+    );
+    router.push(`/gallery?tab=${tab}`);
   }
 
   return (
-    <div className={cn("flex items-center gap-0.5", compact ? "-ml-2" : "-ml-2.5")}>
+    <div className={cn("flex items-center gap-0.5", className)}>
       <Button variant="ghost" size="sm" className="text-ink-3" onClick={copy}>
         {copied ? <Check className="text-verdigris" /> : <Copy />}
         {copied ? "Copied" : "Copy"}
       </Button>
-      <Button variant="ghost" size="sm" className="text-ink-3" onClick={sendToComposer}>
-        <Wand2 />
-        Use as prompt
-      </Button>
+      {prompt && (
+        <Button variant="ghost" size="sm" className="text-ink-3" onClick={sendToComposer}>
+          <Wand2 />
+          Use as prompt
+        </Button>
+      )}
     </div>
   );
+}
+
+/** A finished prompt from an explore reply (a ```prompt block), with its own actions once complete. */
+function PromptCard({
+  text,
+  live,
+  context,
+  compact,
+}: {
+  text: string;
+  live: boolean;
+  context?: AssistantContext;
+  compact: boolean;
+}) {
+  return (
+    <div className="flex flex-col rounded-[var(--radius-lg)] bg-surface shadow-[var(--shadow-sm)]">
+      <p
+        className={cn(
+          "px-3.5 pt-3 whitespace-pre-wrap text-ink",
+          compact ? "text-[13px] leading-[1.55]" : "text-[14px] leading-[1.6]",
+          live ? "pb-3" : "pb-1",
+        )}
+      >
+        {text}
+      </p>
+      {!live && <AssistantActions copyText={text} prompt={text} context={context} className="px-1 pb-1" />}
+    </div>
+  );
+}
+
+/** Answers the assistant offered (a ```options block). Clicking one sends it; only the latest reply's are live. */
+function ReplyOptions({ text, onPick }: { text: string; onPick?: (choice: string) => void }) {
+  const choices = text
+    .split("\n")
+    .map((line) => line.replace(/^\s*(?:[-*+]|\d+[.)])\s+/, "").trim())
+    .filter(Boolean);
+  return (
+    <div className="flex flex-wrap gap-2" role="group" aria-label="Suggested replies">
+      {choices.map((choice, i) => (
+        <button
+          key={`${i}-${choice}`}
+          type="button"
+          disabled={!onPick}
+          onClick={() => onPick?.(choice)}
+          className="min-h-7 rounded-full border border-dashed border-rule-strong px-3 py-1 text-left text-[12.5px] leading-[1.35] text-ink-2 transition-colors duration-150 enabled:hover:border-solid enabled:hover:bg-wash enabled:hover:text-ink disabled:opacity-60"
+        >
+          {choice}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** Draws ```prompt and ```options blocks as controls; `onReply` set only where answering is still possible. */
+function fenceRenderer(opts: {
+  live: boolean;
+  context?: AssistantContext;
+  compact: boolean;
+  onReply?: (text: string) => void;
+}): FenceRenderer {
+  return function renderFence({ lang, text, closed }) {
+    if (lang === "prompt") {
+      return <PromptCard text={text.trim()} live={opts.live || !closed} context={opts.context} compact={opts.compact} />;
+    }
+    if (lang === "options") {
+      return <ReplyOptions text={text} onPick={opts.live || !closed ? undefined : opts.onReply} />;
+    }
+    return undefined;
+  };
 }
 
 function AssistantTurn({
@@ -123,16 +222,28 @@ function AssistantTurn({
   compact,
   isLast,
   onRetry,
+  onReply,
+  context,
 }: {
   message: StoredMessage;
   compact: boolean;
   isLast: boolean;
   onRetry: () => void;
+  onReply?: (text: string) => void;
+  context?: AssistantContext;
 }) {
   const prose = compact ? "text-[13.5px] leading-[1.6]" : "text-[15px] leading-[1.7]";
+  // A refine reply is the prompt itself; an explore reply is conversation with prompts in their own cards.
+  const wholeIsPrompt = message.mode !== "explore" && fencedBlocks(message.content, "prompt").length === 0;
   return (
     <div className="flex flex-col gap-2">
-      {message.content && <Markdown text={message.content} className={cn("text-ink", prose)} />}
+      {message.content && (
+        <Markdown
+          text={message.content}
+          className={cn("text-ink", prose)}
+          renderFence={fenceRenderer({ live: false, context, compact, onReply: isLast && !message.status ? onReply : undefined })}
+        />
+      )}
       {message.status === "error" ? (
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px]">
           <span className="size-1.5 shrink-0 rounded-full bg-sanguine" />
@@ -146,7 +257,12 @@ function AssistantTurn({
       ) : (
         message.content && (
           <div className="flex flex-wrap items-center gap-x-3">
-            <AssistantActions content={message.content} compact={compact} />
+            <AssistantActions
+              copyText={message.content}
+              prompt={wholeIsPrompt ? toPlainText(message.content) : undefined}
+              context={context}
+              className={compact ? "-ml-2" : "-ml-2.5"}
+            />
             {message.status === "stopped" && (
               <span className="flex items-center gap-2 text-[12px] text-ink-3">
                 Stopped early
@@ -169,11 +285,17 @@ export function ChatThread({
   messages,
   stream,
   onRetry,
+  onReply,
+  context,
   compact = false,
 }: {
   messages: StoredMessage[];
   stream: LiveStream | undefined;
   onRetry: () => void;
+  /** Sends a suggested answer (from a ```options block) as the user's next message. */
+  onReply?: (text: string) => void;
+  /** What the chat was opened about; "Use as prompt" hands its setup back to the composer. */
+  context?: AssistantContext;
   compact?: boolean;
 }) {
   // While streaming, the engine checkpoints partial text under the stream's id; show the live copy instead.
@@ -186,7 +308,15 @@ export function ChatThread({
         m.role === "user" ? (
           <UserTurn key={m.id} message={m} compact={compact} />
         ) : (
-          <AssistantTurn key={m.id} message={m} compact={compact} isLast={i === visible.length - 1 && !stream} onRetry={onRetry} />
+          <AssistantTurn
+            key={m.id}
+            message={m}
+            compact={compact}
+            isLast={i === visible.length - 1 && !stream}
+            onRetry={onRetry}
+            onReply={onReply}
+            context={context}
+          />
         ),
       )}
       {stream &&
@@ -195,6 +325,7 @@ export function ChatThread({
             text={stream.content}
             trailing={<Caret />}
             className={cn("text-ink", compact ? "text-[13.5px] leading-[1.6]" : "text-[15px] leading-[1.7]")}
+            renderFence={fenceRenderer({ live: true, context, compact })}
           />
         ) : (
           <Thinking />

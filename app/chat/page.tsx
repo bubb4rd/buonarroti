@@ -3,7 +3,7 @@
 import { Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { PenLine } from "lucide-react";
-import { useChatSessionStore, type StoredMessage } from "@/lib/chatSessionStore";
+import { useChatSessionStore, type ChatMode, type StoredMessage } from "@/lib/chatSessionStore";
 import { useChatStreamingStore, watchSession } from "@/lib/chatStreamingStore";
 import { getDefaultChatModel, useDefaultChatModel } from "@/lib/useAgents";
 import { useModelLabel } from "@/components/chat/ModelPicker";
@@ -11,6 +11,7 @@ import { Mark } from "@/components/brand/Mark";
 import { Button } from "@/components/ui/button";
 import { Composer } from "@/components/chat/Composer";
 import { ChatThread } from "@/components/chat/ChatThread";
+import { ContextCard } from "@/components/chat/ContextCard";
 import { useImageAttachments } from "@/components/chat/useImageAttachments";
 
 const DRAFT_DEBOUNCE_MS = 300;
@@ -30,6 +31,13 @@ const SUGGESTIONS = [
   "Make this more cinematic",
   "Turn this into a JSON prompt",
   "Add camera and lens details",
+];
+
+/** Explore starters: openings for someone who doesn't have an idea yet. */
+const EXPLORE_STARTERS = [
+  "I need a picture for…",
+  "I have a mood, not an idea yet",
+  "Help me choose a style",
 ];
 
 function useCyclingPlaceholder(paused: boolean) {
@@ -78,6 +86,9 @@ function ChatScreen({ urlId }: { urlId: string | null }) {
   const [createdId, setCreatedId] = useState<string | null>(null);
   const createdRef = useRef<string | null>(null);
   const pending = useRef<{ timer: number; sessionId: string | null; text: string; images: string[] } | null>(null);
+  // The mode picked before this screen has a session; the session takes it when it's created.
+  const [pendingMode, setPendingMode] = useState<ChatMode>("refine");
+  const pendingModeRef = useRef<ChatMode>("refine");
 
   // The URL moved somewhere other than the session we created (e.g. "New chat"): forget it.
   let created = createdId;
@@ -95,6 +106,7 @@ function ChatScreen({ urlId }: { urlId: string | null }) {
   const defaultModel = useDefaultChatModel();
   const stream = useChatStreamingStore((s) => (sessionId ? s.streams[sessionId] : undefined));
   const model = session?.model ?? defaultModel;
+  const mode: ChatMode = session ? (session.mode ?? "refine") : pendingMode;
   const { label, source, unavailable } = useModelLabel(model);
   const messages = session?.messages ?? NO_MESSAGES;
   const isLanding = messages.length === 0 && !stream;
@@ -127,7 +139,7 @@ function ChatScreen({ urlId }: { urlId: string | null }) {
       if (id && store.sessions.some((s) => s.id === id)) {
         store.setDraft(id, text, images);
       } else if (!targetId && (text.trim() || images.length > 0)) {
-        markCreated(store.ensureDraftSession(getDefaultChatModel(), text, images));
+        markCreated(store.ensureDraftSession(getDefaultChatModel(), text, images, { mode: pendingModeRef.current }));
       }
     },
     [markCreated],
@@ -189,7 +201,7 @@ function ChatScreen({ urlId }: { urlId: string | null }) {
     const store = useChatSessionStore.getState();
     let id = sessionId ?? createdRef.current;
     if (!id || !store.sessions.some((s) => s.id === id)) {
-      id = store.ensureDraftSession(model, "");
+      id = store.ensureDraftSession(model, "", [], { mode });
       markCreated(id);
     }
     store.setDraft(id, "", []);
@@ -204,6 +216,28 @@ function ChatScreen({ urlId }: { urlId: string | null }) {
     store.setPreferredModel(id);
     if (sessionId) store.setSessionModel(sessionId, id);
   }
+
+  function changeMode(next: ChatMode) {
+    if (session) {
+      useChatSessionStore.getState().setSessionMode(session.id, next);
+    } else {
+      pendingModeRef.current = next;
+      setPendingMode(next);
+    }
+    textareaRef.current?.focus();
+  }
+
+  /** A suggested answer clicked in the thread goes out as-is; whatever is in the composer stays. */
+  function reply(text: string) {
+    if (!sessionId) return;
+    stickToBottom.current = true;
+    useChatStreamingStore.getState().send(sessionId, text);
+  }
+
+  const context = session?.context;
+  const contextCard = context && session && (
+    <ContextCard context={context} onDetach={() => useChatSessionStore.getState().setSessionContext(session.id, undefined)} />
+  );
 
   function stop() {
     if (sessionId) useChatStreamingStore.getState().stop(sessionId);
@@ -227,7 +261,7 @@ function ChatScreen({ urlId }: { urlId: string | null }) {
     t.setSelectionRange(t.value.length, t.value.length);
   }, [sessionId]);
 
-  const placeholder = useCyclingPlaceholder(!isLanding || input.length > 0);
+  const placeholder = useCyclingPlaceholder(!isLanding || input.length > 0 || mode === "explore" || !!context);
 
   const composer = (
     <Composer
@@ -240,31 +274,46 @@ function ChatScreen({ urlId }: { urlId: string | null }) {
       onModelChange={changeModel}
       textareaRef={textareaRef}
       pickerSide={isLanding ? "bottom" : "top"}
-      placeholder={isLanding ? placeholder : "Reply, or ask for another take…"}
+      placeholder={
+        isLanding
+          ? context
+            ? "What would you like help with? Or just send, and I'll start."
+            : mode === "explore"
+              ? "A feeling, a purpose, a half-idea…"
+              : placeholder
+          : "Reply, or ask for another take…"
+      }
       autoFocus
       attachments={attachments}
+      mode={mode}
+      onModeChange={changeMode}
     />
   );
 
   if (isLanding) {
+    const explore = mode === "explore";
     return (
       <div className="flex min-h-0 flex-1 flex-col">
         <div className="titlebar-drag h-10 shrink-0" />
         <div className="flex flex-1 flex-col items-center justify-center overflow-y-auto px-6 pb-[12vh]">
           <div className="flex w-full max-w-[680px] flex-col">
             <Mark className="mb-6 size-9 text-ink-3" />
-            <h1 className="type-display text-ink">What shall we make?</h1>
+            <h1 className="type-display text-ink">{explore ? "What are you after?" : "What shall we make?"}</h1>
             <p className="mt-2 mb-8 text-[15px] text-ink-2">
-              Describe an idea, or paste a prompt. You will get back a richer prompt for images or video.
+              {explore
+                ? "Start with a feeling, a purpose, or a few references. I'll ask a few questions and sketch directions with you, then write the prompt."
+                : "Describe an idea, or paste a prompt. You will get back a richer prompt for images or video. Not sure yet? Turn on Explore."}
             </p>
+            {contextCard && <div className="mb-3">{contextCard}</div>}
             {composer}
             <div className="mt-4 flex flex-wrap gap-2">
-              {SUGGESTIONS.map((s) => (
+              {(explore ? EXPLORE_STARTERS : SUGGESTIONS).map((s) => (
                 <button
                   key={s}
                   type="button"
                   onClick={() => {
-                    onChange(input.trim() ? `${s}:\n${input}` : `${s}: `);
+                    if (explore) onChange(input.trim() ? `${input}\n${s}` : s);
+                    else onChange(input.trim() ? `${s}:\n${input}` : `${s}: `);
                     textareaRef.current?.focus();
                   }}
                   className="h-7 rounded-full border border-dashed border-rule-strong px-3 text-[12.5px] text-ink-2 transition-colors duration-150 hover:bg-wash hover:text-ink"
@@ -303,8 +352,9 @@ function ChatScreen({ urlId }: { urlId: string | null }) {
           stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
         }}
       >
-        <div className="mx-auto w-full max-w-[680px] py-8">
-          <ChatThread messages={messages} stream={stream} onRetry={retry} />
+        <div className="mx-auto flex w-full max-w-[680px] flex-col gap-7 py-8">
+          {contextCard}
+          <ChatThread messages={messages} stream={stream} onRetry={retry} onReply={reply} context={context} />
         </div>
       </div>
       <div className="shrink-0 px-6 pb-5">
