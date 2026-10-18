@@ -25,9 +25,11 @@ const nextConfig: NextConfig = {
   outputFileTracingIncludes: {
     "/**": ["node_modules/sharp/**/*", "node_modules/@img/**/*"],
   },
-  // Never trace the Tauri desktop staging area into the standalone output.
+  // Never trace the Tauri desktop staging area, or this machine's own data: the
+  // server builds paths from process.cwd() + "data" / "public/generated", and
+  // the tracer copies whatever it finds there (guest.db, every generation).
   outputFileTracingExcludes: {
-    "/**": ["src-tauri/**/*"],
+    "/**": ["src-tauri/**/*", "data/**/*", "public/generated/**/*"],
   },
   images: {
     remotePatterns: [

@@ -116,6 +116,11 @@ if (!existsSync(join(STANDALONE, "server.js"))) {
 console.log("[desktop] staging server →", STAGE);
 cpSync(STANDALONE, STAGE, { recursive: true });
 rmSync(join(STAGE, "src-tauri"), { recursive: true, force: true }); // never nest ourselves
+// Ship no user data: the guest DB (chats, settings, keys) and generated media
+// belong to whoever built the app. next.config.ts keeps them out of tracing.
+for (const p of [join(STAGE, "data"), join(STAGE, "public", "generated")]) {
+  if (existsSync(p)) throw new Error(`user data traced into the server bundle: ${p} (check outputFileTracingExcludes)`);
+}
 cpSync(join(ROOT, ".next", "static"), join(STAGE, ".next", "static"), { recursive: true });
 copyFileSync(join(ROOT, "scripts", "desktop", "sidecar-guard.js"), join(STAGE, "sidecar-guard.js"));
 if (existsSync(join(ROOT, "public"))) {
